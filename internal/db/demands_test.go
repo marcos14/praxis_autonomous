@@ -55,6 +55,68 @@ func TestCriarDemandaProjetoInexistente(t *testing.T) {
 	}
 }
 
+func TestCriarDemandaComFases(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	proj := criarProjetoTeste(t, d, "cf")
+
+	dem, fases, err := d.CriarDemandaComFases(ctx,
+		Demanda{ProjectID: proj, Titulo: "Nova", Status: StatusDemandaPronta},
+		[]Fase{
+			{Codigo: "1", Titulo: "Primeira"},
+			{Codigo: "2", Titulo: "Segunda", DependeDe: []string{"1"}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("CriarDemandaComFases: %v", err)
+	}
+	if dem.ID == 0 || dem.CriadoEm == "" {
+		t.Fatalf("demanda não persistida: %+v", dem)
+	}
+	if len(fases) != 2 || fases[0].ID == 0 || fases[1].ID == 0 {
+		t.Fatalf("fases não persistidas: %+v", fases)
+	}
+	if fases[0].Status != StatusFasePendente {
+		t.Fatalf("status default da fase = %q, quero pendente", fases[0].Status)
+	}
+	// as fases estão no banco, ligadas à demanda.
+	lidas, err := d.ListarFases(ctx, dem.ID)
+	if err != nil || len(lidas) != 2 {
+		t.Fatalf("ListarFases = %d fases (err=%v), quero 2", len(lidas), err)
+	}
+}
+
+func TestCriarDemandaComFasesCodigoDuplicadoFazRollback(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	proj := criarProjetoTeste(t, d, "rb")
+
+	_, _, err := d.CriarDemandaComFases(ctx,
+		Demanda{ProjectID: proj, Titulo: "Dup"},
+		[]Fase{{Codigo: "1", Titulo: "a"}, {Codigo: "1", Titulo: "b"}},
+	)
+	if !errors.Is(err, ErrCodigoFaseDuplicado) {
+		t.Fatalf("erro = %v, quero ErrCodigoFaseDuplicado", err)
+	}
+	// rollback: nenhuma demanda deve ter sido criada.
+	dems, err := d.ListarDemandas(ctx, FiltroDemandas{})
+	if err != nil {
+		t.Fatalf("ListarDemandas: %v", err)
+	}
+	if len(dems) != 0 {
+		t.Fatalf("esperava 0 demandas após rollback, veio %d", len(dems))
+	}
+}
+
+func TestCriarDemandaComFasesProjetoInexistente(t *testing.T) {
+	d := abrirTemp(t)
+	_, _, err := d.CriarDemandaComFases(context.Background(),
+		Demanda{ProjectID: 999, Titulo: "x"}, []Fase{{Codigo: "1", Titulo: "a"}})
+	if !errors.Is(err, ErrNaoEncontrado) {
+		t.Fatalf("erro = %v, quero ErrNaoEncontrado (FK)", err)
+	}
+}
+
 func TestCriarDemandaOrigemInvalida(t *testing.T) {
 	d := abrirTemp(t)
 	proj := criarProjetoTeste(t, d, "a")

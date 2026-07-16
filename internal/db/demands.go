@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -98,6 +99,73 @@ func (d *DB) CriarDemanda(ctx context.Context, dem Demanda) (Demanda, error) {
 		return Demanda{}, traduzirErroFK(err)
 	}
 	return dem, nil
+}
+
+// CriarDemandaComFases insere uma demanda e suas fases numa única transação
+// (tudo ou nada) e devolve a demanda persistida junto das fases criadas, na
+// ordem informada. É o caminho canônico de criação de uma demanda "manual" (com
+// fases já definidas, sem intake) usado pelo POST de demandas na Fase 2g.
+//
+// Origem/status vazios caem nos defaults (ui/recebida). Cada fase sem status cai
+// em pendente. Erros conhecidos: projeto inexistente → ErrNaoEncontrado; código
+// de fase repetido na demanda → ErrCodigoFaseDuplicado.
+func (d *DB) CriarDemandaComFases(ctx context.Context, dem Demanda, fases []Fase) (Demanda, []Fase, error) {
+	if strings.TrimSpace(dem.Origem) == "" {
+		dem.Origem = OrigemUI
+	}
+	if strings.TrimSpace(dem.Status) == "" {
+		dem.Status = StatusDemandaRecebida
+	}
+
+	tx, err := d.Escritor.BeginTx(ctx, nil)
+	if err != nil {
+		return Demanda{}, nil, fmt.Errorf("criar demanda com fases: %w", err)
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx, `
+		INSERT INTO demands
+			(project_id, titulo, origem, origem_ref, status, prioridade,
+			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+		RETURNING id, criado_em, atualizado_em`,
+		dem.ProjectID, dem.Titulo, dem.Origem, dem.OrigemRef, dem.Status, dem.Prioridade,
+		dem.Branch, dem.WorktreePath, dem.PlanoMD, dem.CustoUSD, dem.BudgetUSD, dem.Erro,
+	)
+	if err := row.Scan(&dem.ID, &dem.CriadoEm, &dem.AtualizadoEm); err != nil {
+		return Demanda{}, nil, traduzirErroFK(err)
+	}
+
+	criadas := make([]Fase, 0, len(fases))
+	for _, f := range fases {
+		f.DemandID = dem.ID
+		if strings.TrimSpace(f.Status) == "" {
+			f.Status = StatusFasePendente
+		}
+		f.DependeDe = normalizarLista(f.DependeDe)
+		deps, err := json.Marshal(f.DependeDe)
+		if err != nil {
+			return Demanda{}, nil, fmt.Errorf("codificar depende_de da fase %q: %w", f.Codigo, err)
+		}
+		frow := tx.QueryRowContext(ctx, `
+			INSERT INTO phases
+				(demand_id, codigo, titulo, status, depende_de, requer_humano,
+				 gate_extra, modelo, tentativas, custo_usd, concluido_em, observacao, ordem)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			RETURNING id`,
+			f.DemandID, f.Codigo, f.Titulo, f.Status, string(deps), booleanParaInt(f.RequerHumano),
+			f.GateExtra, f.Modelo, f.Tentativas, f.CustoUSD, f.ConcluidoEm, f.Observacao, f.Ordem,
+		)
+		if err := frow.Scan(&f.ID); err != nil {
+			return Demanda{}, nil, traduzirErroFase(err)
+		}
+		criadas = append(criadas, f)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Demanda{}, nil, fmt.Errorf("criar demanda com fases: %w", err)
+	}
+	return dem, criadas, nil
 }
 
 // ListarDemandas devolve as demandas que casam com o filtro, ordenadas por

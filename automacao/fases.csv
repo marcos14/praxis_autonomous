@@ -14,7 +14,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 2d;Scheduler e worker pool com limites;concluida;2a+2b;nao;nao;;;1;5.01;2026-07-16 07:23;ok — custo US$ 5.01
 2e;Worktree e branch por demanda com ciclo de fase;concluida;1g+2b;nao;nao;;;1;5.05;2026-07-16 07:34;ok — custo US$ 5.05
 2f;Push automático da branch (tolerante a falha);concluida;2e;nao;nao;;;1;4.93;2026-07-16 07:47;ok — custo US$ 4.93
-2g;Demanda manual executa em background;pendente;2c+2d+2e;nao;sim;;;;;;"Primeira execução autônoma ponta a ponta sem intake; 2 demandas paralelas no mesmo projeto → 2 branches independentes."
+2g;Demanda manual executa em background;executando;2c+2d+2e;nao;sim;;;1;;;"Primeira execução autônoma ponta a ponta sem intake; 2 demandas paralelas no mesmo projeto → 2 branches independentes."
 2h;Card da demanda com fases e log ao vivo (SSE);pendente;1h+2g;nao;nao;;;;;;"Aba Log ao vivo via SSE do .jsonl (runs.log_ref); aba Eventos."
 2i;Pausar/retomar/cancelar e retomada pós-restart;pendente;2d+2g;nao;sim;;;;;;Marca fim do M2. No boot: worktree prune, matar árvore de processos órfãos, executando→pausada→refila.
 3a;Chat da demanda persistido e nova demanda;pendente;1a+1h;nao;nao;;;;;;"Migração chat_messages/questions; tela Nova demanda + aba Chat/PRD."
@@ -35,3 +35,5 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 1e.n1;Validação de tipo/valor das chaves conhecidas de config;avaliar viabilidade;1e;sim;nao;;;;;;"Hoje a config é key→valor JSON livre por decisão de projeto; um budget_usd:""abc"" ou gates:{} é aceito e só quebraria no consumidor (scheduler). Melhoria defensiva de qualidade de dado no ponto de escrita — o plano funciona sem ela, por isso valor baixo."
 1f.n1;Teste end-to-end do codex.Rodar com stub de processo;avaliar viabilidade;1f;sim;nao;;;;;;"codex nunca teve testes no repo de origem; esta é cobertura nova, não porte. Análoga aos stubs já existentes de claude/opencode."
 1f.n2;Sink de progresso dos motores para observabilidade estruturada;avaliar viabilidade;1f;sim;nao;;;;;;"Pendência registrada pelo executor no Registro de Andamento de 1f; é refinamento de observabilidade, não bloqueia o pipeline."
+2g.n1;Wiring do scheduler no serve com prompts do pipeline;pendente;2g;nao;nao;;;;;;"Os prompts executor/corretor/revisor do pipeline são distintos dos prompts de intake (analista/planejador) das Fases 3b/3c; por isso esta fase pode ser feita logo após a 2g, sem depender do intake. É a única lacuna entre o mecanismo (completo e testado) e o produto rodando de fato em background."
+2g.n2;Teto de fases novas do revisor (max_fases_novas);avaliar viabilidade;2g;sim;nao;;;;;;"Guardrail contra criação/custo em runaway no fluxo autônomo; o plano funciona sem ela pois o revisor tende a se autolimitar, mas a chave já é prometida na UI."

@@ -1,0 +1,330 @@
+package scheduler
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/gitops"
+	"github.com/marcos14/praxis-autonomous/internal/motor"
+	"github.com/marcos14/praxis-autonomous/internal/pipeline"
+)
+
+// --- proximaFase (fila respeitando depende_de e requer_humano) ----------------
+
+func fz(codigo, status string, requerHumano bool, deps ...string) db.Fase {
+	return db.Fase{Codigo: codigo, Status: status, RequerHumano: requerHumano, DependeDe: deps}
+}
+
+func TestProximaFase(t *testing.T) {
+	casos := []struct {
+		nome    string
+		fases   []db.Fase
+		wantSit situacaoFila
+		wantCod string // código esperado quando filaProntaParaRodar
+	}{
+		{"vazia", nil, filaVazia, ""},
+		{"tudo concluido",
+			[]db.Fase{fz("1", db.StatusFaseConcluida, false)}, filaConcluida, ""},
+		{"uma falhou bloqueia",
+			[]db.Fase{fz("1", db.StatusFaseConcluida, false), fz("2", db.StatusFaseFalhou, false)}, filaFalhou, ""},
+		{"primeira pendente sem deps",
+			[]db.Fase{fz("1", db.StatusFasePendente, false), fz("2", db.StatusFasePendente, false, "1")}, filaProntaParaRodar, "1"},
+		{"pula requer_humano e roda a proxima elegivel",
+			[]db.Fase{fz("1", db.StatusFasePendente, true), fz("2", db.StatusFasePendente, false)}, filaProntaParaRodar, "2"},
+		{"dependente espera a dependencia concluir",
+			[]db.Fase{fz("1", db.StatusFaseConcluida, false), fz("2", db.StatusFasePendente, false, "1")}, filaProntaParaRodar, "2"},
+		{"so restam requer_humano → bloqueada",
+			[]db.Fase{fz("1", db.StatusFaseConcluida, false), fz("2", db.StatusFasePendente, true, "1")}, filaBloqueada, ""},
+		{"dependente preso porque a dep tambem e humana → bloqueada",
+			[]db.Fase{fz("1", db.StatusFasePendente, true), fz("2", db.StatusFasePendente, false, "1")}, filaBloqueada, ""},
+		{"pausada (franquia) e retomavel",
+			[]db.Fase{fz("1", db.StatusFasePausada, false)}, filaProntaParaRodar, "1"},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			f, sit := proximaFase(c.fases)
+			if sit != c.wantSit {
+				t.Fatalf("situacao = %d, quero %d", sit, c.wantSit)
+			}
+			if sit == filaProntaParaRodar && f.Codigo != c.wantCod {
+				t.Fatalf("fase escolhida = %q, quero %q", f.Codigo, c.wantCod)
+			}
+		})
+	}
+}
+
+// --- integração: 2 demandas paralelas → 2 branches (critério da Fase 2g) ------
+
+// gitEx roda um comando git em dir, falhando o teste em erro.
+func gitEx(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s em %s: %v — %s", strings.Join(args, " "), dir, err, out)
+	}
+	return string(out)
+}
+
+// repoComOrigin cria um repo git (branch main) com um remote bare `origin` já
+// com a main publicada. Devolve (repo, origin).
+func repoComOrigin(t *testing.T) (string, string) {
+	t.Helper()
+	origin := t.TempDir()
+	gitEx(t, origin, "init", "-q", "--bare", "-b", "main")
+	repo := t.TempDir()
+	gitEx(t, repo, "init", "-q", "-b", "main")
+	gitEx(t, repo, "config", "user.email", "praxis@test.local")
+	gitEx(t, repo, "config", "user.name", "Praxis Teste")
+	gitEx(t, repo, "config", "commit.gpgsign", "false")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("inicial\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitEx(t, repo, "add", "-A")
+	gitEx(t, repo, "commit", "-q", "-m", "inicial")
+	gitEx(t, repo, "remote", "add", "origin", origin)
+	gitEx(t, repo, "push", "-q", "-u", "origin", "main")
+	return repo, origin
+}
+
+// motorStub é um motor.Motor de teste: escreve um arquivo no worktree para o
+// executor/corretor e aprova no revisor. Não chama nenhum CLI.
+type motorStub struct{ nome string }
+
+func (m motorStub) Nome() string                   { return m.nome }
+func (m motorStub) Capacidades() motor.Capacidades { return motor.Capacidades{} }
+func (m motorStub) Rodar(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+	if strings.Contains(op.RotuloLog, "revisor") {
+		return &motor.ResultadoRun{Resultado: `{"veredito":"APROVADO","problemas":[]}`, LogPath: "rev"}, nil
+	}
+	// conteúdo único por rodada (fase-<codigo>-<etapa>) → cada fase produz uma
+	// mudança real na árvore, logo um commit próprio.
+	if err := os.WriteFile(filepath.Join(op.Dir, "entrega.txt"), []byte(op.RotuloLog+"\n"), 0o644); err != nil {
+		return nil, err
+	}
+	return &motor.ResultadoRun{Resultado: "implementei a fase", CustoUSD: 0.05, LogPath: "exec"}, nil
+}
+
+func TestDuasDemandasParalelasGeramBranchesIndependentes(t *testing.T) {
+	repo, origin := repoComOrigin(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "Paralela", Slug: "paralela", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeRequest, Ativo: true,
+	})
+	if err != nil {
+		t.Fatalf("criar projeto: %v", err)
+	}
+
+	criarDem := func(titulo string) db.Demanda {
+		dem, _, err := d.CriarDemandaComFases(ctx,
+			db.Demanda{ProjectID: proj.ID, Titulo: titulo, Status: db.StatusDemandaPronta, PlanoMD: "# plano"},
+			[]db.Fase{{Codigo: "1", Titulo: "Única fase", Status: db.StatusFasePendente}},
+		)
+		if err != nil {
+			t.Fatalf("criar demanda %q: %v", titulo, err)
+		}
+		return dem
+	}
+	dem1 := criarDem("Demanda Um")
+	dem2 := criarDem("Demanda Dois")
+
+	runner := &pipeline.Runner{
+		Store:      d,
+		Git:        gitops.Novo(),
+		Home:       t.TempDir(),
+		Prompt:     func(string) (string, error) { return "prompt {FASE} {TITULO}", nil },
+		Selecionar: func(string) (motor.Motor, error) { return motorStub{nome: "claude"}, nil },
+	}
+	exec := &ExecutorDemanda{Store: d, Runner: runner}
+
+	s := Novo(Opcoes{
+		Fonte:         NovaFonteBanco(d),
+		Executor:      exec,
+		MaxGlobal:     2,
+		MaxPorProjeto: 0, // sem limite por projeto: as duas rodam em paralelo
+		Store:         d,
+		Intervalo:     2 * time.Millisecond,
+	})
+
+	concluida := func(id int64) bool {
+		dem, err := d.ObterDemanda(ctx, id)
+		return err == nil && dem.Status == db.StatusDemandaConcluida
+	}
+	rodarPor(t, s, func() bool { return concluida(dem1.ID) && concluida(dem2.ID) }, 20*time.Second)
+
+	if !concluida(dem1.ID) || !concluida(dem2.ID) {
+		t.Fatalf("demandas não concluíram: d1=%v d2=%v", concluida(dem1.ID), concluida(dem2.ID))
+	}
+
+	// cada demanda tem branch dedicada com exatamente 1 commit novo, e a main
+	// permaneceu intocada.
+	for _, dem := range []db.Demanda{dem1, dem2} {
+		atual, err := d.ObterDemanda(ctx, dem.ID)
+		if err != nil {
+			t.Fatalf("obter demanda %d: %v", dem.ID, err)
+		}
+		branch := "praxis/d" + strconv.FormatInt(dem.ID, 10) + "-" + slugEsperado(dem.Titulo)
+		if atual.Branch != branch {
+			t.Fatalf("branch da demanda %d = %q, quero %q", dem.ID, atual.Branch, branch)
+		}
+		// 1 commit novo na branch (além do inicial da main).
+		log := gitEx(t, repo, "log", "--oneline", branch)
+		if n := strings.Count(strings.TrimSpace(log), "\n"); n != 1 {
+			t.Fatalf("branch %s: esperava 2 commits (1 novo), log:\n%s", branch, log)
+		}
+		if !strings.Contains(log, "Fase 1: Única fase [praxis]") {
+			t.Fatalf("branch %s sem o commit da fase:\n%s", branch, log)
+		}
+		// push automático publicou a branch no origin.
+		if pushed := gitEx(t, origin, "branch", "--list", branch); !strings.Contains(pushed, branch) {
+			t.Fatalf("branch %s não foi publicada no origin:\n%s", branch, pushed)
+		}
+	}
+
+	// a main não ganhou commits (só o inicial).
+	if n := strings.Count(strings.TrimSpace(gitEx(t, repo, "log", "--oneline", "main")), "\n"); n != 0 {
+		t.Fatalf("a main ganhou commits além do inicial")
+	}
+	// as duas branches são distintas (commits independentes).
+	if dem1.ID == dem2.ID {
+		t.Fatal("ids de demanda coincidiram (teste inválido)")
+	}
+}
+
+// slugEsperado reproduz o slug do título usado pelo Runner (kebab ASCII).
+func slugEsperado(titulo string) string {
+	return strings.TrimPrefix(pipeline.NomeBranch(0, titulo), gitops.PrefixoBranch+"d0-")
+}
+
+// repoLocal cria um repo git (branch main, um commit) SEM remote — usado nos
+// testes de modo merge_local (sem push).
+func repoLocal(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	gitEx(t, repo, "init", "-q", "-b", "main")
+	gitEx(t, repo, "config", "user.email", "praxis@test.local")
+	gitEx(t, repo, "config", "user.name", "Praxis Teste")
+	gitEx(t, repo, "config", "commit.gpgsign", "false")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("inicial\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitEx(t, repo, "add", "-A")
+	gitEx(t, repo, "commit", "-q", "-m", "inicial")
+	return repo
+}
+
+func novoRunnerStub(t *testing.T, d *db.DB) *pipeline.Runner {
+	t.Helper()
+	return &pipeline.Runner{
+		Store:      d,
+		Git:        gitops.Novo(),
+		Home:       t.TempDir(),
+		Prompt:     func(string) (string, error) { return "prompt {FASE} {TITULO}", nil },
+		Selecionar: func(string) (motor.Motor, error) { return motorStub{nome: "claude"}, nil },
+	}
+}
+
+// TestDemandaMultiFaseConduzTodasAsFases: uma demanda com 2 fases (a 2ª depende da
+// 1ª) é conduzida do início ao fim pelo scheduler, na ordem das dependências,
+// gerando 2 commits na branch da demanda.
+func TestDemandaMultiFaseConduzTodasAsFases(t *testing.T) {
+	repo := repoLocal(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "Multi", Slug: "multi", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeLocal, Ativo: true,
+	})
+	if err != nil {
+		t.Fatalf("criar projeto: %v", err)
+	}
+	dem, _, err := d.CriarDemandaComFases(ctx,
+		db.Demanda{ProjectID: proj.ID, Titulo: "Multi Fase", Status: db.StatusDemandaPronta, PlanoMD: "# plano"},
+		[]db.Fase{
+			{Codigo: "1", Titulo: "Primeira", Status: db.StatusFasePendente},
+			{Codigo: "2", Titulo: "Segunda", Status: db.StatusFasePendente, DependeDe: []string{"1"}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("criar demanda: %v", err)
+	}
+
+	exec := &ExecutorDemanda{Store: d, Runner: novoRunnerStub(t, d)}
+	s := Novo(Opcoes{Fonte: NovaFonteBanco(d), Executor: exec, MaxGlobal: 1, Store: d, Intervalo: 2 * time.Millisecond})
+	rodarPor(t, s, func() bool {
+		a, err := d.ObterDemanda(ctx, dem.ID)
+		return err == nil && a.Status == db.StatusDemandaConcluida
+	}, 20*time.Second)
+
+	a, _ := d.ObterDemanda(ctx, dem.ID)
+	if a.Status != db.StatusDemandaConcluida {
+		t.Fatalf("status = %q, quero concluida", a.Status)
+	}
+	fases, _ := d.ListarFases(ctx, dem.ID)
+	for _, f := range fases {
+		if f.Status != db.StatusFaseConcluida {
+			t.Fatalf("fase %s = %q, quero concluida", f.Codigo, f.Status)
+		}
+	}
+	// 2 commits novos na branch (um por fase).
+	log := gitEx(t, repo, "log", "--oneline", a.Branch)
+	if n := strings.Count(strings.TrimSpace(log), "\n"); n != 2 {
+		t.Fatalf("esperava 3 commits (inicial + 2 fases), log:\n%s", log)
+	}
+	// a fase 1 foi commitada antes da fase 2 (ordem das dependências).
+	if strings.Index(log, "Fase 2:") > strings.Index(log, "Fase 1:") {
+		t.Fatalf("ordem dos commits invertida (fase 2 antes da fase 1):\n%s", log)
+	}
+}
+
+// TestDemandaRequerHumanoPausa: uma demanda cuja próxima fase exige humano é
+// pausada (não executada automaticamente) e a fase permanece pendente.
+func TestDemandaRequerHumanoPausa(t *testing.T) {
+	repo := repoLocal(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "Humano", Slug: "humano", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeLocal, Ativo: true,
+	})
+	if err != nil {
+		t.Fatalf("criar projeto: %v", err)
+	}
+	dem, _, err := d.CriarDemandaComFases(ctx,
+		db.Demanda{ProjectID: proj.ID, Titulo: "Precisa Humano", Status: db.StatusDemandaPronta},
+		[]db.Fase{{Codigo: "1", Titulo: "Aprovação manual", Status: db.StatusFasePendente, RequerHumano: true}},
+	)
+	if err != nil {
+		t.Fatalf("criar demanda: %v", err)
+	}
+
+	exec := &ExecutorDemanda{Store: d, Runner: novoRunnerStub(t, d)}
+	s := Novo(Opcoes{Fonte: NovaFonteBanco(d), Executor: exec, MaxGlobal: 1, Store: d, Intervalo: 2 * time.Millisecond})
+	rodarPor(t, s, func() bool {
+		a, err := d.ObterDemanda(ctx, dem.ID)
+		return err == nil && a.Status == db.StatusDemandaPausada
+	}, 10*time.Second)
+
+	a, _ := d.ObterDemanda(ctx, dem.ID)
+	if a.Status != db.StatusDemandaPausada {
+		t.Fatalf("status = %q, quero pausada (aguardando humano)", a.Status)
+	}
+	fases, _ := d.ListarFases(ctx, dem.ID)
+	if fases[0].Status != db.StatusFasePendente {
+		t.Fatalf("fase requer_humano = %q, quero pendente (não executada)", fases[0].Status)
+	}
+	if fases[0].Tentativas != 0 {
+		t.Fatalf("fase requer_humano teve %d tentativas, quero 0", fases[0].Tentativas)
+	}
+}

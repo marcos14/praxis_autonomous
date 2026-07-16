@@ -38,6 +38,7 @@ func Novo(opts Opcoes) *Servidor {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.registrarRotasProjetos(mux)
+	s.registrarRotasDemandas(mux)
 	s.registrarRotasMotores(mux)
 	s.registrarRotasConfig(mux)
 	s.registrarRotasWeb(mux)
