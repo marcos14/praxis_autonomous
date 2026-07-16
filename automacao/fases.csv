@@ -3,7 +3,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 1a;Camada de banco e framework de migrações;concluida;0;nao;nao;;;1;2.89;2026-07-15 22:55;ok — custo US$ 2.89
 1b;Servidor HTTP e serve com health;concluida;0;nao;nao;;;1;3.21;2026-07-15 23:04;ok — custo US$ 3.21
 1c;CRUD de projetos (API + store);concluida;1a+1b;nao;nao;;;1;3.79;2026-07-15 23:13;ok — custo US$ 3.79
-1d;CRUD de motores e contas;executando;1a+1b;nao;nao;;;1;;;"Prioridade = ordem de fallback; contas com config_dir (CLAUDE_CONFIG_DIR)."
+1d;CRUD de motores e contas;concluida;1a+1b;nao;nao;;;1;4.28;2026-07-15 23:23;ok — custo US$ 4.28
 1e;Config em camadas (global → override por projeto);pendente;1a+1c;nao;nao;;;;;;"Merge determinístico global × override com origem de cada chave; endpoint de config efetiva."
 1f;Porte de internal/motor;pendente;1a;nao;nao;;;;;;"LER de C:\Projetos\praxis (motor.go, claude.go, codex.go, opencode.go, claude_alias.go) — proibido modificar origem. OpcoesRun ganha Dir/DirLogs; config vem do banco."
 1g;Porte de internal/gitops;pendente;0;nao;nao;;;;;;LER git.go de C:\Projetos\praxis. Worktree add/remove/prune, push (retry, só branches praxis/*), merge-preview, merge --no-ff, mutex por projeto. Testes usam repo bare local como remote.
