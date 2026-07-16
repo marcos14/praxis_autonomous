@@ -185,10 +185,10 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 1d — CRUD de motores e contas
 **Meta:** motores como entidade própria com prioridade (ordem de fallback) e contas.
-- [ ] store `engines` + `engine_accounts`
-- [ ] `POST/GET /api/v1/engines`, `PUT /api/v1/engines/{id}`, `PUT /api/v1/engines/ordem`
-- [ ] ligar/desligar, `modelo_exec`/`modelo_analise`, `budget_fase_usd`, `timeout_min`, `params`
-- [ ] contas por motor (`alias`, `config_dir`/CLAUDE_CONFIG_DIR, ativo)
+- [x] store `engines` + `engine_accounts`
+- [x] `POST/GET /api/v1/engines`, `PUT /api/v1/engines/{id}`, `PUT /api/v1/engines/ordem`
+- [x] ligar/desligar, `modelo_exec`/`modelo_analise`, `budget_fase_usd`, `timeout_min`, `params`
+- [x] contas por motor (`alias`, `config_dir`/CLAUDE_CONFIG_DIR, ativo)
 **Depende de:** 1a, 1b
 **Testes:** CRUD + reordenação de prioridade persistem e retornam ordenados.
 
@@ -425,6 +425,7 @@ POST/DELETE /tokens                     GET /manual/*
 | 1a   | Camada de banco e framework de migrações | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Tabelas reais: `projects`, `engines`, `engine_accounts`, `config_entries` (schema versão 1). |
 | 1b   | Servidor HTTP e `serve` com health | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. `internal/api` com `Novo(Opcoes)`/`Handler()`; `GET /healthz`; middlewares `comLog`/`comRecover`; `serve` inicializa db + shutdown gracioso. Bind default `127.0.0.1:7799`. |
 | 1c   | CRUD de projetos (API + store) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store em métodos de `*db.DB` (`CriarProjeto`/`ListarProjetos`/`ObterProjeto`/`AtualizarProjeto`); rotas `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`; erros sentinela `db.ErrNaoEncontrado`/`db.ErrSlugDuplicado`; validação de repo git via `git rev-parse --is-inside-work-tree`. Códigos de erro API: `invalido`(400), `nao_encontrado`(404), `slug_duplicado`(409). |
+| 1d   | CRUD de motores e contas | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store em métodos de `*db.DB` (motores: `CriarMotor`/`ListarMotores`/`ObterMotor`/`AtualizarMotor`/`ReordenarMotores`/`ProximaPrioridadeMotor`; contas: `CriarConta`/`AtualizarConta`/`RemoverConta`/`ListarContas`). Rotas: `POST/GET /api/v1/engines`, `GET/PUT /api/v1/engines/{id}`, `PUT /api/v1/engines/ordem`, `POST /api/v1/engines/{id}/accounts`, `PUT/DELETE /api/v1/engines/{id}/accounts/{contaId}`. Motor GET/list já traz `contas[]`. Novos erros sentinela `db.ErrNomeDuplicado`/`db.ErrAliasDuplicado`/`db.ErrOrdemInvalida`; códigos API novos: `nome_duplicado`(409), `alias_duplicado`(409). Prioridade só muda via `/ordem` (não pelo PUT do motor). |
 
 ### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
 
@@ -590,3 +591,41 @@ Meta: Mover a checagem "isto é um repositório git?" de api.validarPastaRepoGit
 - [ ] Handler de projetos (montarProjeto/validarPastaRepoGit) passa a usar gitops.EhRepoGit
 - [ ] Remover o exec.Command local em internal/api/projects.go
 - [ ] Testes da validação de projeto continuam verdes após a troca
+
+### Fase 1d — CRUD de motores e contas (2026-07-15)
+
+**O que foi feito**
+- `internal/db/engines.go`: store de motores e contas como **métodos de `*db.DB`** (mesmo padrão da Fase 1c). Tipos `Motor` (com `Contas []Conta` embutido) e `Conta`, ambos com tags JSON snake_case (forma serializada pela API). `Motor.Params` é `json.RawMessage` (objeto JSON livre). Escritas por `d.Escritor`, leituras por `d.Leitor`.
+- Métodos de motor: `CriarMotor` (INSERT ... RETURNING id), `ListarMotores` (ordenado por `prioridade, id`, carrega **todas** as contas de uma vez e agrupa por `engine_id` — evita N+1), `ObterMotor` (motor + `ListarContas`), `AtualizarMotor` (UPDATE dos campos editáveis **exceto prioridade**, relê via `ObterMotor`), `ReordenarMotores` (redefine `prioridade` conforme a ordem dos ids, numa transação), `ProximaPrioridadeMotor` (`MAX(prioridade)+1`, 0 se vazio).
+- Métodos de conta: `CriarConta` (INSERT ... RETURNING id), `AtualizarConta` (UPDATE `WHERE id AND engine_id` — isola a conta ao seu motor), `RemoverConta` (DELETE `WHERE id AND engine_id`), `ListarContas` (por motor, ordenado por id, slice não-nil).
+- Erros sentinela novos no pacote `db`: `ErrNomeDuplicado` (engines.nome UNIQUE), `ErrAliasDuplicado` (engine_accounts (engine_id,alias) UNIQUE), `ErrOrdemInvalida` (lista de reordenação não é permutação exata dos motores). `traduzirErroConta` mapeia violação de **FK** (`engine_id` inexistente) para `ErrNaoEncontrado`.
+- `internal/api/engines.go`: handlers `handleCriarMotor` (201), `handleListarMotores` (200), `handleObterMotor` (200), `handleAtualizarMotor` (200), `handleReordenarMotores` (200, devolve a lista reordenada), `handleCriarConta` (201), `handleAtualizarConta` (200), `handleRemoverConta` (204). Registrados em `registrarRotasMotores(mux)`, chamado no `Novo`.
+- `montarMotor`/`montarConta` centralizam defaults+validação com a **mesma semântica de merge da Fase 1c**: no update, campos opcionais omitidos preservam o valor atual (`base`); só caem no default na criação. Campos numéricos/booleanos usam ponteiro no request (`*bool`/`*int`/`*float64`) para distinguir "omitido" de zero/false. Validações: `nome`/`alias` obrigatórios; `budget_fase_usd`/`timeout_min` não-negativos; `params` deve ser objeto JSON válido (`validarParams` faz `Unmarshal` em `map[string]any`).
+- **Prioridade:** motor novo entra no fim (`ProximaPrioridadeMotor`) quando o request não informa `prioridade`. O PUT de motor **não** altera prioridade (ignorada) — a ordem de fallback só muda por `PUT /engines/ordem`, coerente com "arraste para reordenar" do protótipo.
+- Rota literal `PUT /api/v1/engines/ordem` convive com `PUT /api/v1/engines/{id}` sem conflito: o `http.ServeMux` do Go 1.22+ dá precedência ao padrão mais específico (literal > wildcard).
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK. 38 testes novos: `internal/db/engines_test.go` (18: criar/id, params vazio→`{}`, nome duplicado, próxima prioridade, listar ordenado/vazio-não-nil, obter inexistente, update não altera prioridade, update inexistente, reordenar OK/lista incompleta/id desconhecido/repetido, contas CRUD, alias duplicado, alias igual em motores diferentes OK, conta em motor inexistente, remover inexistente, cascade ao apagar motor) e `internal/api/engines_test.go` (20: criar OK/prioridade auto/nome obrigatório/nome duplicado/params inválido/budget negativo, listar ordenado, obter 404/id inválido, update preserva campos/ignora prioridade/404, reordenar OK/inválido, contas CRUD via HTTP, conta em motor inexistente/alias obrigatório/alias duplicado/conta de outro motor 404/remover inexistente 404).
+- Smoke do binário real (`serve` + `curl`, `PRAXIS_HOME` temp): `POST /engines` → 201 (`prioridade` auto 0→1, `ativo=true`, `params` round-trip, `contas:[]`); nome repetido → 409 `nome_duplicado`; `PUT /engines/ordem` inverte a ordem e devolve a lista reordenada; `POST /engines/{id}/accounts` → 201 e a conta aparece em `GET /engines/{id}`; `PUT` da conta atualiza; `DELETE` → 204.
+
+**Decisões / desvios**
+- **Contas expostas de forma aninhada** (`/engines/{id}/accounts[...]`) e embutidas no JSON do motor (`contas[]`). A seção de API do plano lista só os endpoints de `engines`, mas o checklist da fase exige "contas por motor"; os endpoints aninhados são a forma RESTful e ficam dentro do escopo. O contrato do motor passa a incluir sempre `contas` (array, nunca `null`).
+- **Prioridade fora do PUT do motor** (só via `/ordem`): evita divergência/duplicação de prioridade entre os dois caminhos e casa com o gesto de arrastar do protótipo. Documentado e coberto por teste (`TestAtualizarMotorPrioridadeIgnorada`).
+- `Motor.Params` como `json.RawMessage` (não `map`): preserva o JSON como veio e evita reserializações; a coluna guarda sempre um objeto válido (`normalizarParams` cai em `{}` para vazio/`null`).
+- `ReordenarMotores` exige **permutação exata** de todos os motores (todos os ids, sem repetir) — comportamento previsível; lista parcial/ id desconhecido/ repetido → `ErrOrdemInvalida` (400). A UI (Fase 1h) deve enviar a lista completa na ordem nova.
+- Reaproveitados os helpers da Fase 1c: `decodificarCorpo`, `responderJSON`/`responderErro`, `booleanParaInt`. Novo helper genérico `lerID(w,r,nome)` (valida qualquer path param inteiro>0) — o antigo `lerIDProjeto` de projetos permanece; considerar unificar depois (ver Pendências).
+- Não foi feito `git commit`/`push` (responsabilidade do orquestrador).
+
+**Achados úteis para as próximas fases**
+- **Rotas registradas:** `POST/GET /api/v1/engines`, `GET/PUT /api/v1/engines/{id}`, `PUT /api/v1/engines/ordem`, `POST /api/v1/engines/{id}/accounts`, `PUT/DELETE /api/v1/engines/{id}/accounts/{contaId}`. Path params via `r.PathValue(...)`; use `lerID(w,r,"id")`/`lerID(w,r,"contaId")`.
+- **Contrato JSON do motor** (Fase 1h/1f dependem): `{id, nome, prioridade, ativo, modelo_exec, modelo_analise, budget_fase_usd, timeout_min, params{}, contas[]}`. `contas` sempre array. **Contrato da conta:** `{id, engine_id, alias, config_dir, ativo}`. `config_dir` é o `CLAUDE_CONFIG_DIR` que a Fase 1f vai injetar no processo filho do motor.
+- **Códigos de erro API** (envelope `{"erro":{"codigo","mensagem"}}`): reusa `invalido`(400), `nao_encontrado`(404), `erro_interno`(500); **novos**: `nome_duplicado`(409), `alias_duplicado`(409). Reordenação inválida usa `invalido`(400).
+- **Ordem de fallback = coluna `prioridade`** (menor = tentado antes); `ListarMotores` já devolve ordenado. A Fase 2b (fallback entre motores) deve iterar os motores **ativos** nessa ordem. Filtro por `ativo` ainda **não** existe no store — `ListarMotores` devolve todos; o consumidor filtra por `Ativo` (ou adiciona um `ListarMotoresAtivos` quando precisar).
+- **Contas por motor** já disponíveis via `ObterMotor(...).Contas` / `ListarContas(ctx, engineID)`. Para a afinidade conta↔demanda e distribuição (Fase 2d), essas são as contas `Ativo=true` de cada motor. O espelho de franquia `esgotado_até` **continua fora** de `engine_accounts` (fase descoberta 1a.n1, ainda em "avaliar viabilidade").
+- **`ProximaPrioridadeMotor`** já existe para quem precisar inserir um motor no fim da fila.
+- `AtualizarMotor` **não** persiste `contas` (o campo é ignorado no UPDATE); contas são geridas só pelos endpoints/métodos de conta.
+
+**Pendências descobertas**
+- **Deleção de motor** — o plano pede só `POST/GET/PUT` para engines (sem `DELETE /engines/{id}`); existe `ativo` para desligar via PUT. `engine_accounts` tem `ON DELETE CASCADE`, então uma remoção física é segura no schema. Meta: decidir se motor precisa de hard-delete ou se "desativar" basta. Mini-checklist: [ ] decidir soft vs hard delete de motor; [ ] se hard, expor `RemoverMotor` + rota `DELETE`; [ ] reavaliar impacto na prioridade (recompactar a ordem após remoção).
+- **Unificar `lerID`/`lerIDProjeto`** — hoje há dois helpers quase idênticos no pacote `api` (`lerIDProjeto` da 1c e `lerID` genérico da 1d). Meta: uma única função para path params inteiros. Mini-checklist: [ ] trocar usos de `lerIDProjeto` por `lerID(w,r,"id")`; [ ] remover `lerIDProjeto`.
+- **Filtro `ativo` no store de motores** — `ListarMotores` devolve todos; as fases de scheduler/fallback (2b/2d) vão querer só os ativos na ordem de prioridade. Meta: evitar filtragem repetida no consumidor. Mini-checklist: [ ] avaliar `ListarMotores(ctx, apenasAtivos bool)` ou `ListarMotoresAtivos`; [ ] usar no fallback.
