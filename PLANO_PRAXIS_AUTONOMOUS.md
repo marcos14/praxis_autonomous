@@ -194,9 +194,9 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 1e — Config em camadas (global → override por projeto)
 **Meta:** resolução de config efetiva por projeto herdando do global.
-- [ ] store `config_entries` (escopo global/project)
-- [ ] `GET/PUT /api/v1/projects/{id}/config` + endpoint de "config efetiva"
-- [ ] merge determinístico global × override, com origem de cada chave
+- [x] store `config_entries` (escopo global/project)
+- [x] `GET/PUT /api/v1/projects/{id}/config` + endpoint de "config efetiva"
+- [x] merge determinístico global × override, com origem de cada chave
 **Depende de:** 1a, 1c
 **Testes:** override por projeto sobrepõe global; chave ausente cai no global; efetiva reporta a origem.
 
@@ -426,6 +426,7 @@ POST/DELETE /tokens                     GET /manual/*
 | 1b   | Servidor HTTP e `serve` com health | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. `internal/api` com `Novo(Opcoes)`/`Handler()`; `GET /healthz`; middlewares `comLog`/`comRecover`; `serve` inicializa db + shutdown gracioso. Bind default `127.0.0.1:7799`. |
 | 1c   | CRUD de projetos (API + store) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store em métodos de `*db.DB` (`CriarProjeto`/`ListarProjetos`/`ObterProjeto`/`AtualizarProjeto`); rotas `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`; erros sentinela `db.ErrNaoEncontrado`/`db.ErrSlugDuplicado`; validação de repo git via `git rev-parse --is-inside-work-tree`. Códigos de erro API: `invalido`(400), `nao_encontrado`(404), `slug_duplicado`(409). |
 | 1d   | CRUD de motores e contas | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store em métodos de `*db.DB` (motores: `CriarMotor`/`ListarMotores`/`ObterMotor`/`AtualizarMotor`/`ReordenarMotores`/`ProximaPrioridadeMotor`; contas: `CriarConta`/`AtualizarConta`/`RemoverConta`/`ListarContas`). Rotas: `POST/GET /api/v1/engines`, `GET/PUT /api/v1/engines/{id}`, `PUT /api/v1/engines/ordem`, `POST /api/v1/engines/{id}/accounts`, `PUT/DELETE /api/v1/engines/{id}/accounts/{contaId}`. Motor GET/list já traz `contas[]`. Novos erros sentinela `db.ErrNomeDuplicado`/`db.ErrAliasDuplicado`/`db.ErrOrdemInvalida`; códigos API novos: `nome_duplicado`(409), `alias_duplicado`(409). Prioridade só muda via `/ordem` (não pelo PUT do motor). |
+| 1e   | Config em camadas (global → override por projeto) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store `config_entries` em métodos de `*db.DB` (`ObterConfigGlobal`/`ObterConfigProjeto`/`ConfigEfetiva`/`DefinirConfigGlobal`/`DefinirConfigProjeto`). Config é key→valor JSON **livre** (sem whitelist de chaves). Rotas: `GET/PUT /api/v1/config` (global), `GET/PUT /api/v1/projects/{id}/config` (override), `GET /api/v1/projects/{id}/config/efetiva` (merge). PUT = **full replace** do escopo. Efetiva devolve `{chave:{valor,origem}}` com `origem ∈ {"global","project"}` (constantes `db.OrigemGlobal`/`db.OrigemProjeto`). Endpoint de config global (`/api/v1/config`) foi incluído aqui por ser o par indispensável do override — ver decisões. |
 
 ### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
 
@@ -629,3 +630,52 @@ Meta: Mover a checagem "isto é um repositório git?" de api.validarPastaRepoGit
 - **Deleção de motor** — o plano pede só `POST/GET/PUT` para engines (sem `DELETE /engines/{id}`); existe `ativo` para desligar via PUT. `engine_accounts` tem `ON DELETE CASCADE`, então uma remoção física é segura no schema. Meta: decidir se motor precisa de hard-delete ou se "desativar" basta. Mini-checklist: [ ] decidir soft vs hard delete de motor; [ ] se hard, expor `RemoverMotor` + rota `DELETE`; [ ] reavaliar impacto na prioridade (recompactar a ordem após remoção).
 - **Unificar `lerID`/`lerIDProjeto`** — hoje há dois helpers quase idênticos no pacote `api` (`lerIDProjeto` da 1c e `lerID` genérico da 1d). Meta: uma única função para path params inteiros. Mini-checklist: [ ] trocar usos de `lerIDProjeto` por `lerID(w,r,"id")`; [ ] remover `lerIDProjeto`.
 - **Filtro `ativo` no store de motores** — `ListarMotores` devolve todos; as fases de scheduler/fallback (2b/2d) vão querer só os ativos na ordem de prioridade. Meta: evitar filtragem repetida no consumidor. Mini-checklist: [ ] avaliar `ListarMotores(ctx, apenasAtivos bool)` ou `ListarMotoresAtivos`; [ ] usar no fallback.
+
+### Fase 1e — Config em camadas (global → override por projeto) (2026-07-15)
+
+**O que foi feito**
+- `internal/db/config.go`: store de `config_entries` como **métodos de `*db.DB`** (mesmo padrão de 1c/1d). Config é um **key→valor JSON livre** (sem whitelist de chaves — a coluna `config_entries.chave` é texto arbitrário e `valor` é JSON). Métodos: `ObterConfigGlobal(ctx)` e `ObterConfigProjeto(ctx, projectID)` (devolvem `map[string]json.RawMessage`, **nunca nil**); `ConfigEfetiva(ctx, projectID)` (devolve `map[string]ValorEfetivo`); `DefinirConfigGlobal(ctx, m)` e `DefinirConfigProjeto(ctx, projectID, m)` (**full replace** atômico do escopo). Escritas por `d.Escritor`, leituras por `d.Leitor`.
+- Tipo `ValorEfetivo{Valor json.RawMessage, Origem string}` e constantes `OrigemGlobal = "global"` / `OrigemProjeto = "project"`. `ConfigEfetiva` parte do global e sobrepõe as chaves com override do projeto, marcando a origem de cada chave — determinístico.
+- `substituirConfig` faz o full replace numa transação: `DELETE` do escopo (global, ou `project_id` do projeto) + `INSERT` das chaves do mapa (em ordem alfabética, `chavesOrdenadas`). `compactarJSON` valida e **compacta** o JSON antes de gravar (remove espaços; valor vazio/`nil` → `"null"`, coerente com o default `NOT NULL` da coluna).
+- `internal/api/config.go`: handlers registrados em `registrarRotasConfig(mux)` (chamado no `Novo`). Rotas: `GET/PUT /api/v1/config` (global), `GET/PUT /api/v1/projects/{id}/config` (override do projeto), `GET /api/v1/projects/{id}/config/efetiva` (merge com origem). A rota literal `.../config/efetiva` é mais específica que `.../config` e tem precedência no `ServeMux` (sem conflito). `PUT` devolve o estado persistido (200); `GET` de override devolve só as chaves do projeto (não o herdado — para o merge, use `/efetiva`).
+- `lerConfigBody` decodifica o corpo como `map[string]json.RawMessage` (reusa `decodificarCorpo`: recusa campo desconhecido inaplicável a mapa, limita 1MiB, corpo vazio → 400), rejeita **chave vazia** (400 `invalido`) e normaliza valor vazio → `null`. Handlers de projeto validam existência do projeto via `ObterProjeto` (404 antes de tocar config).
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK. Novos testes: `internal/db/config_test.go` (11: global vazia não-nil, round-trip, full replace remove chaves ausentes, compactação de JSON, isolamento global×projeto, **override vence + origem project**, **chave ausente cai no global**, efetiva sem override espelha global, limpar override volta ao global, cascade ao apagar projeto, valor vazio→null) e `internal/api/config_test.go` (10, via `httptest`: global vazia→`{}`, PUT/GET global, corpo array→400, chave vazia→400, full replace, projeto inexistente→404 GET/PUT, id inválido→400, PUT/GET override, **efetiva com merge+origem**, efetiva projeto inexistente→404).
+- Smoke do binário real (`serve` + `curl`, `PRAXIS_HOME` temp, projeto num repo git de teste): `PUT /config` grava global (`budget_usd:10, gates:["go build"]`); `PUT /projects/1/config` grava override (`budget_usd:99`); `GET /projects/1/config` → `{"budget_usd":99}` (só o override); `GET /projects/1/config/efetiva` → `{"budget_usd":{"valor":99,"origem":"project"},"gates":{"valor":["go build"],"origem":"global"}}` (override vence, chave sem override cai no global). Chave vazia → 400; projeto inexistente → 404.
+
+**Decisões / desvios**
+- **Endpoint de config global (`GET/PUT /api/v1/config`) incluído nesta fase**, embora a seção de API do plano liste explicitamente só `/projects/{id}/config`. Justificativa: 1e **é** a fase de config em camadas e o checklist pede "store `config_entries` (escopo **global**/project)" e "merge global × override"; sem um caminho para definir o global, o merge seria inatingível e a feature ficaria incompleta. Não há micro-fase dedicada a config global — a tela "Configurações — globais" (1h/M4) vai **consumir** este endpoint. Mantido mínimo (mesmo par GET/PUT do override).
+- **Config como key→valor JSON livre** (sem enumerar as chaves `execucoes_simultaneas`, `max_correcoes`, `budget`, `gates`, `add_dirs`, etc.): casa com o schema genérico `config_entries(chave, valor JSON)` e evita acoplar o store às chaves de negócio (que serão consumidas pelo scheduler/pipeline nas fases 2x). A validação de **quais** chaves existem e seus tipos fica a cargo do consumidor.
+- **PUT = full replace** do escopo (não patch): previsível para o formulário da UI e permite **remover** um override enviando um mapa sem a chave (o projeto volta a herdar o global). `PUT` com `{}` limpa o escopo.
+- **Valor de config guardado compactado** (`json.Compact`): round-trip estável e comparação determinística nos testes; a serialização de `map` do Go já ordena as chaves, então a saída da API é determinística sem esforço extra.
+- `responderErroConfig` delega a `responderErroProjeto` (reusa o mapeamento `ErrNaoEncontrado`→404). Não foi feito `git commit`/`push` (responsabilidade do orquestrador).
+
+**Achados úteis para as próximas fases**
+- **API do store de config** (fases 1h/2b/2d): `d.ConfigEfetiva(ctx, projectID)` é a fonte da config resolvida do projeto — use-a no scheduler/pipeline. `d.ObterConfigGlobal`/`d.ObterConfigProjeto` para as camadas cruas. Todos devolvem mapa **não-nil**.
+- **Contrato JSON** (o frontend da 1h depende):
+  - `GET/PUT /api/v1/config` e `GET/PUT /api/v1/projects/{id}/config` → objeto `{chave: <valorJSON>}` (só as chaves daquele escopo).
+  - `GET /api/v1/projects/{id}/config/efetiva` → `{chave: {"valor": <valorJSON>, "origem": "global"|"project"}}`.
+  - `PUT` aceita o mesmo objeto `{chave: <valorJSON>}` e é **full replace** do escopo.
+- **Códigos de erro** (envelope `{"erro":{"codigo","mensagem"}}`): reusa `invalido`(400, corpo inválido / chave vazia), `nao_encontrado`(404, projeto inexistente), `erro_interno`(500). Nenhum código novo.
+- **Chaves de config que as fases 2x/1h vão gravar/ler** (nomes livres, ainda **não** validados/enumerados em código): pelo protótipo/plano — `execucoes_simultaneas`, `max_correcoes`, `max_ciclos_revisao`, `max_fases_novas`, `budget_usd`, `gates` (array), `add_dirs` (array), `motor`/`engine`. Quando o scheduler precisar de tipos garantidos, considerar um helper de leitura tipada sobre `ConfigEfetiva` (ver Pendências).
+- **`config_entries` tem `ON DELETE CASCADE`** para `project_id` (verificado por teste): apagar um projeto remove seus overrides automaticamente.
+- **Unicidade garantida pelo banco** (índices parciais de 1a): 1 linha por chave global, 1 por `(project_id, chave)`. O full replace nunca viola isso.
+
+**Pendências descobertas**
+- **Leitura tipada da config efetiva** — hoje `ConfigEfetiva` devolve `json.RawMessage` por chave; o scheduler/pipeline (2b/2d) vão querer `int`/`float`/`bool`/`[]string` já convertidos, com default quando a chave não existe em nenhuma camada. Meta: um helper de acesso tipado sobre a config efetiva, com os defaults de negócio num único lugar. Mini-checklist: [ ] definir o conjunto de chaves conhecidas + defaults (a partir do protótipo); [ ] `ResolvedConfig`/getters tipados (`Int(chave, default)`, `Strings(chave)`, etc.); [ ] usar no scheduler/pipeline em vez de desserializar `RawMessage` na mão.
+- **Validação de tipo/valor por chave** — como a config é key→valor livre, um `budget_usd:"abc"` ou `gates:{}` é aceito hoje; só quebraria no consumidor. Meta: validar tipo/faixa das chaves conhecidas no `PUT` (mantendo chaves desconhecidas livres). Mini-checklist: [ ] esquema opcional por chave conhecida; [ ] `PUT` valida as conhecidas e rejeita com `invalido`; [ ] chaves fora do esquema continuam livres.
+
+### 1e.n1 — Validação de tipo/valor das chaves conhecidas de config
+
+Status: avaliar viabilidade
+Depende de: 1e
+
+> Baixo valor tecnico: aguarda avaliacao humana de viabilidade. Nao sera executada automaticamente enquanto o status for `avaliar viabilidade`.
+
+Meta: No PUT de config (global e projeto), validar tipo/faixa das chaves de negócio conhecidas (ex.: budget_usd numérico, gates/add_dirs arrays, execucoes_simultaneas inteiro), rejeitando valores inválidos com erro 'invalido' (400), mantendo chaves desconhecidas livres.
+
+- [ ] Definir esquema opcional por chave conhecida (tipo esperado e faixa quando aplicável)
+- [ ] PUT /api/v1/config e /api/v1/projects/{id}/config validam as chaves conhecidas e rejeitam com codigo 'invalido' (400)
+- [ ] Chaves fora do esquema continuam aceitas sem validação (free-form preservado)
+- [ ] Testes cobrindo aceite de chave livre, rejeição de tipo inválido em chave conhecida e aceite de valor válido

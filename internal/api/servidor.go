@@ -39,6 +39,7 @@ func Novo(opts Opcoes) *Servidor {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.registrarRotasProjetos(mux)
 	s.registrarRotasMotores(mux)
+	s.registrarRotasConfig(mux)
 
 	s.handler = encadear(mux, comRecover(logger), comLog(logger))
 	return s
