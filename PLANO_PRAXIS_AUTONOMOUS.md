@@ -140,6 +140,261 @@ POST/DELETE /tokens                     GET /manual/*
 
 **M5 — Operação:** API de intake para o sistema de chamados (tokens/papéis); manual embutido; badge de sobreposição entre demandas (interseção de `arquivos_provaveis` + `git diff --name-only` entre branches); serviço Windows; retenção/backup do banco; importador opcional de projetos do Praxis atual (lê `autopilot.json`/`fases.csv` uma única vez).
 
+## Fases detalhadas (micro-fases executáveis)
+
+> Cada fase é uma fatia vertical: pequena, compilável, com testes próprios e verde nos gates
+> (`go build ./...`, `go vet ./...`, `go test ./... -count=1`) antes de contar como concluída.
+> "Depende de:" lista apenas dependências reais. Fase concluída → registrar em **Registro de Andamento**.
+
+### Fase 0 — Fundação do repositório e build mínimo
+**Meta:** repositório git inicializado, módulo Go criado e um `main` que compila e roda.
+- [ ] `git init` + `.gitignore` (ignorar `*.exe`, `worktrees/`, `*.db`, `logs/`) e commit inicial dos documentos fundadores (HTMLs + plano)
+- [ ] `go mod init github.com/marcos14/praxis-autonomous` (Go 1.26)
+- [ ] `go get modernc.org/sqlite` (driver único de runtime, puro Go)
+- [ ] criar layout de pastas: `cmd/praxis/`, `internal/{db,api,scheduler,pipeline,motor,gitops,intake,notify}/`, `web/`
+- [ ] `cmd/praxis/main.go` mínimo: subcomando `serve` (stub) + flag `-version`, compilando
+**Depende de:** —
+**Testes:** `go build ./...` compila; teste trivial de versão/subcomando passa.
+**Observação:** cria o repositório git exigido pelo modelo "um commit por fase".
+
+### Fase 1a — Camada de banco e framework de migrações
+**Meta:** abrir SQLite com as garantias de concorrência e aplicar o schema núcleo por migração.
+- [ ] `internal/db`: abrir `modernc.org/sqlite` com WAL, `busy_timeout=5000`, escritor único (`SetMaxOpenConns(1)`) + pool de leitura
+- [ ] migrações versionadas por `PRAGMA user_version` (idempotentes, transacionais)
+- [ ] schema núcleo: `projects`, `engines`, `engine_accounts`, `config_entries`
+- [ ] resolução de `PRAXIS_HOME` (default `%LOCALAPPDATA%\praxis`) para localizar `praxis.db`
+**Depende de:** 0
+**Testes:** migração aplica em db temporário; `user_version` avança; reaplicar é no-op; WAL/busy_timeout verificados.
+
+### Fase 1b — Servidor HTTP e `serve` com health
+**Meta:** `praxis.exe serve` sobe o HTTP com roteador e health check.
+- [ ] `internal/api`: servidor HTTP, roteador, middleware base (log, recover)
+- [ ] endpoint `GET /healthz`
+- [ ] `cmd/praxis serve` inicializa db (1a) e sobe o servidor com shutdown gracioso
+- [ ] infraestrutura de resposta JSON e erros padronizados
+**Depende de:** 0
+**Testes:** `httptest` em `/healthz` retorna 200; shutdown encerra sem vazar goroutine.
+
+### Fase 1c — CRUD de projetos (API + store)
+**Meta:** cadastrar/editar projetos pela API, persistidos no banco.
+- [ ] store `projects` no `internal/db`
+- [ ] `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`
+- [ ] validação: pasta existe e é repo git, `modo_integracao` ∈ {merge_request, merge_local}, slug único
+**Depende de:** 1a, 1b
+**Testes:** criar/listar/atualizar via `httptest`; validações rejeitam entradas inválidas.
+
+### Fase 1d — CRUD de motores e contas
+**Meta:** motores como entidade própria com prioridade (ordem de fallback) e contas.
+- [ ] store `engines` + `engine_accounts`
+- [ ] `POST/GET /api/v1/engines`, `PUT /api/v1/engines/{id}`, `PUT /api/v1/engines/ordem`
+- [ ] ligar/desligar, `modelo_exec`/`modelo_analise`, `budget_fase_usd`, `timeout_min`, `params`
+- [ ] contas por motor (`alias`, `config_dir`/CLAUDE_CONFIG_DIR, ativo)
+**Depende de:** 1a, 1b
+**Testes:** CRUD + reordenação de prioridade persistem e retornam ordenados.
+
+### Fase 1e — Config em camadas (global → override por projeto)
+**Meta:** resolução de config efetiva por projeto herdando do global.
+- [ ] store `config_entries` (escopo global/project)
+- [ ] `GET/PUT /api/v1/projects/{id}/config` + endpoint de "config efetiva"
+- [ ] merge determinístico global × override, com origem de cada chave
+**Depende de:** 1a, 1c
+**Testes:** override por projeto sobrepõe global; chave ausente cai no global; efetiva reporta a origem.
+
+### Fase 1f — Porte de `internal/motor`
+**Meta:** portar os motores do Praxis atual, lendo config do banco.
+- [ ] copiar/adaptar de `C:\Projetos\praxis`: `motor.go`, `claude.go`, `codex.go`, `opencode.go`, `claude_alias.go`
+- [ ] `OpcoesRun` ganha `Dir` (worktree) e `DirLogs`; config vem do banco (motores/contas), não de arquivo
+- [ ] portar testes unitários de cada motor (stub do processo filho)
+**Depende de:** 1a
+**Testes:** testes portados de `motor`/`claude`/`codex`/`opencode` verdes.
+**Observação:** LER de `C:\Projetos\praxis` (SOMENTE LEITURA — proibido modificar a origem).
+
+### Fase 1g — Porte de `internal/gitops`
+**Meta:** operações git com suporte a worktree e branch da demanda.
+- [ ] copiar/adaptar `git.go`; adicionar worktree add/remove/prune
+- [ ] push da branch da demanda pós-commit (com retry), guarda "somente branches `praxis/*`"
+- [ ] merge-preview (`git merge-tree --write-tree`), merge `--no-ff`, mutex por projeto
+- [ ] `core.longpaths` e prune no boot (Windows)
+**Depende de:** 0
+**Testes:** repo bare local como remote; add/remove worktree, push, merge-preview e merge `--no-ff` cobertos.
+**Observação:** LER de `C:\Projetos\praxis` (proibido modificar a origem).
+
+### Fase 1h — Shell da UI web (projetos, motores, config)
+**Meta:** frontend embutido navegável seguindo o protótipo.
+- [ ] `//go:embed web/*`; HTML + CSS + ES modules vanilla, sem npm
+- [ ] navegação e telas: Projetos, Motores, Configurações (consumindo 1c/1d/1e)
+- [ ] botões "ver config efetiva" e formulários com herança explícita do global
+**Depende de:** 1c, 1d, 1e
+**Testes:** handlers dos assets embutidos servem 200; smoke de rotas da API usadas pelas telas.
+
+### Fase 2a — Schema de demandas, fases, execuções e eventos
+**Meta:** migração das tabelas do ciclo de execução + stores.
+- [ ] migração: `demands`, `phases`, `runs`, `events`, `metrics_dia`
+- [ ] stores com transações curtas (nunca abertas durante run de harness)
+**Depende de:** 1a
+**Testes:** migração aplica; CRUD básico de demand/phase/run/event.
+
+### Fase 2b — Porte de pipeline/fallback para `ContextoExec`
+**Meta:** portar o pipeline de fase para o novo modelo com contexto explícito.
+- [ ] copiar/adaptar `executar.go` (`pipelineFase`) e `fallback.go` para `internal/pipeline`
+- [ ] `ContextoExec` (demanda, worktree, config resolvida, fila no banco)
+- [ ] `esperarResetFranquia` não bloqueia: devolve horário para o scheduler reagendar
+**Depende de:** 1f, 1g, 2a
+**Testes:** portados de `fallback`; pipeline de uma fase com motor stub executa até o commit.
+**Observação:** LER de `C:\Projetos\praxis`.
+
+### Fase 2c — Gates com semáforo global
+**Meta:** portar gates com limite de concorrência.
+- [ ] copiar/adaptar `gates.go` para `internal/pipeline/gates.go`
+- [ ] semáforo global `max_gates_simultaneos` (default 1)
+- [ ] execução dos gates configurados (`go build/vet/test`) por fase
+**Depende de:** 2b
+**Testes:** portados de gates; semáforo serializa conforme limite; gate vermelho reprova a fase.
+
+### Fase 2d — Scheduler e worker pool com limites
+**Meta:** agendar execuções respeitando limites global/por projeto/gates.
+- [ ] `internal/scheduler`: fila no banco + worker pool (goroutines)
+- [ ] limites: execuções simultâneas global e por projeto; afinidade conta↔demanda
+- [ ] reagendamento por franquia (usa horário devolvido em 2b)
+**Depende de:** 2a, 2b
+**Testes:** limites respeitados sob carga simulada; reagendamento por franquia não bloqueia workers.
+
+### Fase 2e — Worktree e branch por demanda com ciclo de fase
+**Meta:** cada demanda executa em worktree/branch dedicada com o ciclo completo de fase.
+- [ ] branch `praxis/d<id>-<slug>` a partir da main atualizada (`git fetch` se houver remote)
+- [ ] `worktree add` em `PRAXIS_HOME/worktrees/<projeto>/<demanda>/`
+- [ ] ciclo executor→gates→corretor→revisor→commit por fase (commit só do orquestrador)
+**Depende de:** 1g, 2b
+**Testes:** demanda de 1 fase cria branch/worktree, roda o ciclo e gera 1 commit na branch.
+
+### Fase 2f — Push automático da branch (tolerante a falha)
+**Meta:** publicar e empurrar a branch da demanda a cada commit, sem bloquear.
+- [ ] `git push -u origin` no 1º commit; push da branch após cada commit de fase
+- [ ] falha de push não bloqueia: evento + alerta "commits não publicados (N)" + retry no próximo commit
+- [ ] ação manual `publicar_branch`
+**Depende de:** 2e
+**Testes:** remote bare local; push ok publica; remote indisponível → fase conclui + alerta + retry no próximo commit.
+**Observação:** usa credenciais git da máquina (nunca armazenadas); push só de branches `praxis/*`.
+
+### Fase 2g — Demanda manual executa em background
+**Meta:** demanda criada com fases manuais (sem intake) anda sozinha do início ao fim.
+- [ ] `POST /api/v1/projects/{id}/demands` cria demanda com fases informadas
+- [ ] scheduler puxa a demanda e conduz todas as fases automaticamente
+- [ ] fila de fases respeitando `depende_de` e `requer_humano`
+**Depende de:** 2c, 2d, 2e
+**Testes:** 2 demandas paralelas no mesmo projeto → 2 branches com commits independentes e push automático.
+
+### Fase 2h — Card da demanda com fases e log ao vivo (SSE)
+**Meta:** modal do card mostra fases e log da execução em tempo real.
+- [ ] aba Plano & Fases (leitura) + aba Log ao vivo via SSE do `.jsonl` (`runs.log_ref`)
+- [ ] aba Eventos consumindo `events`
+- [ ] `GET /api/v1/demands/{id}/logs` (SSE)
+**Depende de:** 1h, 2g
+**Testes:** SSE entrega linhas de log de uma execução; fases refletem status do banco.
+
+### Fase 2i — Pausar/retomar/cancelar e retomada pós-restart
+**Meta:** controle de execução e recuperação após queda do serviço.
+- [ ] `POST /api/v1/demands/{id}/actions {pausar|retomar|cancelar}`
+- [ ] no boot: `git worktree prune`, matar árvore de processos órfãos, `executando → pausada → refila`
+**Depende de:** 2d, 2g
+**Testes:** pausar interrompe entre fases; retomar continua; derrubar no meio e reiniciar retoma a demanda.
+
+### Fase 3a — Chat da demanda persistido e nova demanda
+**Meta:** a demanda nasce como conversa; PRD colado no chat.
+- [ ] migração: `chat_messages`, `questions`
+- [ ] `POST /api/v1/demands/{id}/chat`; tela "Nova demanda" (projeto + chat do PRD) e aba Chat/PRD
+**Depende de:** 1a, 1h
+**Testes:** mensagens persistem com papel; card nasce a partir do chat.
+
+### Fase 3b — Analista (perguntas readonly)
+**Meta:** harness readonly lê o código e gera perguntas estruturadas.
+- [ ] prompt `analista` (readonly) → JSON: resumo, arquivos_provaveis, perguntas (tipo/opções/sugestão/impacto)
+- [ ] prompts no banco com default embutido; persistir em `questions`
+- [ ] aba Perguntas (chips de sugestão + texto livre) e `POST /api/v1/demands/{id}/answers`
+**Depende de:** 3a, 1f
+**Testes:** com motor stub, saída JSON válida vira perguntas; respostas persistem e mudam o status.
+
+### Fase 3c — Planejador (plano + fases) e aprovação
+**Meta:** combinar PRD + respostas em plano_md e fases; aprovar/rejeitar.
+- [ ] prompt `planejador` (derivado do `inicializar.go`/`defaults/*.md` do repo de referência) → `plano_md` + fases
+- [ ] aba Plano & Fases: editar/reordenar/remover/exigir humano; `POST .../approve-plan`
+- [ ] rejeitar-com-comentário → `replanejar`
+**Depende de:** 3b, 2a
+**Testes:** ponta a ponta: PRD → perguntas → respostas → plano → editar fases → aprovar → execução completa.
+**Observação:** LER prompts base de `C:\Projetos\praxis` (`inicializar.go`, `defaults/`).
+
+### Fase 4a — Kanban com SSE
+**Meta:** quadro de demandas por status, tempo real, ações por botão.
+- [ ] colunas = status; filtros por projeto/motor; card com projeto/fase/motor/custo/progresso/alerta
+- [ ] `GET /api/v1/events` (SSE global); transições só por botão; arrastar só reordena prioridade
+**Depende de:** 1h, 2a
+**Testes:** mudança de status reflete no board via SSE; reordenar altera prioridade.
+
+### Fase 4b — Home com métricas e "Precisa de você"
+**Meta:** visão executiva com tiles, gráfico e pendências.
+- [ ] tiles (gasto no mês, ativas, fases 7d, integradas no mês, franquia) via `metrics_dia`/view
+- [ ] gráfico de gastos por dia + tabela por projeto
+- [ ] lista "Precisa de você" (perguntas/aprovação/conflito) + atividade recente (SSE)
+**Depende de:** 1h, 2a
+**Testes:** métricas agregadas conferem com dados de teste; "Precisa de você" lista pendências reais.
+
+### Fase 4c — Fechamento modo `merge_request`
+**Meta:** demanda concluída vira "Pronta para MR" com link e preview.
+- [ ] branch publicada; card mostra branch, commits, preview de conflito com a main e link "abrir MR" (`url_plataforma`)
+- [ ] `GET /api/v1/demands/{id}/merge-preview`
+**Depende de:** 2f, 2g
+**Testes:** demanda concluída em modo MR mostra link correto e preview de conflito.
+
+### Fase 4d — Fechamento `merge_local`, conflito e atualizar branch
+**Meta:** merge local e tratamento de conflito com resolução.
+- [ ] ação `integrar` → `merge --no-ff` local na main (com preview); ação `atualizar_branch` (traz main para a branch)
+- [ ] conflito → status `conflito` + lista de arquivos; resolver via agente ou manual
+**Depende de:** 1g, 2g
+**Testes:** merge_local com conflito proposital → status `conflito` + arquivos; atualizar branch resolve.
+
+### Fase 4e — Limpeza pós-integração e notificações
+**Meta:** encerrar o ciclo e avisar.
+- [ ] limpeza de worktree/branch pós-integração (no MR, após merge detectado na main)
+- [ ] porte de `internal/notify` (de `notificacoes.go`/`notificar.go`): eventos do banco → Telegram/Discord/Slack/Google Chat
+**Depende de:** 4c, 4d
+**Testes:** worktree/branch removidos após integração; webhooks disparam nos eventos (mock HTTP).
+
+### Fase 5a — API de intake para sistema de chamados (tokens/papéis)
+**Meta:** criação e condução automática de demandas via token.
+- [ ] porte de `auth.go` → `internal/api/auth.go`; `api_tokens` com papel (leitor/operador/admin)
+- [ ] `POST/DELETE /api/v1/tokens`; Bearer com papéis nos endpoints
+- [ ] `POST /projects/{id}/demands` (intake automatizado) conduz até "Aguardando respostas"
+**Depende de:** 3b
+**Testes:** token do sistema cria demanda e conduz sem toque humano até "Aguardando respostas"; papéis barram acesso.
+
+### Fase 5b — Manual embutido
+**Meta:** documentação do fluxo dentro da web.
+- [ ] seção Manual (conteúdo-base do protótipo) + `GET /api/v1/manual/*`
+**Depende de:** 1h
+**Testes:** rotas do manual servem 200; navegação renderiza as seções.
+
+### Fase 5c — Badge de sobreposição entre demandas
+**Meta:** sinalizar demandas que tocam os mesmos arquivos.
+- [ ] interseção de `arquivos_provaveis` + `git diff --name-only` entre branches
+- [ ] badge no card/kanban com as demandas em sobreposição
+**Depende de:** 1g, 4a
+**Testes:** duas demandas tocando o mesmo arquivo exibem badge; sem interseção, sem badge.
+
+### Fase 5d — Serviço Windows, retenção e backup
+**Meta:** operar como serviço com manutenção do banco.
+- [ ] instalação como serviço Windows (e systemd) do `praxis.exe serve`
+- [ ] retenção de logs/eventos e backup periódico de `praxis.db`
+**Depende de:** 1a, 1b
+**Testes:** rotina de backup/retenção coberta por teste; smoke do modo serviço.
+**Observação:** requer_humano — registro/validação como serviço exige privilégios de admin na máquina-alvo (código e testes de backup/retenção são automatizáveis).
+
+### Fase 5e — Importador opcional do Praxis atual
+**Meta:** importar projetos existentes uma única vez.
+- [ ] ler `autopilot.json`/`fases.csv` do Praxis atual e criar `projects`/config correspondentes (idempotente, uma vez)
+**Depende de:** 1a, 1c
+**Testes:** importa fixtures de `autopilot.json`/`fases.csv` para projetos/config; reimportar não duplica.
+**Observação:** opcional; ativação é decisão de negócio.
+
 ## Riscos e mitigação
 
 1. **SQLITE_BUSY** — WAL + busy_timeout + escritor único; transações curtas.
@@ -159,4 +414,10 @@ POST/DELETE /tokens                     GET /manual/*
 
 ## Registro de Andamento
 
-(preenchido pelo Praxis a cada fase concluída)
+> Memória compartilhada entre fases. Cada execução de fase, ao concluir com gates verdes, acrescenta
+> uma linha aqui (fase, data, commit, decisões relevantes e pendências que a próxima fase precisa saber).
+> A próxima fase LÊ este registro antes de começar.
+
+| Fase | Título | Status | Commit | Data | Notas / decisões / pendências |
+|------|--------|--------|--------|------|-------------------------------|
+| —    | (nenhuma fase concluída ainda) | — | — | — | Plano quebrado em micro-fases; aguardando início da Fase 0. |
