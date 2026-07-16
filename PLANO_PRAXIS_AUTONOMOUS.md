@@ -202,9 +202,9 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 1f — Porte de `internal/motor`
 **Meta:** portar os motores do Praxis atual, lendo config do banco.
-- [ ] copiar/adaptar de `C:\Projetos\praxis`: `motor.go`, `claude.go`, `codex.go`, `opencode.go`, `claude_alias.go`
-- [ ] `OpcoesRun` ganha `Dir` (worktree) e `DirLogs`; config vem do banco (motores/contas), não de arquivo
-- [ ] portar testes unitários de cada motor (stub do processo filho)
+- [x] copiar/adaptar de `C:\Projetos\praxis`: `motor.go`, `claude.go`, `codex.go`, `opencode.go`, `claude_alias.go`
+- [x] `OpcoesRun` ganha `Dir` (worktree) e `DirLogs`; config vem do banco (motores/contas), não de arquivo
+- [x] portar testes unitários de cada motor (stub do processo filho)
 **Depende de:** 1a
 **Testes:** testes portados de `motor`/`claude`/`codex`/`opencode` verdes.
 **Observação:** LER de `C:\Projetos\praxis` (SOMENTE LEITURA — proibido modificar a origem).
@@ -426,6 +426,7 @@ POST/DELETE /tokens                     GET /manual/*
 | 1b   | Servidor HTTP e `serve` com health | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. `internal/api` com `Novo(Opcoes)`/`Handler()`; `GET /healthz`; middlewares `comLog`/`comRecover`; `serve` inicializa db + shutdown gracioso. Bind default `127.0.0.1:7799`. |
 | 1c   | CRUD de projetos (API + store) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store em métodos de `*db.DB` (`CriarProjeto`/`ListarProjetos`/`ObterProjeto`/`AtualizarProjeto`); rotas `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`; erros sentinela `db.ErrNaoEncontrado`/`db.ErrSlugDuplicado`; validação de repo git via `git rev-parse --is-inside-work-tree`. Códigos de erro API: `invalido`(400), `nao_encontrado`(404), `slug_duplicado`(409). |
 | 1d   | CRUD de motores e contas | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store em métodos de `*db.DB` (motores: `CriarMotor`/`ListarMotores`/`ObterMotor`/`AtualizarMotor`/`ReordenarMotores`/`ProximaPrioridadeMotor`; contas: `CriarConta`/`AtualizarConta`/`RemoverConta`/`ListarContas`). Rotas: `POST/GET /api/v1/engines`, `GET/PUT /api/v1/engines/{id}`, `PUT /api/v1/engines/ordem`, `POST /api/v1/engines/{id}/accounts`, `PUT/DELETE /api/v1/engines/{id}/accounts/{contaId}`. Motor GET/list já traz `contas[]`. Novos erros sentinela `db.ErrNomeDuplicado`/`db.ErrAliasDuplicado`/`db.ErrOrdemInvalida`; códigos API novos: `nome_duplicado`(409), `alias_duplicado`(409). Prioridade só muda via `/ordem` (não pelo PUT do motor). |
+| 1f   | Porte de `internal/motor` | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Pacote `internal/motor` com API exportada: `Motor` (interface), `OpcoesRun`/`ResultadoRun`/`Capacidades`, `Selecionar`/`Instalado`/`Instalados`/`Conhecidos`, `ModeloPadrao`/`EsforcoPadrao`/`CoAuthorTrailer`/`CustoEstimado`/`DecodificarEstruturado`. `OpcoesRun.Raiz`→`Dir` (worktree) + novo `DirLogs`. Motores `claude`/`codex`/`opencode` (structs internos). Alias/conta Claude adaptado (`ValidarAlias`/`SugerirConfigDir`/`NomesComandoShell`/`ConfigurarShellAlias`). Laço de franquia (`esperarResetFranquia`) NÃO portado — é da Fase 2b. 31 testes. |
 | 1e   | Config em camadas (global → override por projeto) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store `config_entries` em métodos de `*db.DB` (`ObterConfigGlobal`/`ObterConfigProjeto`/`ConfigEfetiva`/`DefinirConfigGlobal`/`DefinirConfigProjeto`). Config é key→valor JSON **livre** (sem whitelist de chaves). Rotas: `GET/PUT /api/v1/config` (global), `GET/PUT /api/v1/projects/{id}/config` (override), `GET /api/v1/projects/{id}/config/efetiva` (merge). PUT = **full replace** do escopo. Efetiva devolve `{chave:{valor,origem}}` com `origem ∈ {"global","project"}` (constantes `db.OrigemGlobal`/`db.OrigemProjeto`). Endpoint de config global (`/api/v1/config`) foi incluído aqui por ser o par indispensável do override — ver decisões. |
 
 ### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
@@ -679,3 +680,68 @@ Meta: No PUT de config (global e projeto), validar tipo/faixa das chaves de neg�
 - [ ] PUT /api/v1/config e /api/v1/projects/{id}/config validam as chaves conhecidas e rejeitam com codigo 'invalido' (400)
 - [ ] Chaves fora do esquema continuam aceitas sem validação (free-form preservado)
 - [ ] Testes cobrindo aceite de chave livre, rejeição de tipo inválido em chave conhecida e aceite de valor válido
+
+### Fase 1f — Porte de `internal/motor` (2026-07-15)
+
+**O que foi feito**
+- Portados de `C:\Projetos\praxis` (somente leitura) para `internal/motor/`, adaptando ao Praxis Autonomous:
+  - `motor.go` → `internal/motor/motor.go`: `OpcoesRun`, `ResultadoRun`, `Capacidades`, interface `Motor`, `motoresRegistrados`, e a API exportada (ver "Achados").
+  - `claude.go` → `internal/motor/claude.go`: `motorClaude` (`-p --output-format stream-json`), `eventoStreamClaude`, `limiteSessaoAtingido`, `linhaLimite`, `proibidosClaude`.
+  - `codex.go` → `internal/motor/codex.go`: `motorCodex` (`codex exec --json`), `eventoCodex`, `textoErroCodex`, `limiteCodexAtingido`/`linhaLimiteCodex`, `schemaStrictOpenAI`/`strictNo`.
+  - `opencode.go` → `internal/motor/opencode.go`: `motorOpencode` (`opencode run --format json`), `eventoOpencode`, `permissoesOpencode`, `textoErroOpencode`, `limiteOpencodeAtingido`/`linhaLimiteOpencode`.
+  - `claude_alias.go` → `internal/motor/alias.go`: só a parte reaproveitável (validação de alias, sugestão de config dir, atalho de shell PowerShell). Ver decisões.
+  - Helpers compartilhados em `internal/motor/util.go` (`agoraTS`, `primeirasLinhas`/`ultimasLinhas`, `indentar`, `normalizarNomeMotor`, `motoresConhecidos`, `resolverDir`, `contemString`).
+- **`OpcoesRun` adaptado**: o antigo `Raiz` (raiz do projeto, de onde saíam os logs em `automacao/logs`) virou **`Dir`** (o **worktree** da demanda — `cmd.Dir` do processo filho e base para resolver `AddDirs`) e ganhou **`DirLogs`** (pasta onde o `.jsonl` é gravado; no serviço → `PRAXIS_HOME/logs`). `abrirLog` agora recebe `DirLogs` diretamente (não deriva mais de `automacao/`). `ClaudeConfigDir` continua sendo injetado como env var `CLAUDE_CONFIG_DIR` — agora virá de `engine_accounts.config_dir` (banco), não de `autopilot.json`.
+- **Testes portados/adaptados** (stub do processo filho via script `claude.bat`/`opencode.bat`/`.sh` no PATH, `t.Setenv`): `motor_test.go`, `claude_test.go`, `codex_test.go`, `opencode_test.go`, `alias_test.go`. Total **31 testes** no pacote.
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK (pacote `internal/motor`: 31 testes passando). `gofmt -l internal/motor/` sem apontamentos. `go mod tidy` não altera `go.mod`/`go.sum` (o pacote usa **só stdlib** — nenhuma dependência nova).
+
+**Decisões / desvios**
+- **API do pacote exportada** (era tudo `package main`/minúsculo no origem). Renomes: `selecionarMotor`→`Selecionar`, `motorInstalado`/`motoresInstalados`→`Instalado`/`Instalados`, `motoresConhecidos` exposto como `Conhecidos`, `modeloPadrao`/`esforcoPadrao`/`coAuthorTrailer`/`custoEstimado`/`decodificarEstruturado`→`ModeloPadrao`/`EsforcoPadrao`/`CoAuthorTrailer`/`CustoEstimado`/`DecodificarEstruturado`. Structs de motor (`motorClaude`/`motorCodex`/`motorOpencode`) ficaram **internos** (só a interface `Motor` e `Selecionar` são a porta de entrada). Removidos os aliases de compat `OpcoesClaude`/`ResultadoClaude` (o repo de origem os mantinha "até o pipeline ser ligado"; aqui o pacote nasce novo).
+- **`esperarResetFranquia`/`rodarClaude` NÃO foram portados**: são o laço de retentativa por esgotamento de franquia, que a **tabela de porte do plano mapeia para a linha do pipeline** (`executar.go`/`fallback.go` → Fase 2b) e cujo **comportamento muda na Fase 2b** ("não bloquear; devolver horário para o scheduler reagendar"). Portá-los agora com o comportamento bloqueante do legado obrigaria a Fase 2b a reescrevê-los. O que fica em 1f é a **execução de um run** (`Rodar`), que já sinaliza `LimiteSessao`/`DetalheLimite` — a matéria-prima que o pipeline vai consumir. **Isto não é corte de escopo de 1f**: a franquia pertence a 2b pela própria tabela de porte do plano.
+- **`claude_alias.go` — porte parcial deliberado**: a maior parte do arquivo original (comando de CLI `cmdClaudeAliasCreate`, edição de `motores.operacoes`/`motores.fallback.ordem` e o parsing `parseClaudeAliasCreateArg`) é **acoplada ao arquivo de config (`autopilot.json`) e ao CLI**, ambos abolidos no novo desenho (config no banco, zero linha de comando). No Praxis Autonomous, um "alias" = uma **conta** (`engine_accounts`: `alias` + `config_dir`) e a ordem de fallback = **`engines.prioridade`** (banco). Portei só o que sobrevive e é útil: `ValidarAlias` (formato + reservado/colisão com motor), `SugerirConfigDir` (`~/.claude-<sufixo>`), `NomesComandoShell` e `ConfigurarShellAlias` (cria a função `claude-<alias>` no perfil do PowerShell para o operador **logar** na conta secundária). Isso será consumido pela tela de Motores/Contas (Fase 1h) ao cadastrar uma conta. Testes correspondentes de config/fallback do legado foram substituídos por testes das funções adaptadas.
+- **Prints ao vivo (`fmt.Println` de progresso e do AVISO de modo BYPASS) mantidos** por fidelidade ao origem; no serviço vão para o stdout do processo. O registro real da execução é o `.jsonl` (`res.LogPath`). Se poluir o log do serviço, um desvio para o `slog`/canal SSE pode ser avaliado numa fase de UI/observabilidade (não é escopo de 1f).
+- Não foi feito `git commit`/`push` (responsabilidade do orquestrador).
+
+**Achados úteis para as próximas fases (2b/2d/1h/3b)**
+- **Ponto de entrada do pacote**: `m, err := motor.Selecionar(nome)` (vazio → `"claude"`); depois `m.Rodar(motor.OpcoesRun{...})` devolve `*motor.ResultadoRun`. `m.Capacidades()` diz se o motor tem schema/budget/custo nativos (claude: os três; codex: só schema; opencode: nenhum) — o pipeline usa isso para decidir fallback de schema (`promptComSchema` interno) e cálculo de custo.
+- **Como montar `OpcoesRun` a partir do banco (Fase 2b)**: `Dir` = caminho do worktree da demanda; `DirLogs` = `PRAXIS_HOME/logs` (o `runs.log_ref` guarda o `.jsonl` retornado em `ResultadoRun.LogPath`); `Modelo`/`Esforco` = `engines.modelo_exec`/`modelo_analise` (ou `ModeloPadrao`/`EsforcoPadrao` quando vazio); `BudgetUSD`/`TimeoutMin` = `engines.budget_fase_usd`/`timeout_min`; `ClaudeConfigDir` = `engine_accounts.config_dir` da conta escolhida (afinidade conta↔demanda). `AddDirs` = config efetiva `add_dirs` (resolvidos relativos a `Dir`). `RotuloLog` = prefixo do arquivo de log (ex.: `executar`, `revisar`).
+- **Flags de papel (executor/corretor/revisor)**: `ProibirCommit` (executor/corretor — o commit é sempre do orquestrador) e `SomenteLeitura` (revisor — sem edit/write/commit). Cada motor traduz nas ferramentas nativas: claude via `--disallowedTools`, codex via `--sandbox read-only`, opencode via `OPENCODE_PERMISSION`. **O harness continua proibido de commitar/pushar** (garantido aqui).
+- **Detecção de franquia**: `ResultadoRun.LimiteSessao` + `DetalheLimite` já vêm preenchidos por qualquer motor quando bate limite (stderr/eventos). A Fase 2b lê isso para reagendar sem bloquear (o `esperarResetFranquia` do legado **não** foi portado — implementar o "devolve horário" lá).
+- **Custo**: claude reporta `CustoUSD` nativo; codex/opencode reportam só tokens — `CustoEstimado(modelo, in, out)` cobre os modelos OpenAI conhecidos (tabela em `motor.go`); modelo desconhecido → 0 (custo fica indisponível, não zero real).
+- **Saída estruturada**: `motor.DecodificarEstruturado(res, &v)` prefere `res.Estruturado` (schema nativo) e cai para extrair o 1º objeto JSON de `res.Resultado` (tolerante a cercas de markdown). Útil para o analista/planejador (Fase 3b/3c) e para o revisor (veredito).
+- **Trailer de commit**: `motor.CoAuthorTrailer(nome)` dá o `Co-Authored-By` por motor — o `internal/gitops` (1g) usa ao montar a mensagem do commit da fase.
+- **Contas Claude (Fase 1h/1d↔engine_accounts)**: `motor.ValidarAlias`/`SugerirConfigDir`/`ConfigurarShellAlias` para o cadastro de conta. `ConfigurarShellAlias` **só age no Windows** (perfis do PowerShell) e escreve em blocos marcados idempotentes (`# >>> praxis-claude-alias:<cmd> >>>`). Nos testes NÃO se exercita `ConfigurarShellAlias` de ponta a ponta (evita mexer no perfil real do usuário); testa-se `upsertBlocoAliasPowerShell` contra um perfil temporário.
+- **Quirk herdado do legado**: `upsertBlocoMarcado` insere uma linha em branco a mais quando **acrescenta** o 1º bloco a um arquivo com conteúdo prévio (a substituição posterior a remove — estabiliza a partir da 2ª aplicação). Não é idempotente na 1ª→2ª aplicação no caminho de append, mas estável depois. Preservado como no origem; documentado aqui caso a Fase 1h dependa do formato exato do perfil.
+
+**Pendências descobertas**
+- **Desvio dos prints de progresso para observabilidade estruturada** — hoje os motores escrevem progresso/AVISO em `fmt.Println` (stdout do serviço). Meta: rotear o eco ao vivo para `slog` e/ou para o canal SSE de "Log ao vivo" (Fase 2h) em vez de stdout, mantendo o `.jsonl` como fonte da verdade. Mini-checklist: [ ] injetar um sink de progresso em `OpcoesRun` (ex.: `OnEvento func(linha string)`); [ ] motores emitem por ele em vez de `fmt.Println`; [ ] `serve`/pipeline liga o sink ao SSE. (Não implementado por ser escopo de UI/pipeline, não do porte 1f.)
+- **`ConfigurarShellAlias` multiplataforma** — a auto-config de shell só cobre PowerShell/Windows (fiel ao origem). Meta: se o serviço rodar em Linux (systemd), oferecer o equivalente para bash/zsh (função/env `CLAUDE_CONFIG_DIR`) ou apenas documentar o passo manual. Mini-checklist: [ ] decidir se auto-config não-Windows é desejável; [ ] se sim, gerar bloco marcado em `~/.bashrc`/`~/.zshrc`; [ ] senão, `ConfigurarShellAlias` retorna instrução manual em SOs não-Windows.
+- **`OpcoesRun.PausaCh`/`OnEspera` sem consumidor** — os campos foram mantidos no struct (para a Fase 2b), mas nada os lê nesta fase (o laço de franquia que os usava não foi portado). Meta: confirmar na Fase 2b se a pausa durante espera de franquia usa esses campos ou o cancelamento do `Ctx`/fila do banco; se redundantes, remover. (Mantidos por sinalizarem a intenção do pipeline; não é dívida ativa.)
+
+### 1f.n1 — Teste end-to-end do codex.Rodar com stub de processo
+
+Status: avaliar viabilidade
+Depende de: 1f
+
+> Baixo valor tecnico: aguarda avaliacao humana de viabilidade. Nao sera executada automaticamente enquanto o status for `avaliar viabilidade`.
+
+Meta: Adicionar teste que exercita motorCodex.Rodar via stub de processo filho (codex.bat/.sh no PATH), cobrindo o caminho específico do codex: schema strict com --output-schema, leitura do arquivo -o de saída estruturada, acumulação de tokens e detecção de limite. Hoje só há testes de funções puras (schemaStrictOpenAI/limiteCodex/textoErroCodex); o Rodar do codex é o único dos três motores sem cobertura de execução, deixando latente qualquer regressão no manuseio de arquivos temporários/saída.
+
+- [ ] Stub codex.bat/codex.sh no PATH via t.Setenv, análogo a claude_test.go
+- [ ] Teste cobre parse de item.completed/turn.completed e leitura do outFile (--output-schema/-o) preenchendo ResultadoRun.Estruturado
+- [ ] Teste cobre detecção de limite (limiteCodexAtingido) no stderr sem resultado
+
+### 1f.n2 — Sink de progresso dos motores para observabilidade estruturada
+
+Status: avaliar viabilidade
+Depende de: 1f
+
+> Baixo valor tecnico: aguarda avaliacao humana de viabilidade. Nao sera executada automaticamente enquanto o status for `avaliar viabilidade`.
+
+Meta: Rotear o eco ao vivo dos motores (progresso e AVISO de modo BYPASS, hoje em fmt.Println no stdout do serviço) para um sink injetável, mantendo o .jsonl como fonte da verdade. Permite ligar o progresso ao slog e/ou ao canal SSE de Log ao vivo em vez de poluir o stdout do processo de serviço.
+
+- [ ] Adicionar campo tipo OnEvento func(linha string) em OpcoesRun
+- [ ] claude/codex/opencode emitem progresso pelo sink em vez de fmt.Println quando presente
+- [ ] serve/pipeline liga o sink ao SSE de Log ao vivo (Fase 2h)
