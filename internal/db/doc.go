@@ -2,10 +2,11 @@
 // de concorrência (WAL, busy_timeout, escritor único + pool de leitura),
 // migrações versionadas por PRAGMA user_version e os stores de cada entidade.
 //
-// A implementação começa na Fase 1a. Aqui o pacote apenas ancora o driver de
-// runtime único do projeto: modernc.org/sqlite (SQLite puro Go, sem cgo).
+// Implementado a partir da Fase 1a:
+//   - Abrir/AbrirPadrao: conexões (escritor único + pool de leitura) — db.go
+//   - Migrar: framework de migrações por PRAGMA user_version — migracoes.go
+//   - PraxisHome/CaminhoDB: resolução de PRAXIS_HOME — paths.go
+//
+// O driver de runtime único do projeto — modernc.org/sqlite (SQLite puro Go,
+// sem cgo) — é registrado via blank import em db.go.
 package db
-
-// O blank import registra o driver "sqlite" em database/sql e mantém a
-// dependência declarada no go.mod desde a fundação do repositório (Fase 0).
-import _ "modernc.org/sqlite"

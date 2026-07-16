@@ -1,6 +1,6 @@
 fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativas;custo_usd;concluido_em;observacao
 0;Fundação do repositório e build mínimo;concluida;;nao;nao;;;1;2.00;2026-07-15 22:46;ok — custo US$ 2.00
-1a;Camada de banco e framework de migrações;pendente;0;nao;nao;;;;;;"WAL, busy_timeout=5000, escritor único (SetMaxOpenConns(1)) + pool de leitura; migrações por user_version; schema núcleo projects/engines/engine_accounts/config_entries."
+1a;Camada de banco e framework de migrações;executando;0;nao;nao;;;1;;;"WAL, busy_timeout=5000, escritor único (SetMaxOpenConns(1)) + pool de leitura; migrações por user_version; schema núcleo projects/engines/engine_accounts/config_entries."
 1b;Servidor HTTP e serve com health;pendente;0;nao;nao;;;;;;"internal/api com roteador, /healthz e shutdown gracioso; cmd serve inicializa o db."
 1c;CRUD de projetos (API + store);pendente;1a+1b;nao;nao;;;;;;Validar pasta=repo git, modo_integracao, slug único.
 1d;CRUD de motores e contas;pendente;1a+1b;nao;nao;;;;;;"Prioridade = ordem de fallback; contas com config_dir (CLAUDE_CONFIG_DIR)."
@@ -30,3 +30,4 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 5c;Badge de sobreposição entre demandas;pendente;1g+4a;nao;nao;;;;;;Interseção de arquivos_provaveis + git diff --name-only entre branches.
 5d;Serviço Windows, retenção e backup;pendente;1a+1b;sim;nao;;;;;;requer_humano: registro/validação como serviço Windows exige privilégios de admin na máquina-alvo. Código e testes de backup/retenção são automatizáveis.
 5e;Importador opcional do Praxis atual;pendente;1a+1c;nao;sim;;;;;;"Opcional (ativação é decisão de negócio). Lê autopilot.json/fases.csv uma única vez; idempotente."
+1a.n1;Persistência do espelho de franquia em engine_accounts;avaliar viabilidade;1a;sim;nao;;;;;;"Sobrepõe-se ao trabalho de franquia das Fases 2b/2d; por isso valor baixo (o sistema opera sem ela, apenas re-detecta o esgotamento em runtime após restart). Um humano deve decidir se cria fase dedicada ou dobra o item nos checklists de 2b/2d. Correto ter sido deixado fora da 1a: não pertence ao schema núcleo desta fase."

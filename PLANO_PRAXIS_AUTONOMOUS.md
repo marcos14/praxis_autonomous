@@ -159,10 +159,10 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 1a — Camada de banco e framework de migrações
 **Meta:** abrir SQLite com as garantias de concorrência e aplicar o schema núcleo por migração.
-- [ ] `internal/db`: abrir `modernc.org/sqlite` com WAL, `busy_timeout=5000`, escritor único (`SetMaxOpenConns(1)`) + pool de leitura
-- [ ] migrações versionadas por `PRAGMA user_version` (idempotentes, transacionais)
-- [ ] schema núcleo: `projects`, `engines`, `engine_accounts`, `config_entries`
-- [ ] resolução de `PRAXIS_HOME` (default `%LOCALAPPDATA%\praxis`) para localizar `praxis.db`
+- [x] `internal/db`: abrir `modernc.org/sqlite` com WAL, `busy_timeout=5000`, escritor único (`SetMaxOpenConns(1)`) + pool de leitura
+- [x] migrações versionadas por `PRAGMA user_version` (idempotentes, transacionais)
+- [x] schema núcleo: `projects`, `engines`, `engine_accounts`, `config_entries`
+- [x] resolução de `PRAXIS_HOME` (default `%LOCALAPPDATA%\praxis`) para localizar `praxis.db`
 **Depende de:** 0
 **Testes:** migração aplica em db temporário; `user_version` avança; reaplicar é no-op; WAL/busy_timeout verificados.
 
@@ -422,6 +422,7 @@ POST/DELETE /tokens                     GET /manual/*
 |------|--------|--------|--------|------|-------------------------------|
 | —    | (nenhuma fase concluída ainda) | — | — | — | Plano quebrado em micro-fases; aguardando início da Fase 0. |
 | 0    | Fundação do repositório e build mínimo | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. |
+| 1a   | Camada de banco e framework de migrações | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Tabelas reais: `projects`, `engines`, `engine_accounts`, `config_entries` (schema versão 1). |
 
 ### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
 
@@ -449,3 +450,59 @@ POST/DELETE /tokens                     GET /manual/*
 - `PRAXIS_HOME` (default `%LOCALAPPDATA%\praxis`) ainda não é resolvido em código — fica para a Fase 1a, conforme o plano.
 
 **Pendências descobertas:** nenhuma. Todo o escopo da Fase 0 foi entregue.
+
+### Fase 1a — Camada de banco e framework de migrações (2026-07-15)
+
+**O que foi feito**
+- `internal/db/paths.go`: `PraxisHome()` e `CaminhoDB()`. Precedência de resolução: `PRAXIS_HOME` (se não-vazia) → no Windows `%LOCALAPPDATA%\praxis` → nos demais SOs `<os.UserConfigDir>/praxis`. `CaminhoDB()` cria o diretório (`MkdirAll 0755`) e retorna `<home>/praxis.db`. Valor em branco/espaços na env é ignorado (cai no default).
+- `internal/db/db.go`: tipo `DB{ Escritor, Leitor *sql.DB, Caminho string }`. `Abrir(caminho)` abre o **escritor único** (`SetMaxOpenConns(1)`), faz `Ping`, roda `Migrar`, e só então abre o **pool de leitura** (`MaxOpenConns = max(4, NumCPU)`). `AbrirPadrao()` resolve via `CaminhoDB()`. `Fechar()` fecha ambas (leitor primeiro) devolvendo o primeiro erro.
+- PRAGMAs aplicadas **via DSN** (parâmetros `_pragma=` do modernc, garantindo que toda conexão do pool receba): escritor → `busy_timeout(5000)`, `journal_mode(WAL)`, `synchronous(NORMAL)`, `foreign_keys(1)`; leitor → `busy_timeout(5000)`, `foreign_keys(1)`, `query_only(1)` (leitor não seta WAL — já persiste no arquivo; `query_only` é salvaguarda contra escrita acidental pelo pool de leitura).
+- `internal/db/migracoes.go`: framework de migrações. `[]migracao{versao,nome,sql}` aplicado em ordem; cada migração roda o SQL **e** o `PRAGMA user_version = N` na **mesma transação** (atômico, idempotente). `Migrar(db) (versaoFinal, aplicadas, err)`; `VersaoAtual(db)`; `VersaoSchema()` = `len(migracoes)`. Downgrade (banco em versão maior que o binário) → erro explícito, sem "desmigrar".
+- Migração **versão 1** = schema núcleo com as 4 tabelas do modelo de dados: `projects`, `engines`, `engine_accounts`, `config_entries`. Inclui CHECKs (`modo_integracao ∈ {merge_request,merge_local}`, `ativo ∈ {0,1}`, `escopo ∈ {global,project}` com coerência escopo↔project_id), FKs com `ON DELETE CASCADE`, e índices únicos parciais de config (`ux_config_global` por `chave`; `ux_config_project` por `(project_id,chave)`).
+- Removido o blank import de `modernc.org/sqlite` que estava em `internal/db/doc.go` (Fase 0) — agora o import (blank) vive em `db.go`, onde o driver é de fato usado por `sql.Open("sqlite", …)`. `go mod tidy` mantém a dependência **direta** (verificado; `go.mod`/`go.sum` sem alteração).
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK. Pacote `internal/db` com 16 testes passando (`paths_test.go`, `db_test.go`, `migracoes_test.go`): aplica migração em db temporário, `user_version` avança, reaplicar é no-op, rejeita versão futura, WAL/`busy_timeout`/`foreign_keys`/`query_only` verificados por `PRAGMA`, escrita-no-escritor→leitura-no-leitor, reabrir preserva dados/versão, CHECKs e FK rejeitam entradas inválidas.
+
+**Decisões / desvios**
+- Identificadores/estrutura em **português** e estilo do repo de referência (`C:\Projetos\praxis`, que é CSV — **não** usa SQLite; portanto `internal/db` é código **novo**, não portado).
+- PRAGMAs por **DSN `_pragma=`** em vez de `Exec` pós-conexão: cada conexão nova do pool herda automaticamente, sem hook `Connect`.
+- Leitor **não** abre em `mode=ro` (falharia se o arquivo ainda não existisse antes do escritor criar); usa `query_only(1)`, que dá a mesma garantia sem depender de ordem de criação.
+- `engine_accounts` ficou **exatamente** com as colunas do modelo do plano (`id, engine_id, alias, config_dir, ativo` + índice de FK). O "espelho de franquia (`esgotado_até`)" citado na seção *Franquia/esgotamento* **não** foi adicionado agora para não adiantar escopo de outra fase — ver Pendências descobertas.
+- Datas default em ISO-8601 UTC via `strftime('%Y-%m-%dT%H:%M:%fZ','now')`; campos JSON como `TEXT` com default válido (`'[]'`, `'{}'`, `'null'`).
+- Não foi feito `git commit`/`push` (responsabilidade do orquestrador).
+
+**Achados úteis para as próximas fases**
+- **API do pacote `db`** para as fases 1c/1d/1e/2a: use `db.Abrir(caminho)`/`db.AbrirPadrao()`; escreva por `d.Escritor` (serializado) e leia por `d.Leitor`; **nunca** escreva pelo `d.Leitor` (falha por `query_only`). Transações de escrita são naturalmente serializadas pelo escritor único — mantenha-as curtas (nunca abertas durante um run de harness).
+- **Adicionar tabelas (Fase 2a etc.):** acrescente `{versao: 2, …}` ao slice `migracoes` em `migracoes.go` — **nunca** edite a migração 1 já liberada. `VersaoSchema()` avança sozinho.
+- **Nomes reais das tabelas/colunas** já criadas (conferir antes de escrever SQL nas próximas fases):
+  - `projects(id, nome, slug UNIQUE, pasta, branch_principal='main', modo_integracao, url_plataforma, add_dirs JSON='[]', ativo, criado_em)`
+  - `engines(id, nome UNIQUE, prioridade, ativo, modelo_exec, modelo_analise, budget_fase_usd, timeout_min, params JSON='{}')`
+  - `engine_accounts(id, engine_id→engines, alias, config_dir, ativo, UNIQUE(engine_id,alias))`
+  - `config_entries(id, escopo, project_id→projects, chave, valor JSON)` com únicos parciais por escopo.
+- **Config em camadas (Fase 1e):** a unicidade já é garantida pelo banco — 1 linha por `chave` global e 1 por `(project_id,chave)`. O merge determinístico global×override e "origem de cada chave" ficam na Fase 1e (não implementados aqui, conforme o plano).
+- **`serve` ainda não inicializa o db** — isso é da Fase 1b (`AbrirPadrao()` no boot + shutdown gracioso). `cmd/praxis/main.go` segue stub.
+- Driver `database/sql` do modernc é **`"sqlite"`** (const `nomeDriver`); WAL fica **persistido no arquivo** após o primeiro escritor.
+
+**Pendências descobertas**
+- **Espelho de franquia em `engine_accounts`** — Meta: persistir `esgotado_até` por conta para sobreviver a restart (a seção *Franquia/esgotamento* do plano cita "espelho em `engine_accounts`", mas o modelo de dados da tabela não lista a coluna). Não implementado por pertencer ao escopo de franquia/scheduler (Fases 2b/2d), não ao schema núcleo de 1a. Mini-checklist quando for a hora: [ ] migração nova adicionando coluna `esgotado_ate TEXT` (ISO-8601, default `''`) a `engine_accounts`; [ ] store lê/grava ao entrar/sair de esgotamento; [ ] `gestorFranquia` em memória hidrata a partir dessa coluna no boot.
+
+---
+
+## Fases descobertas (adicionadas pelo Praxis)
+
+Fases inseridas automaticamente a partir de pendencias descobertas pelo revisor.
+
+### 1a.n1 — Persistência do espelho de franquia em engine_accounts
+
+Status: avaliar viabilidade
+Depende de: 1a
+
+> Baixo valor tecnico: aguarda avaliacao humana de viabilidade. Nao sera executada automaticamente enquanto o status for `avaliar viabilidade`.
+
+Meta: Persistir o horário de esgotamento por conta (esgotado_até) em engine_accounts para o gestorFranquia sobreviver a restart, conforme a seção Franquia/esgotamento do plano — o modelo de dados descreve o espelho mas a tabela do schema núcleo (versão 1) não o inclui, e nenhum checklist das fases de franquia (2b/2d) o cita explicitamente.
+
+- [ ] Nova migração (versão >=2) adicionando coluna esgotado_ate TEXT (ISO-8601, default '') a engine_accounts, sem editar a migração 1
+- [ ] Store lê/grava esgotado_ate ao entrar/sair de esgotamento de conta
+- [ ] gestorFranquia hidrata o estado em memória a partir da coluna no boot
+- [ ] Teste cobrindo persistência do esgotamento através de fechar/reabrir o banco

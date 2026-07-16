@@ -1,0 +1,171 @@
+package db
+
+import (
+	"database/sql"
+	"path/filepath"
+	"strconv"
+	"testing"
+)
+
+// abrirBruto abre uma única conexão de escrita sem migrar, para exercitar Migrar
+// diretamente.
+func abrirBruto(t *testing.T) *sql.DB {
+	t.Helper()
+	caminho := filepath.Join(t.TempDir(), "praxis.db")
+	db, err := sql.Open(nomeDriver, dsnEscritor(caminho))
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func TestMigrarAplicaEAvancaUserVersion(t *testing.T) {
+	db := abrirBruto(t)
+
+	v0, err := VersaoAtual(db)
+	if err != nil {
+		t.Fatalf("VersaoAtual inicial: %v", err)
+	}
+	if v0 != 0 {
+		t.Fatalf("user_version inicial = %d, quero 0", v0)
+	}
+
+	final, aplicadas, err := Migrar(db)
+	if err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+	if final != VersaoSchema() {
+		t.Fatalf("versão final = %d, quero %d", final, VersaoSchema())
+	}
+	if aplicadas != len(migracoes) {
+		t.Fatalf("aplicadas = %d, quero %d", aplicadas, len(migracoes))
+	}
+
+	v1, err := VersaoAtual(db)
+	if err != nil {
+		t.Fatalf("VersaoAtual pós-migração: %v", err)
+	}
+	if v1 != VersaoSchema() {
+		t.Fatalf("user_version = %d, quero %d", v1, VersaoSchema())
+	}
+}
+
+func TestMigrarReaplicarEhNoOp(t *testing.T) {
+	db := abrirBruto(t)
+
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar (1): %v", err)
+	}
+	final, aplicadas, err := Migrar(db)
+	if err != nil {
+		t.Fatalf("Migrar (2): %v", err)
+	}
+	if aplicadas != 0 {
+		t.Fatalf("reaplicar aplicou %d migrações, quero 0", aplicadas)
+	}
+	if final != VersaoSchema() {
+		t.Fatalf("versão após no-op = %d, quero %d", final, VersaoSchema())
+	}
+}
+
+func TestMigrarRejeitaVersaoFutura(t *testing.T) {
+	db := abrirBruto(t)
+	futura := VersaoSchema() + 5
+	if _, err := db.Exec("PRAGMA user_version = " + strconv.Itoa(futura)); err != nil {
+		t.Fatalf("forçar versão futura: %v", err)
+	}
+	if _, _, err := Migrar(db); err == nil {
+		t.Fatal("Migrar deveria recusar banco de versão futura")
+	}
+}
+
+func TestSchemaNucleoCriaTabelasEIndices(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+
+	tabelas := []string{"projects", "engines", "engine_accounts", "config_entries"}
+	for _, tab := range tabelas {
+		if !existeNoSchema(t, db, "table", tab) {
+			t.Errorf("tabela %q não foi criada", tab)
+		}
+	}
+	indices := []string{"ux_config_global", "ux_config_project", "ix_engine_accounts_engine"}
+	for _, idx := range indices {
+		if !existeNoSchema(t, db, "index", idx) {
+			t.Errorf("índice %q não foi criado", idx)
+		}
+	}
+}
+
+func TestProjectsRejeitaModoIntegracaoInvalido(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+	_, err := db.Exec(
+		`INSERT INTO projects (nome, slug, pasta, modo_integracao) VALUES (?,?,?,?)`,
+		"x", "x", "x", "modo_invalido",
+	)
+	if err == nil {
+		t.Fatal("CHECK de modo_integracao deveria rejeitar valor inválido")
+	}
+}
+
+func TestEngineAccountsExigeFK(t *testing.T) {
+	// Foreign keys precisam estar ligadas para o INSERT órfão falhar.
+	caminho := filepath.Join(t.TempDir(), "praxis.db")
+	d, err := Abrir(caminho)
+	if err != nil {
+		t.Fatalf("Abrir: %v", err)
+	}
+	defer d.Fechar()
+
+	_, err = d.Escritor.Exec(
+		`INSERT INTO engine_accounts (engine_id, alias) VALUES (?,?)`, 999, "conta",
+	)
+	if err == nil {
+		t.Fatal("FK deveria rejeitar engine_id inexistente")
+	}
+}
+
+func TestConfigEntriesRespeitaEscopo(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+	// global exige project_id NULL
+	if _, err := db.Exec(
+		`INSERT INTO config_entries (escopo, project_id, chave, valor) VALUES ('global', 1, 'k', 'null')`,
+	); err == nil {
+		t.Fatal("CHECK deveria rejeitar global com project_id")
+	}
+	// global válido
+	if _, err := db.Exec(
+		`INSERT INTO config_entries (escopo, chave, valor) VALUES ('global', 'motor', '"claude"')`,
+	); err != nil {
+		t.Fatalf("global válido falhou: %v", err)
+	}
+	// chave global duplicada viola o índice único parcial
+	if _, err := db.Exec(
+		`INSERT INTO config_entries (escopo, chave, valor) VALUES ('global', 'motor', '"codex"')`,
+	); err == nil {
+		t.Fatal("índice único global deveria rejeitar chave duplicada")
+	}
+}
+
+// existeNoSchema consulta sqlite_master pela existência de um objeto.
+func existeNoSchema(t *testing.T, db *sql.DB, tipo, nome string) bool {
+	t.Helper()
+	var n int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = ? AND name = ?`, tipo, nome,
+	).Scan(&n)
+	if err != nil {
+		t.Fatalf("consultar sqlite_master (%s %s): %v", tipo, nome, err)
+	}
+	return n > 0
+}
