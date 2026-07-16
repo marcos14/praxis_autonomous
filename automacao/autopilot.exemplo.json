@@ -8,7 +8,7 @@
   "timeout_min": 120,
   "max_correcoes": 4,
   "max_ciclos_revisao": 2,
-  "max_fases_novas": 10,
+  "max_fases_novas": 80,
   "versionar_automacao": true,
   "gates": [
     {
@@ -54,12 +54,10 @@
       "claude_alt": "C:\\Users\\marco\\.claude-alt"
     },
     "fallback": {
-      "ativo": false,
+      "ativo": true,
       "ordem": [
         "claude",
-        "claude_alt",
-        "codex",
-        "opencode"
+        "codex"
       ]
     }
   },
