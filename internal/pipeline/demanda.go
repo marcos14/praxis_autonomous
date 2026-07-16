@@ -172,7 +172,113 @@ func (r *Runner) RodarFase(ctx context.Context, dem db.Demanda, fase db.Fase, cf
 		Selecionar: r.Selecionar,
 		Agora:      r.Agora,
 	}
-	return c.ExecutarFase()
+	res, err := c.ExecutarFase()
+	if err != nil || !res.CommitFeito {
+		return res, err
+	}
+
+	// Fase 2f: push automatico da branch APOS o commit da fase, tolerante a
+	// falha. So no modo merge_request (merge_local integra localmente, sem push).
+	// A falha de push NAO altera o desfecho da fase — apenas registra o alerta e
+	// deixa o retry para o proximo commit ou para a acao manual publicar_branch.
+	if r.autoPushHabilitado(ctx, dem) {
+		rp := r.empurrarBranch(ctx, dem)
+		res.Publicado = rp.Publicado
+		res.CommitsNaoPublicados = rp.CommitsNaoPublicados
+	}
+	return res, nil
+}
+
+// TentativasPush e o numero de tentativas do push automatico da branch apos um
+// commit de fase (retry com espera crescente dentro do proprio gitops.Push).
+const TentativasPush = 3
+
+// ResultadoPush resume uma tentativa de publicar a branch da demanda. Nunca
+// representa erro de infraestrutura — o push e sempre tolerante a falha; a falha
+// de rede/credenciais vira alerta, nao erro.
+type ResultadoPush struct {
+	Publicado            bool   // o push concluiu com sucesso nesta tentativa
+	Pulado               bool   // push nao se aplica (sem remote / demanda sem branch)
+	Motivo               string // quando Pulado: por que; quando falhou: o erro do push
+	CommitsNaoPublicados int    // commits locais ainda aguardando push (0 = tudo publicado)
+}
+
+// PublicarBranch e a acao manual "publicar_branch" do plano: publica a branch da
+// demanda no origin sob demanda do usuario — um retry manual do push automatico.
+// E tolerante a falha como o push pos-commit: uma falha de rede/credenciais NAO
+// vira erro (vem em ResultadoPush.Motivo com Publicado=false); o erro de retorno
+// e reservado a pre-condicoes (Runner sem Git, demanda sem branch/worktree).
+//
+// Autenticacao usa as credenciais git da maquina (credential manager/SSH); o
+// Praxis nunca armazena senha de git. Push so de branches praxis/* (guarda no
+// gitops.Push). Diferente do push automatico, NAO depende do modo de integracao:
+// se o usuario pediu para publicar, publica (desde que haja remote).
+func (r *Runner) PublicarBranch(ctx context.Context, dem db.Demanda) (ResultadoPush, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if r.Git == nil {
+		return ResultadoPush{}, fmt.Errorf("runner sem Git")
+	}
+	if strings.TrimSpace(dem.Branch) == "" || strings.TrimSpace(dem.WorktreePath) == "" {
+		return ResultadoPush{}, fmt.Errorf("demanda %d sem branch/worktree preparados — chame Preparar antes", dem.ID)
+	}
+	return r.empurrarBranch(ctx, dem), nil
+}
+
+// autoPushHabilitado informa se o push automatico pos-commit se aplica a esta
+// demanda: verdadeiro apenas quando o projeto esta no modo merge_request (o
+// merge_local integra localmente, sem push). A presenca de remote e checada
+// depois, em empurrarBranch.
+func (r *Runner) autoPushHabilitado(ctx context.Context, dem db.Demanda) bool {
+	if r.Store == nil {
+		return false
+	}
+	proj, err := r.Store.ObterProjeto(ctx, dem.ProjectID)
+	if err != nil {
+		return false
+	}
+	return proj.ModoIntegracao == db.ModoIntegracaoMergeRequest
+}
+
+// empurrarBranch tenta publicar a branch da demanda no origin de forma TOLERANTE
+// A FALHA. Sem remote configurado e no-op (Pulado). Em falha de push
+// (rede/credenciais/branch protegida), NAO propaga erro: registra o evento de
+// alerta "commits nao publicados (N)" e devolve a contagem, deixando o retry para
+// o proximo commit (o proximo push empurra tambem os commits acumulados) ou para
+// a acao manual publicar_branch. Em sucesso, registra o evento de branch
+// publicada. Reaproveitado pelo push automatico (RodarFase) e pelo manual
+// (PublicarBranch).
+func (r *Runner) empurrarBranch(ctx context.Context, dem db.Demanda) ResultadoPush {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	worktree := strings.TrimSpace(dem.WorktreePath)
+	branch := strings.TrimSpace(dem.Branch)
+	if worktree == "" || branch == "" {
+		return ResultadoPush{Pulado: true, Motivo: "demanda sem branch/worktree preparados"}
+	}
+	if !gitops.TemRemote(worktree) {
+		// sem remote nao ha o que publicar (dev local); nao e falha.
+		return ResultadoPush{Pulado: true, Motivo: "projeto sem remote configurado"}
+	}
+
+	pushErr := r.Git.Push(worktree, branch, TentativasPush)
+	// contagem best-effort do alerta; nao mascara o desfecho do push.
+	naoPub, cerr := gitops.CommitsNaoPublicados(worktree, branch)
+	if cerr != nil {
+		naoPub = 0
+	}
+	if pushErr != nil {
+		r.registrarEvento(ctx, dem, "push_falhou",
+			fmt.Sprintf("Praxis: commits nao publicados (%d)", naoPub),
+			fmt.Sprintf("Falha ao publicar a branch %s: %v\nA fase concluiu normalmente; o push sera retentado no proximo commit ou pela acao manual publicar_branch.", branch, pushErr))
+		return ResultadoPush{Motivo: pushErr.Error(), CommitsNaoPublicados: naoPub}
+	}
+	r.registrarEvento(ctx, dem, "branch_publicada",
+		fmt.Sprintf("Praxis: branch %s publicada", branch),
+		fmt.Sprintf("Push da branch %s concluido no origin.", branch))
+	return ResultadoPush{Publicado: true, CommitsNaoPublicados: naoPub}
 }
 
 // dirLogs devolve (criando) a pasta dos .jsonl das execucoes desta demanda:

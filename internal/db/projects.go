@@ -17,6 +17,14 @@ var ErrNaoEncontrado = errors.New("registro não encontrado")
 // mapeiam para HTTP 409.
 var ErrSlugDuplicado = errors.New("slug já em uso")
 
+// Modos de integração de um projeto (coluna projects.modo_integracao — CHECK no
+// banco). merge_request publica/empurra a branch da demanda a cada commit;
+// merge_local integra por merge --no-ff local, sem push.
+const (
+	ModoIntegracaoMergeRequest = "merge_request"
+	ModoIntegracaoMergeLocal   = "merge_local"
+)
+
 // Projeto é uma linha da tabela projects. As tags JSON refletem o modelo de
 // dados do plano (snake_case) e são a forma serializada pela API.
 type Projeto struct {

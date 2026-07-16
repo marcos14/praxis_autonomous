@@ -1,6 +1,11 @@
 package gitops
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // EsperaEntreTentativas e a base da espera entre tentativas de push (cresce
 // linearmente: 1x, 2x, ...). Exposta como var para os testes reduzirem a espera.
@@ -34,4 +39,28 @@ func (o *Ops) Push(repo, branch string, tentativas int) error {
 		}
 	}
 	return err
+}
+
+// CommitsNaoPublicados conta os commits da branch que ainda nao estao em nenhuma
+// ref remota origin/* — ou seja, os commits locais aguardando push. Alimenta o
+// alerta "commits nao publicados (N)" da Fase 2f. Como a branch da demanda nasce
+// de origin/<main>, antes do primeiro push bem-sucedido isto conta exatamente os
+// commits proprios da demanda; apos um push completo, conta 0 (origin/<branch>
+// alcanca o topo). E somente leitura — nao toma o mutex do repo. Pode ser chamada
+// com o caminho do repo principal ou de um worktree vinculado (as refs sao
+// compartilhadas).
+func CommitsNaoPublicados(repo, branch string) (int, error) {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return 0, fmt.Errorf("gitops: branch vazia")
+	}
+	out, err := git(repo, "rev-list", "--count", branch, "--not", "--remotes=origin")
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("gitops: contagem de commits nao publicados invalida %q: %w", out, err)
+	}
+	return n, nil
 }

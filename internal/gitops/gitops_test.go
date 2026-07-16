@@ -194,6 +194,51 @@ func TestPushRetentaEFalha(t *testing.T) {
 	}
 }
 
+func TestCommitsNaoPublicados(t *testing.T) {
+	repo, _ := repoComRemote(t)
+	o := Novo()
+	wt := filepath.Join(t.TempDir(), "wt-np")
+	branch := "praxis/d9-naopub"
+	if err := o.WorktreeAdd(repo, wt, branch, "main"); err != nil {
+		t.Fatal(err)
+	}
+
+	// branch recem-criada de origin/main: nada proprio ainda → 0.
+	if n, err := CommitsNaoPublicados(wt, branch); err != nil || n != 0 {
+		t.Fatalf("branch nova: n=%d err=%v, esperava 0", n, err)
+	}
+
+	// dois commits locais, nenhum publicado → 2.
+	escrever(t, wt, "c1.txt", "1\n")
+	if err := o.Commit(wt, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	escrever(t, wt, "c2.txt", "2\n")
+	if err := o.Commit(wt, "c2"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := CommitsNaoPublicados(wt, branch); err != nil || n != 2 {
+		t.Fatalf("2 commits locais: n=%d err=%v, esperava 2", n, err)
+	}
+
+	// apos publicar, tudo esta no origin → 0.
+	if err := o.Push(repo, branch, 1); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := CommitsNaoPublicados(wt, branch); err != nil || n != 0 {
+		t.Fatalf("apos push: n=%d err=%v, esperava 0", n, err)
+	}
+
+	// mais um commit apos o push → 1 pendente.
+	escrever(t, wt, "c3.txt", "3\n")
+	if err := o.Commit(wt, "c3"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := CommitsNaoPublicados(wt, branch); err != nil || n != 1 {
+		t.Fatalf("commit apos push: n=%d err=%v, esperava 1", n, err)
+	}
+}
+
 func TestPreviaMergeLimpo(t *testing.T) {
 	repo, _ := repoComRemote(t)
 	o := Novo()

@@ -34,6 +34,12 @@ type ResultadoFase struct {
 	CommitFeito bool       // houve commit local nesta fase
 	RetomarEm   time.Time  // quando reagendar, se Situacao == SituacaoAguardandoFranquia
 	FasesNovas  []FaseNova // fases aprovadas pelo revisor; enfileiramento e do scheduler (2d/2g)
+
+	// Push automatico da branch (Fase 2f), preenchido pelo Runner APOS o commit
+	// (ExecutarFase nao publica). Push tolerante a falha: uma falha aqui nao muda
+	// a Situacao (a fase conclui mesmo assim).
+	Publicado            bool // o push da branch concluiu nesta fase
+	CommitsNaoPublicados int  // commits locais ainda aguardando push (0 = tudo publicado)
 }
 
 // ResultadoGates e o desfecho da bateria de gates. Espelha o ResultadoGates do
