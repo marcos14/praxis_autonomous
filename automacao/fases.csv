@@ -2,7 +2,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 0;Fundação do repositório e build mínimo;concluida;;nao;nao;;;1;2.00;2026-07-15 22:46;ok — custo US$ 2.00
 1a;Camada de banco e framework de migrações;concluida;0;nao;nao;;;1;2.89;2026-07-15 22:55;ok — custo US$ 2.89
 1b;Servidor HTTP e serve com health;concluida;0;nao;nao;;;1;3.21;2026-07-15 23:04;ok — custo US$ 3.21
-1c;CRUD de projetos (API + store);pendente;1a+1b;nao;nao;;;;;;Validar pasta=repo git, modo_integracao, slug único.
+1c;CRUD de projetos (API + store);executando;1a+1b;nao;nao;;;1;;;Validar pasta=repo git, modo_integracao, slug único.
 1d;CRUD de motores e contas;pendente;1a+1b;nao;nao;;;;;;"Prioridade = ordem de fallback; contas com config_dir (CLAUDE_CONFIG_DIR)."
 1e;Config em camadas (global → override por projeto);pendente;1a+1c;nao;nao;;;;;;"Merge determinístico global × override com origem de cada chave; endpoint de config efetiva."
 1f;Porte de internal/motor;pendente;1a;nao;nao;;;;;;"LER de C:\Projetos\praxis (motor.go, claude.go, codex.go, opencode.go, claude_alias.go) — proibido modificar origem. OpcoesRun ganha Dir/DirLogs; config vem do banco."
@@ -31,3 +31,4 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 5d;Serviço Windows, retenção e backup;pendente;1a+1b;sim;nao;;;;;;requer_humano: registro/validação como serviço Windows exige privilégios de admin na máquina-alvo. Código e testes de backup/retenção são automatizáveis.
 5e;Importador opcional do Praxis atual;pendente;1a+1c;nao;sim;;;;;;"Opcional (ativação é decisão de negócio). Lê autopilot.json/fases.csv uma única vez; idempotente."
 1a.n1;Persistência do espelho de franquia em engine_accounts;avaliar viabilidade;1a;sim;nao;;;;;;"Sobrepõe-se ao trabalho de franquia das Fases 2b/2d; por isso valor baixo (o sistema opera sem ela, apenas re-detecta o esgotamento em runtime após restart). Um humano deve decidir se cria fase dedicada ou dobra o item nos checklists de 2b/2d. Correto ter sido deixado fora da 1a: não pertence ao schema núcleo desta fase."
+1c.n1;Centralizar detecção de repo git no gitops;avaliar viabilidade;1c;sim;nao;;;;;;"Registrado pelo próprio executor na subseção Pendências descobertas da Fase 1c; o código atual funciona e é testado — trata-se de débito de manutenção (lógica duplicada) que naturalmente será pago ao portar o gitops."

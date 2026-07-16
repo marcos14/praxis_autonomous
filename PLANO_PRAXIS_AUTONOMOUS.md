@@ -177,9 +177,9 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 1c — CRUD de projetos (API + store)
 **Meta:** cadastrar/editar projetos pela API, persistidos no banco.
-- [ ] store `projects` no `internal/db`
-- [ ] `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`
-- [ ] validação: pasta existe e é repo git, `modo_integracao` ∈ {merge_request, merge_local}, slug único
+- [x] store `projects` no `internal/db`
+- [x] `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`
+- [x] validação: pasta existe e é repo git, `modo_integracao` ∈ {merge_request, merge_local}, slug único
 **Depende de:** 1a, 1b
 **Testes:** criar/listar/atualizar via `httptest`; validações rejeitam entradas inválidas.
 
@@ -424,6 +424,7 @@ POST/DELETE /tokens                     GET /manual/*
 | 0    | Fundação do repositório e build mínimo | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. |
 | 1a   | Camada de banco e framework de migrações | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Tabelas reais: `projects`, `engines`, `engine_accounts`, `config_entries` (schema versão 1). |
 | 1b   | Servidor HTTP e `serve` com health | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. `internal/api` com `Novo(Opcoes)`/`Handler()`; `GET /healthz`; middlewares `comLog`/`comRecover`; `serve` inicializa db + shutdown gracioso. Bind default `127.0.0.1:7799`. |
+| 1c   | CRUD de projetos (API + store) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store em métodos de `*db.DB` (`CriarProjeto`/`ListarProjetos`/`ObterProjeto`/`AtualizarProjeto`); rotas `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`; erros sentinela `db.ErrNaoEncontrado`/`db.ErrSlugDuplicado`; validação de repo git via `git rev-parse --is-inside-work-tree`. Códigos de erro API: `invalido`(400), `nao_encontrado`(404), `slug_duplicado`(409). |
 
 ### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
 
@@ -539,3 +540,53 @@ Meta: Persistir o horário de esgotamento por conta (esgotado_até) em engine_ac
 - **Middleware base já cobre todas as rotas** (log + recover) por estarem no `Handler()`; handlers novos herdam isso automaticamente. Para SSE (Fase 2h), o `capturaStatus` já repassa `Flush()`.
 
 **Pendências descobertas:** nenhuma. Todo o escopo da Fase 1b foi entregue (servidor + roteador + middlewares log/recover, `GET /healthz`, `serve` com db + shutdown gracioso, resposta JSON e erros padronizados).
+
+### Fase 1c — CRUD de projetos (API + store) (2026-07-15)
+
+**O que foi feito**
+- `internal/db/projects.go`: store de projetos como **métodos de `*db.DB`** (o `DB` já é o handle escritor/leitor). Tipo `Projeto` com tags JSON snake_case (é a forma serializada pela API). Métodos: `CriarProjeto`, `ListarProjetos`, `ObterProjeto`, `AtualizarProjeto` — todos recebem `context.Context`. Escritas por `d.Escritor`, leituras por `d.Leitor`.
+- Erros sentinela do pacote `db`: `ErrNaoEncontrado` (linha ausente) e `ErrSlugDuplicado` (violação de `projects.slug` UNIQUE). `AtualizarProjeto`/`CriarProjeto` traduzem o erro do driver via `strings.Contains(err.Error(), "projects.slug")`.
+- `CriarProjeto` usa `INSERT ... RETURNING id, criado_em` (SQLite 3.35+/modernc suportam) para devolver a linha persistida numa única ida ao banco. `AtualizarProjeto` faz `UPDATE ... WHERE id` e relê via `ObterProjeto` (preserva `criado_em`); `RowsAffected()==0` vira `ErrNaoEncontrado`.
+- `add_dirs` (JSON `[]string`): normalização (`normalizarLista` — apara espaços, descarta vazias, **nunca nil** → serializa `[]` e não `null`) e `decodificarLista` tolerante a vazio/`null`.
+- `internal/api/projects.go`: handlers `handleCriarProjeto` (201), `handleListarProjetos` (200), `handleObterProjeto` (200), `handleAtualizarProjeto` (200), registrados em `registrarRotasProjetos(mux)` chamado no `Novo`. Decodificação de corpo com `DisallowUnknownFields` + `io.LimitReader(1MiB)` + corpo vazio ⇒ 400.
+- `montarProjeto(req, base, criando)` centraliza defaults+validação. **Semântica de update:** campos opcionais omitidos (`branch_principal`, `modo_integracao`, `ativo`) **preservam o valor atual** do projeto (`base`); só caem no default quando não há valor prévio (criação). `ativo` é `*bool` no request para distinguir "omitido" de `false`. `nome` e `pasta` são obrigatórios sempre.
+- **Slug:** aceita o informado; se vazio, deriva do `nome` na criação (via `gerarSlug`: minúsculo, ASCII alfanumérico com hífens, sem hífens nas pontas); no update sem slug, mantém o atual. Unicidade garantida pelo índice do banco → 409.
+- **Validação de repo git** (`validarPastaRepoGit`): pasta existe + é diretório + `git -C <pasta> rev-parse --is-inside-work-tree` == "true" (mesma detecção do Praxis atual, `git.go:gitToplevel`). Erros amigáveis (400 `invalido`) antes de tocar o banco.
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK. Novos testes: `internal/db/projects_test.go` (12: criar preenche id/criado_em, slug duplicado, normalização de add_dirs, add_dirs vazio→`[]`, listar ordenado por nome NOCASE + vazio não-nil, obter/atualizar/inexistente, slug dup no update, CHECK de modo rejeita) e `internal/api/projects_test.go` (16, via `httptest`: criar OK/slug explícito/pasta inexistente/pasta não-git/modo inválido/nome obrigatório/slug dup 409/corpo inválido/campo desconhecido, listar ordenado, obter/404/id inválido, atualizar/preserva ativo/preserva modo/404).
+- Smoke do binário real (`serve` + `curl`, `PRAXIS_HOME` temp, repo git de teste): `POST` → 201 (slug `praxis-auto` derivado, `branch_principal=main`, `ativo=true`, `add_dirs` preservado); `PUT` → 200 (nome/ativo alterados, slug e `criado_em` preservados, modo `merge_local` preservado quando omitido); `POST` repetido → 409 `slug_duplicado`; pasta não-git → 400 `invalido`.
+
+**Decisões / desvios**
+- Store como métodos de `*db.DB` (não um struct `Loja` separado): o `DB` já encapsula escritor/leitor e é o que os handlers recebem via `api.Opcoes.Banco` — menos indireção, coerente com a API descrita na Fase 1a.
+- `Projeto` (tipo do `db`) carrega as tags JSON e é serializado direto pela API — evita um DTO espelho. O request de entrada (`reqProjeto`) é um tipo próprio do `api` porque tem semântica diferente (`Ativo *bool`, defaults).
+- Validação de repo git roda `git` como subprocesso (não há `internal/gitops` ainda — é a Fase 1g). Quando o gitops for portado, considerar centralizar essa checagem lá (ver Pendências descobertas).
+- Update tem semântica de **merge sobre o estado atual** (campos opcionais omitidos preservam o valor corrente), não replace-total — mais previsível para o formulário da UI (Fase 1h) e evita reverter modo/branch por engano.
+- Não foi feito `git commit`/`push` (responsabilidade do orquestrador).
+
+**Achados úteis para as próximas fases**
+- **Rotas já registradas:** `POST/GET /api/v1/projects`, `GET/PUT /api/v1/projects/{id}`. Path param via `r.PathValue("id")` (Go 1.22+). O helper `lerIDProjeto(w,r)` valida `{id}` (>0) e devolve 400 `invalido`.
+- **Contrato JSON do projeto** (o frontend da Fase 1h e demais fases dependem): `{id, nome, slug, pasta, branch_principal, modo_integracao, url_plataforma, add_dirs[], ativo, criado_em}`. `add_dirs` sempre vem como array (nunca `null`).
+- **Códigos de erro estáveis** (envelope `{"erro":{"codigo","mensagem"}}`): `invalido` (400, validação/corpo), `nao_encontrado` (404), `slug_duplicado` (409), `erro_interno` (500). Reutilizar os mesmos códigos nas fases 1d/1e.
+- **Padrão de store reutilizável para 1d/1e/2a:** métodos em `*db.DB` com `context`, `RETURNING` na criação, erros sentinela no pacote `db`, tradução de UNIQUE por `strings.Contains` do nome da coluna. Slice de saída sempre não-nil (`[]T{}`).
+- **`decodificarCorpo(w,r,dst)`** (em `internal/api/projects.go`) é genérico (recusa campo desconhecido + limita 1MiB + corpo vazio→400) e pode ser reaproveitado pelos handlers de engines/config.
+- **`gerarSlug`** e o mapa `modosIntegracao` estão no pacote `api`; se outra fase precisar do slug/validação de modo, extrair para um helper compartilhado.
+- **Detecção de repo git** hoje vive em `api.validarPastaRepoGit` — quando `internal/gitops` existir (1g), o botão "testar gates/push" e essa validação devem convergir para lá.
+
+**Pendências descobertas**
+- **Deleção/inativação de projeto** — o plano não pede `DELETE /projects/{id}` nesta fase (só POST/GET/PUT). Já existe `ativo` para desativar via PUT; se a UI precisar de exclusão física, será uma fase própria. Meta: avaliar se `DELETE` é necessário ou se "desativar" (ativo=false) basta. Mini-checklist: [ ] decidir soft-delete vs hard-delete; [ ] se hard, cuidar do `ON DELETE CASCADE` de `config_entries`.
+- **Centralizar validação de repo git no `internal/gitops`** — hoje `api.validarPastaRepoGit` roda `git rev-parse` direto. Quando a Fase 1g portar o gitops, mover a checagem para lá (fonte única) e o handler passa a chamá-la. Meta: uma única implementação de "isso é um repo git?" no projeto. Mini-checklist: [ ] expor `gitops.EhRepoGit(pasta)`; [ ] `api` passa a usar; [ ] remover o `exec.Command` local.
+
+### 1c.n1 — Centralizar detecção de repo git no gitops
+
+Status: avaliar viabilidade
+Depende de: 1c
+
+> Baixo valor tecnico: aguarda avaliacao humana de viabilidade. Nao sera executada automaticamente enquanto o status for `avaliar viabilidade`.
+
+Meta: Mover a checagem "isto é um repositório git?" de api.validarPastaRepoGit para uma função única em internal/gitops (ex.: gitops.EhRepoGit) quando o pacote existir, eliminando a duplicação com o exec.Command local do handler de projetos.
+
+- [ ] Expor gitops.EhRepoGit(pasta) como fonte única da detecção
+- [ ] Handler de projetos (montarProjeto/validarPastaRepoGit) passa a usar gitops.EhRepoGit
+- [ ] Remover o exec.Command local em internal/api/projects.go
+- [ ] Testes da validação de projeto continuam verdes após a troca
