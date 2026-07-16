@@ -1,3 +1,11 @@
+# Artefatos de build e runtime do Praxis Autonomous
+*.exe
+*.db
+*.db-shm
+*.db-wal
+/worktrees/
+/logs/
+
 # >>> praxis (orquestrador de fases) — nao edite entre os marcadores >>>
 /automacao/autopilot.json
 /automacao/logs/

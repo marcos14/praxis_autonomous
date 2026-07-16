@@ -1,5 +1,5 @@
 fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativas;custo_usd;concluido_em;observacao
-0;Fundação do repositório e build mínimo;pendente;;nao;nao;;;;;;Cria o repositório git exigido pelo modelo 'um commit por fase'. git init + go mod init (Go 1.26) + modernc.org/sqlite + layout de pastas + main com subcomando serve stub.
+0;Fundação do repositório e build mínimo;executando;;nao;nao;;;1;;;Cria o repositório git exigido pelo modelo 'um commit por fase'. git init + go mod init (Go 1.26) + modernc.org/sqlite + layout de pastas + main com subcomando serve stub.
 1a;Camada de banco e framework de migrações;pendente;0;nao;nao;;;;;;"WAL, busy_timeout=5000, escritor único (SetMaxOpenConns(1)) + pool de leitura; migrações por user_version; schema núcleo projects/engines/engine_accounts/config_entries."
 1b;Servidor HTTP e serve com health;pendente;0;nao;nao;;;;;;"internal/api com roteador, /healthz e shutdown gracioso; cmd serve inicializa o db."
 1c;CRUD de projetos (API + store);pendente;1a+1b;nao;nao;;;;;;Validar pasta=repo git, modo_integracao, slug único.

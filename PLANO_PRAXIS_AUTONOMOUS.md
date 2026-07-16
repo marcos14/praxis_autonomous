@@ -148,11 +148,11 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 0 — Fundação do repositório e build mínimo
 **Meta:** repositório git inicializado, módulo Go criado e um `main` que compila e roda.
-- [ ] `git init` + `.gitignore` (ignorar `*.exe`, `worktrees/`, `*.db`, `logs/`) e commit inicial dos documentos fundadores (HTMLs + plano)
-- [ ] `go mod init github.com/marcos14/praxis-autonomous` (Go 1.26)
-- [ ] `go get modernc.org/sqlite` (driver único de runtime, puro Go)
-- [ ] criar layout de pastas: `cmd/praxis/`, `internal/{db,api,scheduler,pipeline,motor,gitops,intake,notify}/`, `web/`
-- [ ] `cmd/praxis/main.go` mínimo: subcomando `serve` (stub) + flag `-version`, compilando
+- [x] `git init` + `.gitignore` (ignorar `*.exe`, `worktrees/`, `*.db`, `logs/`) e commit inicial dos documentos fundadores (HTMLs + plano)
+- [x] `go mod init github.com/marcos14/praxis-autonomous` (Go 1.26)
+- [x] `go get modernc.org/sqlite` (driver único de runtime, puro Go)
+- [x] criar layout de pastas: `cmd/praxis/`, `internal/{db,api,scheduler,pipeline,motor,gitops,intake,notify}/`, `web/`
+- [x] `cmd/praxis/main.go` mínimo: subcomando `serve` (stub) + flag `-version`, compilando
 **Depende de:** —
 **Testes:** `go build ./...` compila; teste trivial de versão/subcomando passa.
 **Observação:** cria o repositório git exigido pelo modelo "um commit por fase".
@@ -421,3 +421,31 @@ POST/DELETE /tokens                     GET /manual/*
 | Fase | Título | Status | Commit | Data | Notas / decisões / pendências |
 |------|--------|--------|--------|------|-------------------------------|
 | —    | (nenhuma fase concluída ainda) | — | — | — | Plano quebrado em micro-fases; aguardando início da Fase 0. |
+| 0    | Fundação do repositório e build mínimo | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. |
+
+### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
+
+**O que foi feito**
+- Repositório git já estava inicializado (commits `init` → `praxis plano`); os documentos fundadores (HTMLs + plano) já estavam versionados. `.gitignore` complementado **fora** dos marcadores gerenciados pelo próprio Praxis (bloco `>>> praxis <<<`, que não deve ser editado) com: `*.exe`, `*.db`, `*.db-shm`, `*.db-wal`, `/worktrees/`, `/logs/`. Verificado com `git check-ignore` (todos ignorados).
+- `go mod init github.com/marcos14/praxis-autonomous`; diretiva normalizada para `go 1.26` (o `go mod init` gera `go 1.26.4`; ajustado para casar com o plano e com o repo de referência `C:\Projetos\praxis`).
+- `go get modernc.org/sqlite` → **v1.53.0** (driver puro Go, sem cgo). Ancorado como dependência **direta** via blank import (`_ "modernc.org/sqlite"`) em `internal/db/doc.go`, para sobreviver a `go mod tidy` sem que Fase 1a precise reintroduzi-la. `go.sum` gerado e versionado.
+- Layout criado: `cmd/praxis/` e `internal/{db,api,scheduler,pipeline,motor,gitops,intake,notify}/`, cada pacote com um `doc.go` mínimo (declaração de `package` + docstring apontando a fase que o implementa) para que a pasta seja um pacote Go real, rastreável pelo git e compilável por `go build ./...`. `web/` com `.gitkeep` (não é pacote Go; receberá os assets embutidos na Fase 1h).
+- `cmd/praxis/main.go`: entrypoint testável `run(args, out, errOut)` com flag `-version` e despacho de subcomando; `serve` é stub (imprime aviso; servidor real a partir da Fase 1b). Testes em `main_test.go` cobrem `-version`, `serve`, ausência de subcomando e subcomando desconhecido.
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK (pacote `cmd/praxis` testado; demais pacotes ainda sem testes, esperado nesta fase).
+- Binário exercitado manualmente: `-version` → `0.0.0-dev`; `serve` → mensagem stub; sem subcomando e subcomando inválido → erro + exit code 1.
+
+**Decisões / desvios**
+- `versao` é `var` (não `const`) para permitir override via `-ldflags "-X main.versao=..."` em builds futuros; valor atual `0.0.0-dev`.
+- Optou-se por `doc.go` por pacote em vez de `.gitkeep` nos diretórios `internal/*`: mantém a pasta versionada **e** já constitui um pacote Go válido, evitando pastas vazias que o Go ignora.
+- Não foi feito `git commit`/`push` (responsabilidade do orquestrador). `automacao/` (config do Praxis clássico) é gerenciado pela esteira e não foi tocado.
+
+**Achados úteis para as próximas fases**
+- Versões resolvidas nesta máquina: Go **1.26.4**; `modernc.org/sqlite` **v1.53.0** (traz dependências indiretas: `modernc.org/libc`, `modernc.org/memory`, `modernc.org/mathutil`, `golang.org/x/sys`, `github.com/dustin/go-humanize`, `github.com/ncruces/go-strftime`, `github.com/mattn/go-isatty`, `github.com/remyoudompheng/bigfft`, `github.com/google/uuid`).
+- O nome do driver `database/sql` do modernc é **`"sqlite"`** (não `"sqlite3"`) — usar `sql.Open("sqlite", dsn)` na Fase 1a.
+- Repo de referência `C:\Projetos\praxis` usa `module github.com/marcos14/praxis` e `go 1.26` — mantivemos o mesmo prefixo de módulo/estilo.
+- O `.gitignore` tem um bloco gerenciado pelo Praxis clássico (entre marcadores `>>> praxis <<<`) que **não deve ser editado**; qualquer ignore novo vai fora dele.
+- `PRAXIS_HOME` (default `%LOCALAPPDATA%\praxis`) ainda não é resolvido em código — fica para a Fase 1a, conforme o plano.
+
+**Pendências descobertas:** nenhuma. Todo o escopo da Fase 0 foi entregue.
