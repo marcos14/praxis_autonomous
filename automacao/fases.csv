@@ -12,7 +12,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 2b;Porte de pipeline/fallback para ContextoExec;concluida;1f+1g+2a;nao;nao;;;1;7.05;2026-07-16 07:00;ok — custo US$ 7.05
 2c;Gates com semáforo global;concluida;2b;nao;nao;;;1;3.26;2026-07-16 07:08;ok — custo US$ 3.26
 2d;Scheduler e worker pool com limites;concluida;2a+2b;nao;nao;;;1;5.01;2026-07-16 07:23;ok — custo US$ 5.01
-2e;Worktree e branch por demanda com ciclo de fase;pendente;1g+2b;nao;nao;;;;;;"Branch praxis/d<id>-<slug> da main atualizada; ciclo executor→gates→corretor→revisor→commit (commit só do orquestrador)."
+2e;Worktree e branch por demanda com ciclo de fase;executando;1g+2b;nao;nao;;;1;;;"Branch praxis/d<id>-<slug> da main atualizada; ciclo executor→gates→corretor→revisor→commit (commit só do orquestrador)."
 2f;Push automático da branch (tolerante a falha);pendente;2e;nao;nao;;;;;;"Falha de push não bloqueia a fase: evento + alerta 'commits não publicados' + retry; ação publicar_branch. Credenciais git da máquina, nunca armazenadas."
 2g;Demanda manual executa em background;pendente;2c+2d+2e;nao;sim;;;;;;"Primeira execução autônoma ponta a ponta sem intake; 2 demandas paralelas no mesmo projeto → 2 branches independentes."
 2h;Card da demanda com fases e log ao vivo (SSE);pendente;1h+2g;nao;nao;;;;;;"Aba Log ao vivo via SSE do .jsonl (runs.log_ref); aba Eventos."
