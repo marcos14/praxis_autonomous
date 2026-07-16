@@ -40,6 +40,7 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasProjetos(mux)
 	s.registrarRotasMotores(mux)
 	s.registrarRotasConfig(mux)
+	s.registrarRotasWeb(mux)
 
 	s.handler = encadear(mux, comRecover(logger), comLog(logger))
 	return s

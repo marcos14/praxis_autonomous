@@ -1,0 +1,156 @@
+/* Praxis Autonomous — shell da UI (Fase 1h). Sem framework/npm.
+   Paleta e componentes derivados de PROTOTIPO_PRAXIS_AUTONOMOUS.html. */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232322;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --border: rgba(255,255,255,0.10);
+  --blue: #3987e5;
+  --blue-dim: #1c5cab;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --violet: #9085e9;
+  --aqua: #199e70;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font-size: 14px; }
+
+/* ---------- layout ---------- */
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 220px; min-width: 220px; background: var(--surface);
+  border-right: 1px solid var(--border); padding: 16px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+  position: sticky; top: 0; height: 100vh;
+}
+.logo { font-size: 17px; font-weight: 700; padding: 6px 12px 18px; letter-spacing: .3px; }
+.logo span { color: var(--blue); }
+.logo small { display:block; font-size: 10px; color: var(--muted); font-weight: 400; margin-top:2px; }
+.nav-item {
+  padding: 9px 12px; border-radius: 8px; color: var(--ink-2); cursor: pointer;
+  display: flex; align-items: center; gap: 10px; font-size: 13.5px; border: none;
+  background: none; text-align: left; width: 100%; font-family: inherit;
+}
+.nav-item:hover { background: var(--surface-2); color: var(--ink); }
+.nav-item.active { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+.nav-item .ico { width: 18px; text-align: center; opacity: .9; }
+.nav-foot { margin-top: auto; padding: 10px 12px; font-size: 11px; color: var(--muted); }
+
+.main { flex: 1; padding: 24px 28px; max-width: 1500px; }
+.view { display: none; }
+.view.active { display: block; }
+
+h1.page { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+p.sub { color: var(--muted); margin-bottom: 22px; font-size: 13px; }
+
+/* ---------- pills / badges ---------- */
+.pill {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
+  padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border);
+  color: var(--ink-2); white-space: nowrap;
+}
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; }
+.dot-good { background: var(--good); }
+.dot-warn { background: var(--warning); }
+.dot-muted { background: var(--muted); }
+.dot-blue { background: var(--blue); }
+.origem { font-size: 10.5px; padding: 1px 7px; }
+.origem-global { color: var(--muted); }
+.origem-project { color: var(--blue); border-color: rgba(57,135,229,.35); }
+
+/* ---------- buttons ---------- */
+.btn {
+  background: var(--blue); color: #fff; border: none; border-radius: 8px;
+  padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  font-family: inherit;
+}
+.btn:hover { background: #2a78d6; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--ink-2); }
+.btn.ghost:hover { color: var(--ink); border-color: var(--muted); }
+.btn.good { background: var(--good); }
+.btn.danger { background: var(--critical); }
+.btn.sm { padding: 5px 11px; font-size: 12px; border-radius: 6px; }
+
+/* ---------- forms ---------- */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+.panel h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 14px; color: var(--ink); }
+.panel h3 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.form { display: grid; gap: 14px; }
+.form label { font-size: 12px; color: var(--ink-2); display: block; margin-bottom: 5px; font-weight: 600; }
+.form label .opt { color: var(--muted); font-weight: 400; }
+.form .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form input, .form select, .form textarea {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--ink); border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit;
+}
+.form textarea { min-height: 80px; resize: vertical; font-family: Consolas, "Cascadia Mono", monospace; }
+.form .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.two-col { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: flex-start; }
+@media (max-width: 1000px) { .two-col { grid-template-columns: 1fr; } }
+
+/* campo de config com herança explícita do global */
+.cfg-field { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface-2); }
+.cfg-field .cfg-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 7px; }
+.cfg-field label { margin: 0; }
+.cfg-herda { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-weight: 400; cursor: pointer; }
+.cfg-field.herdado input, .cfg-field.herdado textarea, .cfg-field.herdado select { opacity: .55; }
+
+/* ---------- list-item (projetos) ---------- */
+.list-item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 13px 15px; margin-bottom: 9px; cursor: pointer;
+}
+.list-item:hover { border-color: var(--muted); }
+.list-item.sel { border-color: var(--blue); }
+.list-item b { display: block; font-size: 13.5px; margin-bottom: 3px; }
+.list-item .path { font-size: 11px; color: var(--muted); font-family: Consolas, monospace; }
+.list-item .meta { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+/* ---------- motor-row ---------- */
+.motor-row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; margin-bottom: 9px; }
+.motor-row .ord { display: flex; flex-direction: column; gap: 1px; }
+.motor-row .ord button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 10px; line-height: 1; padding: 1px; }
+.motor-row .ord button:hover:not(:disabled) { color: var(--ink); }
+.motor-row .ord button:disabled { opacity: .3; cursor: default; }
+.motor-row .nm { font-weight: 600; min-width: 110px; }
+.motor-row .det { flex: 1; font-size: 12px; color: var(--muted); }
+.switch { position: relative; width: 34px; height: 19px; background: var(--grid); border-radius: 999px; cursor: pointer; flex-shrink: 0; border: none; padding: 0; }
+.switch.on { background: var(--good); }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; background: #fff; border-radius: 50%; transition: left .15s; }
+.switch.on::after { left: 17px; }
+
+/* ---------- table ---------- */
+table.plain { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.plain th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); font-size: 11.5px; }
+table.plain td { padding: 8px; border-bottom: 1px solid var(--grid); color: var(--ink-2); }
+table.plain tr:last-child td { border-bottom: none; }
+
+/* ---------- banners / toast ---------- */
+.banner {
+  border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 18px;
+}
+.banner-erro { background: rgba(208,59,59,.12); border: 1px solid rgba(208,59,59,.4); color: #f0b4b4; }
+.banner-info { background: rgba(57,135,229,.10); border: 1px solid rgba(57,135,229,.35); color: var(--ink-2); }
+
+.toast {
+  position: fixed; bottom: 20px; right: 20px; z-index: 100;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 11px 16px; font-size: 13px; color: var(--ink); max-width: 380px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.toast.ok { border-color: rgba(12,163,12,.5); }
+.toast.err { border-color: rgba(208,59,59,.5); }
+
+/* bloco "config efetiva" revelado sob demanda */
+.efetiva { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); }
+.efetiva table.plain td { font-family: Consolas, monospace; }

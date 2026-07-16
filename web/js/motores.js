@@ -1,0 +1,245 @@
+// Tela "Motores" — CRUD de motores e contas (Fase 1d). A ordem da lista é a
+// prioridade (fallback); reordenar chama PUT /engines/ordem. Ligar/desligar é um
+// PUT do motor. Cada motor abre um painel de detalhes com contas.
+
+import { api } from "./api.js";
+import { el, limpar, toast, bannerErro } from "./ui.js";
+
+let motores = [];
+let editandoID = null; // motor com painel de detalhes aberto (ou "novo")
+
+export async function montarMotores() {
+  await recarregar();
+  document.getElementById("btn-novo-motor").onclick = () => {
+    editandoID = "novo";
+    renderPainel(null);
+  };
+  if (editandoID != null && editandoID !== "novo") {
+    const m = motores.find((x) => x.id === editandoID);
+    if (m) renderPainel(m);
+  }
+}
+
+async function recarregar() {
+  try {
+    motores = (await api.listarMotores()) || [];
+  } catch (e) {
+    bannerErro("Falha ao carregar motores: " + e.message);
+    return;
+  }
+  bannerErro("");
+  const lista = limpar(document.getElementById("lista-motores"));
+  if (motores.length === 0) {
+    lista.append(el("p", { class: "sub", text: "Nenhum motor cadastrado ainda." }));
+    return;
+  }
+  motores.forEach((m, i) => lista.append(linhaMotor(m, i)));
+}
+
+function linhaMotor(m, i) {
+  const nContas = (m.contas || []).length;
+  const det = [
+    m.modelo_exec ? `modelo ${m.modelo_exec} (exec)` : "sem modelo de execução",
+    m.modelo_analise ? `${m.modelo_analise} (análise)` : null,
+    m.budget_fase_usd > 0 ? `budget US$ ${m.budget_fase_usd.toFixed(2)}/fase` : "sem budget",
+    m.timeout_min > 0 ? `timeout ${m.timeout_min}min` : null,
+    `${nContas} ${nContas === 1 ? "conta" : "contas"}`,
+  ].filter(Boolean).join(" · ");
+
+  const sw = el("button", { class: "switch" + (m.ativo ? " on" : ""), title: m.ativo ? "ativo" : "inativo",
+    onclick: () => toggleAtivo(m) });
+  const subir = el("button", { title: "subir prioridade", disabled: i === 0, onclick: () => mover(i, i - 1) }, "▲");
+  const descer = el("button", { title: "descer prioridade", disabled: i === motores.length - 1, onclick: () => mover(i, i + 1) }, "▼");
+
+  return el("div", { class: "motor-row" },
+    el("div", { class: "ord" }, subir, descer),
+    el("span", { class: "pill", text: `${i + 1}º` }),
+    el("span", { class: "nm", text: m.nome }),
+    el("span", { class: "det", text: det }),
+    el("button", { class: "btn sm ghost", onclick: () => { editandoID = m.id; renderPainel(m); } }, "Editar"),
+    sw,
+  );
+}
+
+async function toggleAtivo(m) {
+  try {
+    await api.atualizarMotor(m.id, { ativo: !m.ativo });
+    await recarregar();
+    if (editandoID === m.id) {
+      const atual = motores.find((x) => x.id === m.id);
+      if (atual) renderPainel(atual);
+    }
+  } catch (e) {
+    bannerErro("Falha ao ligar/desligar motor: " + e.message);
+  }
+}
+
+async function mover(de, para) {
+  if (para < 0 || para >= motores.length) return;
+  const ids = motores.map((m) => m.id);
+  const [x] = ids.splice(de, 1);
+  ids.splice(para, 0, x);
+  try {
+    await api.reordenarMotores(ids);
+    toast("Prioridade atualizada.", "ok");
+    await recarregar();
+  } catch (e) {
+    bannerErro("Falha ao reordenar: " + e.message);
+  }
+}
+
+function renderPainel(m) {
+  const painel = document.getElementById("painel-motor");
+  painel.hidden = false;
+  limpar(painel);
+  const criando = m == null;
+  painel.append(el("h3", {}, criando ? "Novo motor" : `${m.nome} — detalhes`));
+
+  const nome = el("input", { value: m ? m.nome : "", placeholder: "claude / codex / opencode" });
+  const modeloExec = el("input", { value: m ? m.modelo_exec : "" });
+  const modeloAnalise = el("input", { value: m ? m.modelo_analise : "" });
+  const budget = el("input", { type: "number", step: "0.5", value: m ? m.budget_fase_usd : 0 });
+  const timeout = el("input", { type: "number", value: m ? m.timeout_min : 0 });
+  const params = el("textarea", {}, m && m.params ? prettyJSON(m.params) : "{}");
+
+  const form = el("div", { class: "form" },
+    el("div", {}, el("label", {}, "Nome"), nome),
+    el("div", { class: "row" },
+      el("div", {}, el("label", {}, "Modelo para execução"), modeloExec),
+      el("div", {}, el("label", {}, "Modelo para análise/planejamento"), modeloAnalise),
+    ),
+    el("div", { class: "row" },
+      el("div", {}, el("label", {}, "Budget por fase (US$)"), budget),
+      el("div", {}, el("label", {}, "Timeout por fase (min)"), timeout),
+    ),
+    el("div", {}, el("label", {}, "Params ", el("span", { class: "opt" }, "(JSON)")), params,
+      el("div", { class: "hint", text: "Objeto JSON com parâmetros específicos do motor." })),
+  );
+
+  const btn = el("button", { class: "btn", style: "width:fit-content" }, criando ? "Cadastrar" : "Salvar");
+  btn.onclick = () => salvar(m, { nome, modeloExec, modeloAnalise, budget, timeout, params }, btn);
+  form.append(btn);
+  painel.append(form);
+
+  if (!criando) {
+    painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 8px" }));
+    painel.append(el("h3", {}, "Contas ", el("small", {}, "CLAUDE_CONFIG_DIR")));
+    renderContas(painel, m);
+  }
+}
+
+function prettyJSON(raw) {
+  try { return JSON.stringify(raw, null, 2); } catch { return "{}"; }
+}
+
+async function salvar(m, campos, btn) {
+  const nome = campos.nome.value.trim();
+  if (!nome) { bannerErro("Nome do motor é obrigatório."); return; }
+  let params;
+  try {
+    params = JSON.parse(campos.params.value || "{}");
+    if (params === null || typeof params !== "object" || Array.isArray(params)) throw new Error("params deve ser um objeto JSON");
+  } catch (e) {
+    bannerErro("Params inválido: " + e.message);
+    return;
+  }
+  const corpo = {
+    nome,
+    modelo_exec: campos.modeloExec.value.trim(),
+    modelo_analise: campos.modeloAnalise.value.trim(),
+    budget_fase_usd: Number(campos.budget.value) || 0,
+    timeout_min: Number(campos.timeout.value) || 0,
+    params,
+  };
+  bannerErro("");
+  btn.disabled = true;
+  try {
+    if (m == null) {
+      const criado = await api.criarMotor(corpo);
+      toast("Motor cadastrado.", "ok");
+      editandoID = criado.id;
+      await recarregar();
+      renderPainel(motores.find((x) => x.id === criado.id) || criado);
+    } else {
+      await api.atualizarMotor(m.id, corpo);
+      toast("Motor salvo.", "ok");
+      await recarregar();
+      renderPainel(motores.find((x) => x.id === m.id));
+    }
+  } catch (e) {
+    bannerErro("Falha ao salvar motor: " + e.message);
+    toast("Falha ao salvar.", "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderContas(painel, m) {
+  const contas = m.contas || [];
+  const corpo = el("tbody", {});
+  if (contas.length === 0) {
+    corpo.append(el("tr", {}, el("td", { colspan: "4", class: "sub", text: "Nenhuma conta." })));
+  }
+  for (const c of contas) {
+    const sw = el("button", { class: "switch" + (c.ativo ? " on" : ""), onclick: () => toggleConta(m, c) });
+    corpo.append(el("tr", {},
+      el("td", { text: c.alias }),
+      el("td", { text: c.config_dir || "—" }),
+      el("td", {}, sw),
+      el("td", {}, el("button", { class: "btn sm ghost", onclick: () => removerConta(m, c) }, "remover")),
+    ));
+  }
+  const tabela = el("table", { class: "plain" },
+    el("thead", {}, el("tr", {}, el("th", {}, "Alias"), el("th", {}, "config_dir"), el("th", {}, "Ativo"), el("th", {}))),
+    corpo);
+
+  const alias = el("input", { placeholder: "alias (ex.: principal)" });
+  const configDir = el("input", { placeholder: "config_dir (opcional)" });
+  const btnAdd = el("button", { class: "btn sm" }, "Adicionar conta");
+  btnAdd.onclick = () => adicionarConta(m, alias, configDir, btnAdd);
+
+  painel.append(el("div", { class: "form" },
+    tabela,
+    el("div", { class: "row" }, el("div", {}, alias), el("div", {}, configDir)),
+    el("div", { class: "acoes" }, btnAdd),
+    el("div", { class: "hint", text: "Com N execuções paralelas, o Praxis distribui as demandas entre as contas ativas (afinidade conta↔demanda)." }),
+  ));
+}
+
+async function adicionarConta(m, alias, configDir, btn) {
+  const a = alias.value.trim();
+  if (!a) { bannerErro("Alias da conta é obrigatório."); return; }
+  bannerErro("");
+  btn.disabled = true;
+  try {
+    await api.criarConta(m.id, { alias: a, config_dir: configDir.value.trim() });
+    toast("Conta adicionada.", "ok");
+    await recarregar();
+    renderPainel(motores.find((x) => x.id === m.id));
+  } catch (e) {
+    bannerErro("Falha ao adicionar conta: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function toggleConta(m, c) {
+  try {
+    await api.atualizarConta(m.id, c.id, { ativo: !c.ativo });
+    await recarregar();
+    renderPainel(motores.find((x) => x.id === m.id));
+  } catch (e) {
+    bannerErro("Falha ao alterar conta: " + e.message);
+  }
+}
+
+async function removerConta(m, c) {
+  try {
+    await api.removerConta(m.id, c.id);
+    toast("Conta removida.", "ok");
+    await recarregar();
+    renderPainel(motores.find((x) => x.id === m.id));
+  } catch (e) {
+    bannerErro("Falha ao remover conta: " + e.message);
+  }
+}
