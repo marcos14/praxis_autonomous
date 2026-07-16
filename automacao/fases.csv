@@ -9,7 +9,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 1g;Porte de internal/gitops;concluida;0;nao;nao;;;1;5.25;2026-07-16 00:03;ok — custo US$ 5.25
 1h;Shell da UI web (projetos, motores, config);concluida;1c+1d+1e;nao;sim;;;2;2.13;2026-07-16 06:30;ok — custo US$ 2.13
 2a;Schema de demandas, fases, execuções e eventos;concluida;1a;nao;nao;;;2;4.97;2026-07-16 06:43;ok — custo US$ 4.97
-2b;Porte de pipeline/fallback para ContextoExec;executando;1f+1g+2a;nao;nao;;;1;;;LER executar.go (pipelineFase) e fallback.go de C:\Projetos\praxis. esperarResetFranquia não bloqueia — devolve horário para o scheduler.
+2b;Porte de pipeline/fallback para ContextoExec;concluida;1f+1g+2a;nao;nao;;;1;7.05;2026-07-16 07:00;ok — custo US$ 7.05
 2c;Gates com semáforo global;pendente;2b;nao;nao;;;;;;LER gates.go de C:\Projetos\praxis. Semáforo max_gates_simultaneos (default 1).
 2d;Scheduler e worker pool com limites;pendente;2a+2b;nao;nao;;;;;;"Limites global/por projeto; afinidade conta↔demanda; reagendamento por franquia sem bloquear."
 2e;Worktree e branch por demanda com ciclo de fase;pendente;1g+2b;nao;nao;;;;;;"Branch praxis/d<id>-<slug> da main atualizada; ciclo executor→gates→corretor→revisor→commit (commit só do orquestrador)."
