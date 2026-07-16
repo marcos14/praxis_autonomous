@@ -229,8 +229,8 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 2a — Schema de demandas, fases, execuções e eventos
 **Meta:** migração das tabelas do ciclo de execução + stores.
-- [ ] migração: `demands`, `phases`, `runs`, `events`, `metrics_dia`
-- [ ] stores com transações curtas (nunca abertas durante run de harness)
+- [x] migração: `demands`, `phases`, `runs`, `events`, `metrics_dia`
+- [x] stores com transações curtas (nunca abertas durante run de harness)
 **Depende de:** 1a
 **Testes:** migração aplica; CRUD básico de demand/phase/run/event.
 
@@ -429,6 +429,7 @@ POST/DELETE /tokens                     GET /manual/*
 | 1f   | Porte de `internal/motor` | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Pacote `internal/motor` com API exportada: `Motor` (interface), `OpcoesRun`/`ResultadoRun`/`Capacidades`, `Selecionar`/`Instalado`/`Instalados`/`Conhecidos`, `ModeloPadrao`/`EsforcoPadrao`/`CoAuthorTrailer`/`CustoEstimado`/`DecodificarEstruturado`. `OpcoesRun.Raiz`→`Dir` (worktree) + novo `DirLogs`. Motores `claude`/`codex`/`opencode` (structs internos). Alias/conta Claude adaptado (`ValidarAlias`/`SugerirConfigDir`/`NomesComandoShell`/`ConfigurarShellAlias`). Laço de franquia (`esperarResetFranquia`) NÃO portado — é da Fase 2b. 31 testes. |
 | 1g   | Porte de `internal/gitops` | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Pacote `internal/gitops` novo: tipo `Ops` com **mutex por projeto** (chave = git-common-dir → repo e worktrees vinculados no mesmo lock). Funções livres `EhRepoGit`/`Toplevel`/`Limpo`/`ArquivosMudados`; métodos `Commit`, `Fetch`, `WorktreeAdd`/`WorktreeRemove`/`WorktreePrune`, `PrepararRepoNoBoot` (longpaths+prune), `Push(repo,branch,tentativas)` (guarda `praxis/*` via `validarBranchPraxis`, retry com `EsperaEntreTentativas`), `PreviaMerge` (→ `Previa{Limpo,Conflitos,ArvoreOID}` via `git merge-tree --write-tree --name-only`), `MergeNoFF`. Const `PrefixoBranch="praxis/"`; erro `ErrBranchNaoPraxis`. Só stdlib. 12 testes (repo+origin bare local). |
 | 1e   | Config em camadas (global → override por projeto) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Store `config_entries` em métodos de `*db.DB` (`ObterConfigGlobal`/`ObterConfigProjeto`/`ConfigEfetiva`/`DefinirConfigGlobal`/`DefinirConfigProjeto`). Config é key→valor JSON **livre** (sem whitelist de chaves). Rotas: `GET/PUT /api/v1/config` (global), `GET/PUT /api/v1/projects/{id}/config` (override), `GET /api/v1/projects/{id}/config/efetiva` (merge). PUT = **full replace** do escopo. Efetiva devolve `{chave:{valor,origem}}` com `origem ∈ {"global","project"}` (constantes `db.OrigemGlobal`/`db.OrigemProjeto`). Endpoint de config global (`/api/v1/config`) foi incluído aqui por ser o par indispensável do override — ver decisões. |
+| 2a   | Schema de demandas, fases, execuções e eventos | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-16 | Ver detalhes abaixo. Migração **versão 2** (`schemaCicloExecucao`) cria `demands`, `phases`, `runs`, `events`, `metrics_dia`. Stores em métodos de `*db.DB` (`demands.go`/`phases.go`/`runs.go`/`events.go`/`metrics.go`). Constantes de estado `db.StatusDemanda*`/`db.StatusFase*` e de operação `db.Operacao*`. `status` é TEXT livre (sem CHECK); `runs.phase_id`/`events.project_id`/`events.demand_id` são nullable. |
 | 1h   | Shell da UI web (projetos, motores, config) | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-16 | Ver detalhes abaixo. Assets embutidos no **pacote `web`** (`web/web.go`: `//go:embed index.html app.css js` → `web.Assets fs.FS`), servidos por `http.FileServerFS` na rota `GET /` (registrada em `internal/api/web.go` via `registrarRotasWeb`; rotas específicas `/api/v1/*` e `/healthz` têm precedência). SPA multi-view com nav por hash (`#projetos`/`#motores`/`#config`). ES modules vanilla: `api.js` (cliente + `ErroAPI`), `ui.js` (`el`/`toast`/`bannerErro`), `config-fields.js` (whitelist de chaves de config + conversões JSON↔texto), `projetos.js`/`motores.js`/`config.js`, `app.js` (router). Config é key→valor JSON **livre** no backend; a UI edita um conjunto de chaves conhecidas e **preserva** as desconhecidas no PUT (full replace). "Herança explícita do global" = checkbox *herdar do global* por campo de override. |
 
 ### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
@@ -836,3 +837,43 @@ Meta: Rotear o eco ao vivo dos motores (progresso e AVISO de modo BYPASS, hoje e
 - Re-executados os gates nesta re-verificação: `go build ./...`, `go vet ./...`, `go test ./... -count=1` → **todos verdes** (inclui `internal/api/web_test.go`).
 - Smoke do binário real (`serve -addr 127.0.0.1:<porta>` em `PRAXIS_HOME` temporário, processo encerrado ao final): `GET /`=200 `text/html` (corpo com `view-projetos`), `/app.css`=200 `text/css`, `/js/app.js`=200 `text/javascript`, `/js/projetos.js`=200, asset inexistente=404, `/healthz`=`{"status":"ok","versao":"0.0.0-dev","banco":"ok"}` (campos `versao`/`banco` que o `app.js` consome), `GET /api/v1/{projects,engines,config}`=200.
 - Conclusão: escopo da 1h **íntegro e verde**; o único problema era de registro/commit (WIP), não de código. A Fase 2a deve ser retomada do zero para o schema do ciclo de execução.
+
+### Fase 2a — Schema de demandas, fases, execuções e eventos (2026-07-16)
+
+**O que foi feito**
+- **Migração versão 2** (`schemaCicloExecucao` em `internal/db/migracoes.go`), acrescentada como `{versao: 2, …}` ao slice `migracoes` — a migração 1 **não** foi tocada. `VersaoSchema()` passou a 2 automaticamente. Cria 5 tabelas do ciclo de execução: `demands`, `phases`, `runs`, `events`, `metrics_dia`.
+- **Stores** (métodos de `*db.DB`, transações curtas, mesmas convenções das fases 1c/1d/1e):
+  - `demands.go` → `CriarDemanda`/`ListarDemandas(FiltroDemandas)`/`ObterDemanda`/`AtualizarDemanda`/`RemoverDemanda`. Tipo `Demanda`.
+  - `phases.go` → `CriarFase`/`ListarFases(demandID)`/`ObterFase`/`AtualizarFase`/`RemoverFase`. Tipo `Fase` (com `DependeDe []string` ↔ JSON).
+  - `runs.go` → `CriarExecucao`/`ListarExecucoes(demandID)`/`ObterExecucao`/`AtualizarExecucao`. Tipo `Execucao` (mapeia a tabela `runs`; `PhaseID *int64` nullable).
+  - `events.go` → `RegistrarEvento`/`ListarEventos(FiltroEventos)`. Tipo `Evento` (`ProjectID`/`DemandID *int64` nullable).
+  - `metrics.go` → `AcumularMetricaDia` (UPSERT incremental)/`ListarMetricasDia(FiltroMetricas)`. Tipo `MetricaDia`.
+- **Erros sentinela / códigos:** reutiliza `db.ErrNaoEncontrado`; novo `db.ErrCodigoFaseDuplicado` (unicidade `phases(demand_id,codigo)`). Violação de FK (project_id/demand_id/phase_id inexistente) é traduzida para `ErrNaoEncontrado` por `traduzirErroFK`.
+- **Testes:** um arquivo `_test.go` por store + teste de schema em `migracoes_test.go` (`TestSchemaCicloExecucaoCriaTabelasEIndices`). Cobrem: migração aplica/tabelas+índices existem, CRUD de cada entidade, defaults, filtros, ordenação, unicidade, cascata (remover demanda apaga fases/runs/events) e `ON DELETE SET NULL` de `runs.phase_id`.
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK (todos os pacotes; `internal/db` com os testes novos das 5 stores + schema).
+
+**Decisões / desvios**
+- **`status` (de `demands` e `phases`) é TEXT livre com default, SEM CHECK** — a máquina de estados é validada na aplicação via constantes exportadas (`StatusDemanda*`, `StatusFase*`), para não exigir migração a cada estado novo das fases futuras. Contrasta com os CHECKs enumerados que ficaram onde o domínio é fechado (`origem ∈ {ui,api}`, `requer_humano`/`is_error ∈ {0,1}`). Mesma filosofia "livre" já adotada na config (1e).
+- **`metrics_dia` foi criado como TABELA** (o plano dizia "agregado p/ Home (ou view)"). Escolhida tabela por ser escrita incrementalmente (`AcumularMetricaDia` = UPSERT `ON CONFLICT (dia,project_id,engine) DO UPDATE SET … + excluded.…`), o que uma view não permite. PK composta `(dia, project_id, engine)`.
+- **Nullabilidade:** `runs.phase_id` é nullable com `ON DELETE SET NULL` (runs de analista/planejador não têm fase; e editar o plano removendo uma fase **não** apaga o histórico de execuções — só zera o vínculo). `events.project_id`/`events.demand_id` são nullable (evento pode ser global, de projeto, de demanda ou de ambos), ambos `ON DELETE CASCADE`.
+- Incluí um par de métodos de leitura/escrita para `metrics_dia` mesmo sem consumidor ainda (Fase 4b), por o checkbox de 2a listar `metrics_dia` entre as tabelas/stores — mantidos mínimos e testados (não é adiantar UI/lógica de 4b).
+- Não foi feito `git commit`/`push` (responsabilidade do orquestrador). `automacao/fases.csv` não foi tocado.
+
+**Achados úteis para as próximas fases (nomes reais)**
+- **Tabelas do ciclo (schema versão 2):**
+  - `demands(id, project_id→projects, titulo, origem['ui'|'api'], origem_ref, status='recebida', prioridade, branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_em, atualizado_em)`. Índices: `ix_demands_project`, `ix_demands_status`.
+  - `phases(id, demand_id→demands, codigo, titulo, status='pendente', depende_de JSON='[]', requer_humano, gate_extra, modelo, tentativas, custo_usd, concluido_em, observacao, ordem, UNIQUE(demand_id,codigo))`. Índice `ix_phases_demand`.
+  - `runs(id, demand_id→demands, phase_id→phases NULLABLE[SET NULL], operacao, engine, modelo, custo_usd, tokens_in, tokens_out, is_error, log_ref, iniciado_em, terminado_em)`. Índices `ix_runs_demand`, `ix_runs_phase`. **`log_ref`** é o ponteiro para o `.jsonl` (Fase 2h/log SSE).
+  - `events(id, project_id→projects NULLABLE, demand_id→demands NULLABLE, tipo, titulo, detalhe, criado_em)`. Índices `ix_events_demand`, `ix_events_project`, `ix_events_criado` (este último para ordenar o histórico/SSE — Fases 4a/4b).
+  - `metrics_dia(dia 'YYYY-MM-DD', project_id→projects, engine, custo_usd, fases_concluidas, PK(dia,project_id,engine))`.
+- **Constantes exportadas para reuso** (evitam strings mágicas nas fases 2b–4x):
+  - Demanda: `StatusDemandaRecebida/Analisando/AguardandoRespostas/Planejando/AguardandoAprovacao/Pronta/Executando/Concluida/Integrada/Pausada/AguardandoFranquia/Falhou/Conflito/Cancelada`; origens `OrigemUI`/`OrigemAPI`.
+  - Fase: `StatusFasePendente/Executando/Concluida/Falhou/Pausada`.
+  - Execução: `OperacaoExecutor/Corretor/Revisor/Gates/Analista/Planejador`.
+- **API dos stores** (todos recebem `ctx` e escrevem por `d.Escritor`/leem por `d.Leitor`; transações curtas, nunca abertas durante run de harness — respeita a orientação da 1a). `CriarDemanda` preenche `origem`/`status` com default quando vazios; `AtualizarDemanda` carimba `atualizado_em` automaticamente e **não** altera `project_id`.
+- **Ainda NÃO há endpoints HTTP** para essas entidades — 2a é só migração+store. As rotas (`POST /projects/{id}/demands`, `GET /demands…`, `/demands/{id}/actions`, SSE de logs/eventos) chegam nas Fases 2g/2h/3a/4a. `chat_messages`/`questions` (Fase 3a) e `api_tokens` (5a) **não** entram aqui — só as 5 tabelas do ciclo.
+- O `custo_usd`/`budget_usd` da demanda e `custo_usd`/`tentativas` da fase são só colunas por ora; quem soma custo/tentativa e agrega em `metrics_dia` é o pipeline/scheduler (2b–2g).
+
+**Pendências descobertas:** nenhuma. Todo o escopo da Fase 2a (migração das 5 tabelas + stores com CRUD básico e transações curtas, com testes) foi entregue e está verde.

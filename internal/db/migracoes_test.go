@@ -101,6 +101,30 @@ func TestSchemaNucleoCriaTabelasEIndices(t *testing.T) {
 	}
 }
 
+func TestSchemaCicloExecucaoCriaTabelasEIndices(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+
+	tabelas := []string{"demands", "phases", "runs", "events", "metrics_dia"}
+	for _, tab := range tabelas {
+		if !existeNoSchema(t, db, "table", tab) {
+			t.Errorf("tabela %q não foi criada", tab)
+		}
+	}
+	indices := []string{
+		"ix_demands_project", "ix_demands_status", "ix_phases_demand",
+		"ix_runs_demand", "ix_runs_phase",
+		"ix_events_demand", "ix_events_project", "ix_events_criado",
+	}
+	for _, idx := range indices {
+		if !existeNoSchema(t, db, "index", idx) {
+			t.Errorf("índice %q não foi criado", idx)
+		}
+	}
+}
+
 func TestProjectsRejeitaModoIntegracaoInvalido(t *testing.T) {
 	db := abrirBruto(t)
 	if _, _, err := Migrar(db); err != nil {
