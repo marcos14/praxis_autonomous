@@ -100,6 +100,25 @@ func (d *DB) ListarExecucoes(ctx context.Context, demandID int64) ([]Execucao, e
 	return execs, nil
 }
 
+// UltimaExecucaoComLog devolve a execução mais recente (maior id) da demanda que
+// já tem um log_ref gravado — o alvo do "log ao vivo" (SSE) do card. Enquanto uma
+// fase roda, o log_ref só é preenchido ao FECHAR a execução (AtualizarExecucao);
+// por isso o alvo é sempre a última execução JÁ com log. Devolve ok=false quando
+// a demanda ainda não tem nenhuma execução com log.
+func (d *DB) UltimaExecucaoComLog(ctx context.Context, demandID int64) (Execucao, bool, error) {
+	row := d.Leitor.QueryRowContext(ctx,
+		`SELECT `+colunasExecucao+` FROM runs
+		 WHERE demand_id = ? AND log_ref != '' ORDER BY id DESC LIMIT 1`, demandID)
+	e, err := scanExecucao(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Execucao{}, false, nil
+	}
+	if err != nil {
+		return Execucao{}, false, fmt.Errorf("última execução com log da demanda %d: %w", demandID, err)
+	}
+	return e, true, nil
+}
+
 // ObterExecucao devolve a execução de id. Se não existir, devolve ErrNaoEncontrado.
 func (d *DB) ObterExecucao(ctx context.Context, id int64) (Execucao, error) {
 	row := d.Leitor.QueryRowContext(ctx,

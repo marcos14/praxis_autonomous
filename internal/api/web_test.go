@@ -20,6 +20,7 @@ func TestAssetsEmbutidosServem(t *testing.T) {
 		{"/", "view-projetos"}, // raiz → index.html (o FileServer redireciona /index.html → /)
 		{"/app.css", ":root"},
 		{"/js/app.js", "irPara"},
+		{"/js/demandas.js", "abrirCard"},
 		{"/js/api.js", "/api/v1/projects"},
 		{"/js/projetos.js", "config efetiva"},
 		{"/js/motores.js", "reordenar"},

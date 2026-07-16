@@ -113,6 +113,54 @@ func TestListarExecucoesOrdenadoPorID(t *testing.T) {
 	}
 }
 
+func TestUltimaExecucaoComLog(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	dem := demandaTeste(t, d, "a")
+
+	// sem execuções → ok=false.
+	if _, ok, err := d.UltimaExecucaoComLog(ctx, dem); err != nil || ok {
+		t.Fatalf("sem execuções: ok=%v err=%v, quero ok=false", ok, err)
+	}
+
+	// execução sem log_ref não conta.
+	e1, err := d.CriarExecucao(ctx, Execucao{DemandID: dem, Operacao: OperacaoExecutor})
+	if err != nil {
+		t.Fatalf("CriarExecucao 1: %v", err)
+	}
+	if _, ok, err := d.UltimaExecucaoComLog(ctx, dem); err != nil || ok {
+		t.Fatalf("execução sem log: ok=%v err=%v, quero ok=false", ok, err)
+	}
+
+	// dá log à primeira execução: passa a ser o alvo.
+	e1.LogRef = "logs/d1/fase-1-executor.jsonl"
+	e1.TerminadoEm = "2026-07-16T10:00:00.000Z"
+	if _, err := d.AtualizarExecucao(ctx, e1); err != nil {
+		t.Fatalf("AtualizarExecucao 1: %v", err)
+	}
+	got, ok, err := d.UltimaExecucaoComLog(ctx, dem)
+	if err != nil || !ok {
+		t.Fatalf("com log: ok=%v err=%v, quero ok=true", ok, err)
+	}
+	if got.ID != e1.ID || got.LogRef != e1.LogRef {
+		t.Fatalf("alvo = %+v, quero a execução 1 (%d/%q)", got, e1.ID, e1.LogRef)
+	}
+
+	// uma execução mais nova com log vira o novo alvo (maior id).
+	e2, err := d.CriarExecucao(ctx, Execucao{DemandID: dem, Operacao: OperacaoRevisor})
+	if err != nil {
+		t.Fatalf("CriarExecucao 2: %v", err)
+	}
+	e2.LogRef = "logs/d1/fase-1-revisor.jsonl"
+	if _, err := d.AtualizarExecucao(ctx, e2); err != nil {
+		t.Fatalf("AtualizarExecucao 2: %v", err)
+	}
+	got, ok, err = d.UltimaExecucaoComLog(ctx, dem)
+	if err != nil || !ok || got.ID != e2.ID {
+		t.Fatalf("alvo = %+v (ok=%v err=%v), quero a execução 2 (%d)", got, ok, err, e2.ID)
+	}
+}
+
 func TestListarExecucoesVazioNaoNil(t *testing.T) {
 	d := abrirTemp(t)
 	dem := demandaTeste(t, d, "a")

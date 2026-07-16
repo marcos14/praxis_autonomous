@@ -1,6 +1,7 @@
 // Ponto de entrada do frontend. Faz a navegação entre as telas (shell) e
 // dispara a montagem de cada view ao ser exibida. Sem framework: só ES modules.
 
+import { montarDemandas } from "./demandas.js";
 import { montarProjetos } from "./projetos.js";
 import { montarMotores } from "./motores.js";
 import { montarConfig } from "./config.js";
@@ -9,6 +10,7 @@ import { bannerErro } from "./ui.js";
 // views mapeia o nome da view à sua função de montagem (chamada a cada exibição,
 // para refletir o estado atual do banco).
 const views = {
+  demandas: montarDemandas,
   projetos: montarProjetos,
   motores: montarMotores,
   config: montarConfig,

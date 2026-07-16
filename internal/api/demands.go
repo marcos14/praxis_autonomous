@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -41,6 +42,10 @@ type respDemanda struct {
 // registrarRotasDemandas registra as rotas de demandas no mux.
 func (s *Servidor) registrarRotasDemandas(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/projects/{id}/demands", s.handleCriarDemanda)
+	mux.HandleFunc("GET /api/v1/demands", s.handleListarDemandas)
+	mux.HandleFunc("GET /api/v1/demands/{id}", s.handleObterDemanda)
+	mux.HandleFunc("GET /api/v1/demands/{id}/events", s.handleEventosDemanda)
+	mux.HandleFunc("GET /api/v1/demands/{id}/logs", s.handleLogsDemanda)
 }
 
 // handleCriarDemanda cria uma demanda com fases manuais sob um projeto. A demanda
@@ -74,6 +79,78 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responderJSON(w, http.StatusCreated, respDemanda{Demanda: criada, Fases: criadas})
+}
+
+// handleListarDemandas devolve as demandas, opcionalmente filtradas por
+// ?project=<id> e ?status=<status>. Alimenta a lista que abre os cards.
+func (s *Servidor) handleListarDemandas(w http.ResponseWriter, r *http.Request) {
+	var filtro db.FiltroDemandas
+	if v := strings.TrimSpace(r.URL.Query().Get("project")); v != "" {
+		pid, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || pid <= 0 {
+			responderErro(w, http.StatusBadRequest, "invalido", "project inválido")
+			return
+		}
+		filtro.ProjectID = &pid
+	}
+	filtro.Status = strings.TrimSpace(r.URL.Query().Get("status"))
+
+	demandas, err := s.banco.ListarDemandas(r.Context(), filtro)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, demandas)
+}
+
+// handleObterDemanda devolve a demanda com suas fases (aba Plano & Fases do card).
+func (s *Servidor) handleObterDemanda(w http.ResponseWriter, r *http.Request) {
+	dem, ok := s.obterDemandaOu404(w, r)
+	if !ok {
+		return
+	}
+	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, respDemanda{Demanda: dem, Fases: fases})
+}
+
+// handleEventosDemanda devolve os eventos da demanda (aba Eventos do card), dos
+// mais recentes para os mais antigos.
+func (s *Servidor) handleEventosDemanda(w http.ResponseWriter, r *http.Request) {
+	dem, ok := s.obterDemandaOu404(w, r)
+	if !ok {
+		return
+	}
+	eventos, err := s.banco.ListarEventos(r.Context(), db.FiltroEventos{DemandID: &dem.ID})
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, eventos)
+}
+
+// obterDemandaOu404 lê o {id} da rota e busca a demanda. Em id inválido escreve
+// 400; em demanda inexistente escreve 404 ("demanda não encontrada"); em erro de
+// infra, 500. Devolve ok=false quando já respondeu.
+func (s *Servidor) obterDemandaOu404(w http.ResponseWriter, r *http.Request) (db.Demanda, bool) {
+	id, ok := lerIDProjeto(w, r)
+	if !ok {
+		return db.Demanda{}, false
+	}
+	dem, err := s.banco.ObterDemanda(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, db.ErrNaoEncontrado) {
+			responderErro(w, http.StatusNotFound, "nao_encontrado", "demanda não encontrada")
+		} else {
+			s.log.Error("erro no store de demandas", "erro", err)
+			responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		}
+		return db.Demanda{}, false
+	}
+	return dem, true
 }
 
 // montarDemanda valida o corpo e monta a demanda e as fases prontas para

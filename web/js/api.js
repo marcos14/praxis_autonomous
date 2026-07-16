@@ -62,6 +62,19 @@ export const api = {
   atualizarConta: (engineID, contaID, c) => req("PUT", `/api/v1/engines/${engineID}/accounts/${contaID}`, c),
   removerConta: (engineID, contaID) => req("DELETE", `/api/v1/engines/${engineID}/accounts/${contaID}`),
 
+  // demandas (Fases 2g/2h)
+  listarDemandas: (q = {}) => {
+    const p = new URLSearchParams();
+    if (q.project) p.set("project", q.project);
+    if (q.status) p.set("status", q.status);
+    const qs = p.toString();
+    return req("GET", "/api/v1/demands" + (qs ? "?" + qs : ""));
+  },
+  obterDemanda: (id) => req("GET", `/api/v1/demands/${id}`),
+  eventosDemanda: (id) => req("GET", `/api/v1/demands/${id}/events`),
+  // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).
+  urlLogsDemanda: (id) => `/api/v1/demands/${id}/logs`,
+
   // config em camadas (Fase 1e)
   obterConfigGlobal: () => req("GET", "/api/v1/config"),
   definirConfigGlobal: (entradas) => req("PUT", "/api/v1/config", entradas),

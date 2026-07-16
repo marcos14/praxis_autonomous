@@ -3,9 +3,15 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
 )
+
+// intervaloPollLogPadrao é a cadência com que o SSE de log ao vivo relê o .jsonl
+// da execução em busca de novas linhas (e checa se uma execução mais nova
+// começou). Os testes sobrescrevem para um valor pequeno.
+const intervaloPollLogPadrao = 700 * time.Millisecond
 
 // Opcoes reúne as dependências do servidor HTTP.
 type Opcoes struct {
@@ -23,6 +29,10 @@ type Servidor struct {
 	banco   *db.DB
 	log     *slog.Logger
 	handler http.Handler
+
+	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
+	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
+	intervaloPollLog time.Duration
 }
 
 // Novo monta o servidor: registra as rotas e encadeia os middlewares base (log
@@ -33,7 +43,7 @@ func Novo(opts Opcoes) *Servidor {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Servidor{banco: opts.Banco, log: logger}
+	s := &Servidor{banco: opts.Banco, log: logger, intervaloPollLog: intervaloPollLogPadrao}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)

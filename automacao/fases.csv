@@ -15,7 +15,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 2e;Worktree e branch por demanda com ciclo de fase;concluida;1g+2b;nao;nao;;;1;5.05;2026-07-16 07:34;ok — custo US$ 5.05
 2f;Push automático da branch (tolerante a falha);concluida;2e;nao;nao;;;1;4.93;2026-07-16 07:47;ok — custo US$ 4.93
 2g;Demanda manual executa em background;concluida;2c+2d+2e;nao;sim;;;1;9.73;2026-07-16 08:09;ok — custo US$ 9.73
-2h;Card da demanda com fases e log ao vivo (SSE);pausado;1h+2g;nao;nao;;;1;;;"Aba Log ao vivo via SSE do .jsonl (runs.log_ref); aba Eventos."
+2h;Card da demanda com fases e log ao vivo (SSE);pendente;1h+2g;nao;nao;;;1;;;"Aba Log ao vivo via SSE do .jsonl (runs.log_ref); aba Eventos."
 2i;Pausar/retomar/cancelar e retomada pós-restart;pendente;2d+2g;nao;sim;;;;;;Marca fim do M2. No boot: worktree prune, matar árvore de processos órfãos, executando→pausada→refila.
 3a;Chat da demanda persistido e nova demanda;pendente;1a+1h;nao;nao;;;;;;"Migração chat_messages/questions; tela Nova demanda + aba Chat/PRD."
 3b;Analista (perguntas readonly);pendente;3a+1f;nao;nao;;;;;;"Prompt analista readonly → JSON (resumo, arquivos_provaveis, perguntas); prompts no banco com default embutido."
