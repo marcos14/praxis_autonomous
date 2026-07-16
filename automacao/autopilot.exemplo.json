@@ -10,7 +10,29 @@
   "max_ciclos_revisao": 2,
   "max_fases_novas": 10,
   "versionar_automacao": true,
-  "gates": [],
+  "gates": [
+    {
+      "nome": "build",
+      "dir": "",
+      "comandos": [
+        "go build ./..."
+      ]
+    },
+    {
+      "nome": "vet",
+      "dir": "",
+      "comandos": [
+        "go vet ./..."
+      ]
+    },
+    {
+      "nome": "test",
+      "dir": "",
+      "comandos": [
+        "go test ./... -count=1"
+      ]
+    }
+  ],
   "motores": {
     "operacoes": {
       "corrigir": "claude",
@@ -28,10 +50,14 @@
       "codex": "high",
       "opencode": ""
     },
+    "claude_config_dirs": {
+      "claude_alt": "C:\\Users\\marco\\.claude-alt"
+    },
     "fallback": {
       "ativo": false,
       "ordem": [
         "claude",
+        "claude_alt",
         "codex",
         "opencode"
       ]

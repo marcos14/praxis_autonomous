@@ -1,0 +1,32 @@
+fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativas;custo_usd;concluido_em;observacao
+0;Fundação do repositório e build mínimo;pendente;;nao;nao;;;;;;Cria o repositório git exigido pelo modelo 'um commit por fase'. git init + go mod init (Go 1.26) + modernc.org/sqlite + layout de pastas + main com subcomando serve stub.
+1a;Camada de banco e framework de migrações;pendente;0;nao;nao;;;;;;"WAL, busy_timeout=5000, escritor único (SetMaxOpenConns(1)) + pool de leitura; migrações por user_version; schema núcleo projects/engines/engine_accounts/config_entries."
+1b;Servidor HTTP e serve com health;pendente;0;nao;nao;;;;;;"internal/api com roteador, /healthz e shutdown gracioso; cmd serve inicializa o db."
+1c;CRUD de projetos (API + store);pendente;1a+1b;nao;nao;;;;;;Validar pasta=repo git, modo_integracao, slug único.
+1d;CRUD de motores e contas;pendente;1a+1b;nao;nao;;;;;;"Prioridade = ordem de fallback; contas com config_dir (CLAUDE_CONFIG_DIR)."
+1e;Config em camadas (global → override por projeto);pendente;1a+1c;nao;nao;;;;;;"Merge determinístico global × override com origem de cada chave; endpoint de config efetiva."
+1f;Porte de internal/motor;pendente;1a;nao;nao;;;;;;"LER de C:\Projetos\praxis (motor.go, claude.go, codex.go, opencode.go, claude_alias.go) — proibido modificar origem. OpcoesRun ganha Dir/DirLogs; config vem do banco."
+1g;Porte de internal/gitops;pendente;0;nao;nao;;;;;;LER git.go de C:\Projetos\praxis. Worktree add/remove/prune, push (retry, só branches praxis/*), merge-preview, merge --no-ff, mutex por projeto. Testes usam repo bare local como remote.
+1h;Shell da UI web (projetos, motores, config);pendente;1c+1d+1e;nao;sim;;;;;;Marca fim do M1. go:embed, HTML/CSS/ES modules vanilla sem npm, seguindo o protótipo.
+2a;Schema de demandas, fases, execuções e eventos;pendente;1a;nao;nao;;;;;;Migração demands/phases/runs/events/metrics_dia + stores com transações curtas.
+2b;Porte de pipeline/fallback para ContextoExec;pendente;1f+1g+2a;nao;nao;;;;;;LER executar.go (pipelineFase) e fallback.go de C:\Projetos\praxis. esperarResetFranquia não bloqueia — devolve horário para o scheduler.
+2c;Gates com semáforo global;pendente;2b;nao;nao;;;;;;LER gates.go de C:\Projetos\praxis. Semáforo max_gates_simultaneos (default 1).
+2d;Scheduler e worker pool com limites;pendente;2a+2b;nao;nao;;;;;;"Limites global/por projeto; afinidade conta↔demanda; reagendamento por franquia sem bloquear."
+2e;Worktree e branch por demanda com ciclo de fase;pendente;1g+2b;nao;nao;;;;;;"Branch praxis/d<id>-<slug> da main atualizada; ciclo executor→gates→corretor→revisor→commit (commit só do orquestrador)."
+2f;Push automático da branch (tolerante a falha);pendente;2e;nao;nao;;;;;;"Falha de push não bloqueia a fase: evento + alerta 'commits não publicados' + retry; ação publicar_branch. Credenciais git da máquina, nunca armazenadas."
+2g;Demanda manual executa em background;pendente;2c+2d+2e;nao;sim;;;;;;"Primeira execução autônoma ponta a ponta sem intake; 2 demandas paralelas no mesmo projeto → 2 branches independentes."
+2h;Card da demanda com fases e log ao vivo (SSE);pendente;1h+2g;nao;nao;;;;;;"Aba Log ao vivo via SSE do .jsonl (runs.log_ref); aba Eventos."
+2i;Pausar/retomar/cancelar e retomada pós-restart;pendente;2d+2g;nao;sim;;;;;;Marca fim do M2. No boot: worktree prune, matar árvore de processos órfãos, executando→pausada→refila.
+3a;Chat da demanda persistido e nova demanda;pendente;1a+1h;nao;nao;;;;;;"Migração chat_messages/questions; tela Nova demanda + aba Chat/PRD."
+3b;Analista (perguntas readonly);pendente;3a+1f;nao;nao;;;;;;"Prompt analista readonly → JSON (resumo, arquivos_provaveis, perguntas); prompts no banco com default embutido."
+3c;Planejador (plano + fases) e aprovação;pendente;3b+2a;nao;sim;;;;;;"Marca fim do M3 (fluxo ponta a ponta). Prompt derivado de inicializar.go/defaults de C:\Projetos\praxis; rejeitar-com-comentário → replanejar."
+4a;Kanban com SSE;pendente;1h+2a;nao;nao;;;;;;"Transições só por botão; arrastar só reordena prioridade; GET /events (SSE global)."
+4b;Home com métricas e 'Precisa de você';pendente;1h+2a;nao;nao;;;;;;"Tiles via metrics_dia/view; gráfico por dia; tabela por projeto; atividade recente (SSE)."
+4c;Fechamento modo merge_request;pendente;2f+2g;nao;sim;;;;;;Card 'Pronta para MR': branch, commits, preview de conflito e link abrir MR (url_plataforma). Merge feito pelo dev na plataforma.
+4d;Fechamento merge_local, conflito e atualizar branch;pendente;1g+2g;nao;nao;;;;;;"integrar → merge --no-ff com preview; conflito → status conflito + arquivos; atualizar_branch traz a main."
+4e;Limpeza pós-integração e notificações;pendente;4c+4d;nao;sim;;;;;;"Marca fim do M4. Limpeza de worktree/branch (no MR após merge detectado na main); porte de internal/notify (notificacoes.go/notificar.go)."
+5a;API de intake para sistema de chamados (tokens/papéis);pendente;3b;nao;sim;;;;;;"Porte de auth.go; api_tokens com papel (leitor/operador/admin); POST /projects/{id}/demands conduz até 'Aguardando respostas'."
+5b;Manual embutido;pendente;1h;nao;nao;;;;;;"Conteúdo-base do protótipo; GET /manual/*."
+5c;Badge de sobreposição entre demandas;pendente;1g+4a;nao;nao;;;;;;Interseção de arquivos_provaveis + git diff --name-only entre branches.
+5d;Serviço Windows, retenção e backup;pendente;1a+1b;sim;nao;;;;;;requer_humano: registro/validação como serviço Windows exige privilégios de admin na máquina-alvo. Código e testes de backup/retenção são automatizáveis.
+5e;Importador opcional do Praxis atual;pendente;1a+1c;nao;sim;;;;;;"Opcional (ativação é decisão de negócio). Lê autopilot.json/fases.csv uma única vez; idempotente."
