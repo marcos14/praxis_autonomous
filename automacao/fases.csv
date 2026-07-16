@@ -7,8 +7,8 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 1e;Config em camadas (global → override por projeto);concluida;1a+1c;nao;nao;;;1;4.17;2026-07-15 23:33;ok — custo US$ 4.17
 1f;Porte de internal/motor;concluida;1a;nao;nao;;;1;6.03;2026-07-15 23:47;ok — custo US$ 6.03
 1g;Porte de internal/gitops;concluida;0;nao;nao;;;1;5.25;2026-07-16 00:03;ok — custo US$ 5.25
-1h;Shell da UI web (projetos, motores, config);executando;1c+1d+1e;nao;sim;;;1;;;Marca fim do M1. go:embed, HTML/CSS/ES modules vanilla sem npm, seguindo o protótipo.
-2a;Schema de demandas, fases, execuções e eventos;falhou;1a;nao;nao;;;1;;;"executor: execucao interrompida; log: automacao\logs\fase-2a-executor-20260716-062429.jsonl"
+1h;Shell da UI web (projetos, motores, config);executando;1c+1d+1e;nao;sim;;;2;;;Marca fim do M1. go:embed, HTML/CSS/ES modules vanilla sem npm, seguindo o protótipo.
+2a;Schema de demandas, fases, execuções e eventos;pendente;1a;nao;nao;;;1;;;pausada (Ctrl+C) — retome com 'praxis executar'
 2b;Porte de pipeline/fallback para ContextoExec;pendente;1f+1g+2a;nao;nao;;;;;;LER executar.go (pipelineFase) e fallback.go de C:\Projetos\praxis. esperarResetFranquia não bloqueia — devolve horário para o scheduler.
 2c;Gates com semáforo global;pendente;2b;nao;nao;;;;;;LER gates.go de C:\Projetos\praxis. Semáforo max_gates_simultaneos (default 1).
 2d;Scheduler e worker pool com limites;pendente;2a+2b;nao;nao;;;;;;"Limites global/por projeto; afinidade conta↔demanda; reagendamento por franquia sem bloquear."
