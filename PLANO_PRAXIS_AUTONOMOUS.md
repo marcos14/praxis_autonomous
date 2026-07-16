@@ -168,10 +168,10 @@ POST/DELETE /tokens                     GET /manual/*
 
 ### Fase 1b — Servidor HTTP e `serve` com health
 **Meta:** `praxis.exe serve` sobe o HTTP com roteador e health check.
-- [ ] `internal/api`: servidor HTTP, roteador, middleware base (log, recover)
-- [ ] endpoint `GET /healthz`
-- [ ] `cmd/praxis serve` inicializa db (1a) e sobe o servidor com shutdown gracioso
-- [ ] infraestrutura de resposta JSON e erros padronizados
+- [x] `internal/api`: servidor HTTP, roteador, middleware base (log, recover)
+- [x] endpoint `GET /healthz`
+- [x] `cmd/praxis serve` inicializa db (1a) e sobe o servidor com shutdown gracioso
+- [x] infraestrutura de resposta JSON e erros padronizados
 **Depende de:** 0
 **Testes:** `httptest` em `/healthz` retorna 200; shutdown encerra sem vazar goroutine.
 
@@ -423,6 +423,7 @@ POST/DELETE /tokens                     GET /manual/*
 | —    | (nenhuma fase concluída ainda) | — | — | — | Plano quebrado em micro-fases; aguardando início da Fase 0. |
 | 0    | Fundação do repositório e build mínimo | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. |
 | 1a   | Camada de banco e framework de migrações | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. Tabelas reais: `projects`, `engines`, `engine_accounts`, `config_entries` (schema versão 1). |
+| 1b   | Servidor HTTP e `serve` com health | Concluída (gates verdes) | (pelo orquestrador) | 2026-07-15 | Ver detalhes abaixo. `internal/api` com `Novo(Opcoes)`/`Handler()`; `GET /healthz`; middlewares `comLog`/`comRecover`; `serve` inicializa db + shutdown gracioso. Bind default `127.0.0.1:7799`. |
 
 ### Fase 0 — Fundação do repositório e build mínimo (2026-07-15)
 
@@ -506,3 +507,35 @@ Meta: Persistir o horário de esgotamento por conta (esgotado_até) em engine_ac
 - [ ] Store lê/grava esgotado_ate ao entrar/sair de esgotamento de conta
 - [ ] gestorFranquia hidrata o estado em memória a partir da coluna no boot
 - [ ] Teste cobrindo persistência do esgotamento através de fechar/reabrir o banco
+
+---
+
+### Fase 1b — Servidor HTTP e `serve` com health (2026-07-15)
+
+**O que foi feito**
+- `internal/api/servidor.go`: tipo `Servidor` construído por `Novo(Opcoes{Banco *db.DB, Log *slog.Logger})`; expõe o `http.Handler` já com middlewares via `Handler()`. Roteador é o `http.ServeMux` da stdlib usando **method-pattern** do Go 1.22+ (`mux.HandleFunc("GET /healthz", …)`) — POST em `/healthz` cai automaticamente em `405` e rota inexistente em `404`, sem código extra.
+- Endpoint `GET /healthz`: sem banco → liveness (`{"status":"ok"}`, 200); com banco → faz `Leitor.PingContext` e devolve **200 `{"status":"ok","banco":"ok"}`** ou **503 `{"status":"degradado","banco":"<erro>"}`** (readiness). Inclui `versao` (preenchida por `api.Versao`, setada no `serve` a partir da versão do binário).
+- `internal/api/middleware.go`: `comLog` (loga método/caminho/status/bytes/duração via `slog`) e `comRecover` (captura panic de handler, loga e responde `500` padronizado se nada foi escrito). Encadeados por `encadear(h, comRecover, comLog)` — **recover na camada mais externa**, envolvendo inclusive o log. `capturaStatus` embrulha o `ResponseWriter` para lembrar status/bytes e repassa `Flush()` (preparado para SSE das fases futuras).
+- `internal/api/respostas.go`: infraestrutura de resposta JSON (`responderJSON`) e **erro padronizado** — envelope `ErroResp{ Erro: ErroDetalhe{ Codigo, Mensagem } }` via `responderErro`. Content-Type `application/json; charset=utf-8` + `Cache-Control: no-store`.
+- `cmd/praxis/main.go`: `serve` agora **inicializa o banco** (`db.AbrirPadrao()`), monta o `api.Servidor` e sobe o HTTP com **shutdown gracioso**. `run`/`serve` receberam `context.Context`; `main` usa `signal.NotifyContext(…, os.Interrupt)` — 1º sinal dispara `Shutdown` (drena por até 10s); listener/serve extraídos em `servirHTTP(addr)`/`servirListener(ln)` para teste determinístico. Flag `serve -addr` (default `127.0.0.1:7799`).
+
+**Gates (verdes)**
+- `go build ./...` OK · `go vet ./...` OK · `go test ./... -count=1` OK. Novos testes: `internal/api` (healthz sem banco/com banco ok/banco indisponível→503/405/404, recover→500 padronizado, `responderErro`, `capturaStatus`) e `cmd/praxis` (`servirListener` atende requisição real e encerra limpo no cancelamento, sem vazar goroutine).
+- Smoke manual do binário real: `serve -addr 127.0.0.1:7811` com `PRAXIS_HOME` temporário → cria `praxis.db`, `GET /healthz` = `200 {"status":"ok","versao":"0.0.0-dev","banco":"ok"}`, rota inexistente = `404`.
+
+**Decisões / desvios**
+- **Bind default restrito ao loopback** (`127.0.0.1:7799`, mesma porta do painel do Praxis clássico): acesso externo por túnel/reverse-proxy, coerente com o princípio de operação da máquina do serviço. Configurável por `-addr`.
+- `/healthz` **usa o pool de leitura** para o ping (nunca o escritor único, para não competir com escritas). Banco fechado → 503, exercitado em teste.
+- Roteamento por **method-pattern da stdlib** (sem router de terceiros) — mantém a dependência única de runtime (`modernc.org/sqlite`); nenhuma lib nova adicionada.
+- **Sem `-race` nos gates**: o detector exige cgo, e o projeto é puro Go sem cgo por decisão de arquitetura. A concorrência do serve/shutdown é coberta por teste funcional (goroutine de `Serve` + cancelamento + verificação de não-vazamento de goroutines).
+- No Windows, `kill -INT` do Git Bash **não** entrega o sinal de console ao processo — o shutdown gracioso é validado pelo teste Go (`servirListener` + `context.CancelFunc`), não pelo smoke de shell.
+
+**Achados úteis para as próximas fases**
+- **Como registrar handlers (Fases 1c/1d/1e):** adicionar rotas em `Novo` no `http.ServeMux` com method-pattern, ex.: `mux.HandleFunc("POST /api/v1/projects", s.handleCriarProjeto)`. Path params do Go 1.22+ (`mux.HandleFunc("GET /api/v1/projects/{id}", …)` + `r.PathValue("id")`) já estão disponíveis — usar isso em vez de parsing manual.
+- **Padrões de resposta prontos:** use `responderJSON(w, status, v)` para sucesso e `responderErro(w, status, codigo, mensagem)` para erro (envelope `{"erro":{"codigo","mensagem"}}`). Ambos setam Content-Type/no-store. Mantenha os `codigo` estáveis (ex.: `nao_encontrado`, `invalido`, `slug_duplicado`) — o frontend vai depender deles.
+- **Acesso ao banco no handler:** o `Servidor` guarda `s.banco *db.DB`; escreva por `s.banco.Escritor` (serializado) e leia por `s.banco.Leitor`. `Opcoes.Banco` pode ser nil para testar handlers que não tocam o banco.
+- **`serve` já abre o banco no boot e fecha no shutdown** — as próximas fases não precisam mexer no ciclo de vida do banco no `main`; só recebem o `*db.DB` via `api.Opcoes`.
+- **`api.Versao`** é uma variável de pacote setada pelo `serve`; se precisar da versão em outro handler, ela já está disponível ali (em testes fica `""`).
+- **Middleware base já cobre todas as rotas** (log + recover) por estarem no `Handler()`; handlers novos herdam isso automaticamente. Para SSE (Fase 2h), o `capturaStatus` já repassa `Flush()`.
+
+**Pendências descobertas:** nenhuma. Todo o escopo da Fase 1b foi entregue (servidor + roteador + middlewares log/recover, `GET /healthz`, `serve` com db + shutdown gracioso, resposta JSON e erros padronizados).
