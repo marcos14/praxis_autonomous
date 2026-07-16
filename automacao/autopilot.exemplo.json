@@ -1,0 +1,86 @@
+{
+  "plano": "PLANO_PRAXIS_AUTONOMOUS.md",
+  "projeto": "praxis-autonomous",
+  "modelo": "opus",
+  "motor": "claude",
+  "add_dirs": null,
+  "max_budget_usd": 100,
+  "timeout_min": 120,
+  "max_correcoes": 4,
+  "max_ciclos_revisao": 2,
+  "max_fases_novas": 10,
+  "versionar_automacao": true,
+  "gates": [],
+  "motores": {
+    "operacoes": {
+      "corrigir": "claude",
+      "executar": "claude",
+      "planejar": "claude",
+      "revisar": "claude"
+    },
+    "modelos": {
+      "claude": "opus",
+      "codex": "gpt-5.5",
+      "opencode": ""
+    },
+    "esforcos": {
+      "claude": "high",
+      "codex": "high",
+      "opencode": ""
+    },
+    "fallback": {
+      "ativo": false,
+      "ordem": [
+        "claude",
+        "codex",
+        "opencode"
+      ]
+    }
+  },
+  "notificacoes": {
+    "canais": {
+      "discord": {
+        "ativo": false,
+        "webhook_url": ""
+      },
+      "google_chat": {
+        "ativo": false,
+        "webhook_url": ""
+      },
+      "slack": {
+        "ativo": false,
+        "webhook_url": ""
+      },
+      "telegram": {
+        "ativo": false,
+        "bot_token": "",
+        "chat_id": ""
+      },
+      "webhook": {
+        "ativo": false,
+        "header": "",
+        "template": "",
+        "url": ""
+      }
+    },
+    "eventos": {
+      "correcao_iniciada": false,
+      "erro_interno": true,
+      "fase_concluida": true,
+      "fase_iniciada": false,
+      "fases_novas_descartadas": true,
+      "fases_novas_inseridas": true,
+      "franquia_esgotada": true,
+      "gates_falharam": false,
+      "inicializacao_concluida": true,
+      "marco_concluido": true,
+      "pausa": false,
+      "planejamento_iniciado": false,
+      "revisor_reprovou": false,
+      "rodada_concluida": true,
+      "rodada_parou": true,
+      "troca_de_harness": true
+    }
+  },
+  "painel": {}
+}

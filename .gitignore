@@ -1,0 +1,8 @@
+# >>> praxis (orquestrador de fases) — nao edite entre os marcadores >>>
+/automacao/autopilot.json
+/automacao/logs/
+/automacao/*.exe
+/automacao/fases-*.bak.csv
+/automacao/notificacoes.ini
+/automacao/notificacoes.ini.bak
+# <<< praxis <<<
