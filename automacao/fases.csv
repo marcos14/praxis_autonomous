@@ -18,7 +18,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 2h;Card da demanda com fases e log ao vivo (SSE);concluida;1h+2g;nao;nao;;;3;2.82;2026-07-16 21:23;ok — custo US$ 2.44
 2i;Pausar/retomar/cancelar e retomada pós-restart;concluida;2d+2g;nao;sim;;;2;2.59;2026-07-16 22:04;ok — custo US$ 2.59
 3a;Chat da demanda persistido e nova demanda;concluida;1a+1h;nao;nao;;;1;6.94;2026-07-16 22:19;ok — custo US$ 6.94
-3b;Analista (perguntas readonly);executando;3a+1f;nao;nao;;;1;;;"Prompt analista readonly → JSON (resumo, arquivos_provaveis, perguntas); prompts no banco com default embutido."
+3b;Analista (perguntas readonly);concluida;3a+1f;nao;nao;;;1;17.73;2026-07-16 22:47;ok — custo US$ 17.73
 3c;Planejador (plano + fases) e aprovação;pendente;3b+2a;nao;sim;;;;;;"Marca fim do M3 (fluxo ponta a ponta). Prompt derivado de inicializar.go/defaults de C:\Projetos\praxis; rejeitar-com-comentário → replanejar."
 4a;Kanban com SSE;pendente;1h+2a;nao;nao;;;;;;"Transições só por botão; arrastar só reordena prioridade; GET /events (SSE global)."
 4b;Home com métricas e 'Precisa de você';pendente;1h+2a;nao;nao;;;;;;"Tiles via metrics_dia/view; gráfico por dia; tabela por projeto; atividade recente (SSE)."
