@@ -88,6 +88,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return serve(ctx, rest[1:], out, errOut)
 	case "service":
 		return service(rest[1:], out, errOut)
+	case "import":
+		return importarCmd(ctx, rest[1:], out, errOut)
 	default:
 		return fmt.Errorf("subcomando desconhecido: %q", rest[0])
 	}
