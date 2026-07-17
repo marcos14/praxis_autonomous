@@ -29,6 +29,11 @@ var migracoes = []migracao{
 		nome:   "ciclo de execução (demands, phases, runs, events, metrics_dia)",
 		sql:    schemaCicloExecucao,
 	},
+	{
+		versao: 3,
+		nome:   "intake da demanda (chat_messages, questions)",
+		sql:    schemaIntake,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -257,4 +262,43 @@ CREATE TABLE metrics_dia (
     fases_concluidas INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (dia, project_id, engine)
 );
+`
+
+// schemaIntake é a migração 3: as tabelas do intake da demanda (a demanda nasce
+// como conversa). chat_messages guarda o PRD colado, os complementos do usuário e
+// as falas do analista/planejador; questions guarda as perguntas estruturadas que
+// o analista gera (preenchidas a partir da Fase 3b). Segue as convenções das
+// migrações anteriores: datas em ISO-8601 UTC, JSON como TEXT com default válido,
+// FKs com ON DELETE CASCADE.
+//
+// papel tem CHECK (conjunto pequeno e estável, ao contrário de status). questions
+// já é criada aqui para a Fase 3b apenas persistir/consumir, sem nova migração.
+const schemaIntake = `
+CREATE TABLE chat_messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    demand_id  INTEGER NOT NULL REFERENCES demands(id) ON DELETE CASCADE,
+    papel      TEXT    NOT NULL
+                       CHECK (papel IN ('user','analista','planejador','sistema')),
+    conteudo   TEXT    NOT NULL DEFAULT '',
+    meta       TEXT    NOT NULL DEFAULT '{}',   -- JSON livre (ex.: custo/motor da fala do analista)
+    criado_em  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX ix_chat_messages_demand ON chat_messages (demand_id);
+
+CREATE TABLE questions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    demand_id     INTEGER NOT NULL REFERENCES demands(id) ON DELETE CASCADE,
+    ordem         INTEGER NOT NULL DEFAULT 0,
+    pergunta      TEXT    NOT NULL,
+    contexto      TEXT    NOT NULL DEFAULT '',
+    tipo          TEXT    NOT NULL DEFAULT '',   -- ex.: escolha|texto (livre; a UI decide o widget)
+    opcoes        TEXT    NOT NULL DEFAULT '[]',  -- JSON: []string
+    sugestao      TEXT    NOT NULL DEFAULT '',
+    impacto       TEXT    NOT NULL DEFAULT '',   -- ex.: alto|medio|baixo
+    resposta      TEXT    NOT NULL DEFAULT '',
+    respondida_em TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX ix_questions_demand ON questions (demand_id);
 `

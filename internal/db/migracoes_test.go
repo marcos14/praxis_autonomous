@@ -125,6 +125,45 @@ func TestSchemaCicloExecucaoCriaTabelasEIndices(t *testing.T) {
 	}
 }
 
+func TestSchemaIntakeCriaTabelasEIndices(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+
+	tabelas := []string{"chat_messages", "questions"}
+	for _, tab := range tabelas {
+		if !existeNoSchema(t, db, "table", tab) {
+			t.Errorf("tabela %q não foi criada", tab)
+		}
+	}
+	indices := []string{"ix_chat_messages_demand", "ix_questions_demand"}
+	for _, idx := range indices {
+		if !existeNoSchema(t, db, "index", idx) {
+			t.Errorf("índice %q não foi criado", idx)
+		}
+	}
+}
+
+func TestChatMessagesRejeitaPapelInvalido(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+	// precisa de um projeto e uma demanda para satisfazer as FKs.
+	if _, err := db.Exec(`INSERT INTO projects (nome, slug, pasta) VALUES ('p','p','p')`); err != nil {
+		t.Fatalf("inserir projeto: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO demands (project_id, titulo) VALUES (1, 't')`); err != nil {
+		t.Fatalf("inserir demanda: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO chat_messages (demand_id, papel, conteudo) VALUES (1, 'robo', 'x')`,
+	); err == nil {
+		t.Fatal("CHECK de papel deveria rejeitar valor inválido")
+	}
+}
+
 func TestProjectsRejeitaModoIntegracaoInvalido(t *testing.T) {
 	db := abrirBruto(t)
 	if _, _, err := Migrar(db); err != nil {

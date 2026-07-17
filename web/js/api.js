@@ -72,6 +72,11 @@ export const api = {
   },
   obterDemanda: (id) => req("GET", `/api/v1/demands/${id}`),
   eventosDemanda: (id) => req("GET", `/api/v1/demands/${id}/events`),
+  // intake por chat (Fase 3a): cria a demanda a partir do PRD (sem fases).
+  criarDemandaChat: (projectId, d) => req("POST", `/api/v1/projects/${projectId}/demands`, d),
+  // chat da demanda (Fase 3a): listar as falas e acrescentar uma do usuário.
+  listarChat: (id) => req("GET", `/api/v1/demands/${id}/chat`),
+  enviarChat: (id, conteudo) => req("POST", `/api/v1/demands/${id}/chat`, { conteudo }),
   // ações de controle de execução (Fase 2i): pausar | retomar | cancelar.
   acaoDemanda: (id, acao) => req("POST", `/api/v1/demands/${id}/actions`, { acao }),
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).

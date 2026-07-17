@@ -20,9 +20,11 @@ type reqFaseNova struct {
 	Ordem        int      `json:"ordem"`
 }
 
-// reqDemanda é o corpo aceito em POST /projects/{id}/demands: cria uma demanda já
-// com as fases informadas. É o intake "manual" da Fase 2g (sem PRD/analista): a
-// demanda nasce pronta e o scheduler a executa em background.
+// reqDemanda é o corpo aceito em POST /projects/{id}/demands. Tem dois modos:
+//   - com fases: intake "manual" da Fase 2g (sem PRD/analista) — a demanda nasce
+//     pronta e o scheduler a executa em background;
+//   - com PRD e sem fases: intake por chat da Fase 3a — a demanda nasce como
+//     conversa (status recebida), com o PRD colado como a primeira mensagem.
 type reqDemanda struct {
 	Titulo     string        `json:"titulo"`
 	Origem     string        `json:"origem"`
@@ -30,6 +32,7 @@ type reqDemanda struct {
 	Prioridade int           `json:"prioridade"`
 	BudgetUSD  float64       `json:"budget_usd"`
 	PlanoMD    string        `json:"plano_md"`
+	PRD        string        `json:"prd"`
 	Fases      []reqFaseNova `json:"fases"`
 }
 
@@ -47,11 +50,17 @@ func (s *Servidor) registrarRotasDemandas(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/demands/{id}/events", s.handleEventosDemanda)
 	mux.HandleFunc("GET /api/v1/demands/{id}/logs", s.handleLogsDemanda)
 	mux.HandleFunc("POST /api/v1/demands/{id}/actions", s.handleAcaoDemanda)
+	mux.HandleFunc("POST /api/v1/demands/{id}/chat", s.handleChatDemanda)
+	mux.HandleFunc("GET /api/v1/demands/{id}/chat", s.handleListarChat)
 }
 
-// handleCriarDemanda cria uma demanda com fases manuais sob um projeto. A demanda
-// nasce no status "pronta" — o scheduler a puxa e conduz todas as fases
-// automaticamente (Fase 2g). Devolve 201 com a demanda e as fases persistidas.
+// handleCriarDemanda cria uma demanda sob um projeto, em um de dois modos:
+//   - com fases: a demanda nasce "pronta" e o scheduler conduz as fases
+//     automaticamente (Fase 2g);
+//   - sem fases e com PRD: a demanda nasce como conversa (status "recebida"), com
+//     o PRD colado como a primeira mensagem do chat (Fase 3a).
+//
+// Devolve 201 com a demanda e as fases persistidas (fases vazias no modo chat).
 func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 	id, ok := lerIDProjeto(w, r)
 	if !ok {
@@ -68,6 +77,12 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sem fases → intake por chat (Fase 3a): a demanda nasce da conversa.
+	if len(req.Fases) == 0 {
+		s.criarDemandaChat(w, r, id, req)
+		return
+	}
+
 	dem, fases, msg := montarDemanda(id, req)
 	if msg != "" {
 		responderErro(w, http.StatusBadRequest, "invalido", msg)
@@ -80,6 +95,87 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responderJSON(w, http.StatusCreated, respDemanda{Demanda: criada, Fases: criadas})
+}
+
+// criarDemandaChat cria uma demanda que nasce como conversa (Fase 3a): valida o
+// PRD, monta a demanda no status "recebida" e persiste o PRD como a primeira
+// mensagem do chat (papel user), tudo numa transação. Registra um evento de
+// criação (best-effort) e devolve 201 com a demanda (sem fases ainda).
+func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, projectID int64, req reqDemanda) {
+	prd := strings.TrimSpace(req.PRD)
+	if prd == "" {
+		responderErro(w, http.StatusBadRequest, "invalido", "informe o PRD (ou ao menos uma fase)")
+		return
+	}
+
+	origem := strings.TrimSpace(req.Origem)
+	if origem == "" {
+		origem = db.OrigemUI
+	}
+	if origem != db.OrigemUI && origem != db.OrigemAPI {
+		responderErro(w, http.StatusBadRequest, "invalido", "origem deve ser 'ui' ou 'api'")
+		return
+	}
+
+	titulo := strings.TrimSpace(req.Titulo)
+	if titulo == "" {
+		titulo = tituloDePRD(prd)
+	}
+
+	dem := db.Demanda{
+		ProjectID:  projectID,
+		Titulo:     titulo,
+		Origem:     origem,
+		OrigemRef:  strings.TrimSpace(req.OrigemRef),
+		Status:     db.StatusDemandaRecebida,
+		Prioridade: req.Prioridade,
+		PlanoMD:    req.PlanoMD,
+		BudgetUSD:  req.BudgetUSD,
+	}
+	criada, _, err := s.banco.CriarDemandaComChat(r.Context(), dem, db.MensagemChat{
+		Papel:    db.PapelUser,
+		Conteudo: prd,
+	})
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+
+	// evento de criação (best-effort) para alimentar a aba Eventos / SSE.
+	pid, did := criada.ProjectID, criada.ID
+	if _, err := s.banco.RegistrarEvento(r.Context(), db.Evento{
+		ProjectID: &pid, DemandID: &did,
+		Tipo:    "demanda_criada",
+		Titulo:  "Praxis: demanda criada",
+		Detalhe: "Demanda criada a partir do PRD colado no chat.",
+	}); err != nil {
+		s.log.Warn("registrar evento de criação da demanda", "erro", err, "demanda", did)
+	}
+
+	responderJSON(w, http.StatusCreated, respDemanda{Demanda: criada, Fases: []db.Fase{}})
+}
+
+// tituloDePRD deriva um título curto da primeira linha não-vazia do PRD, para o
+// caso de a tela "Nova demanda" não informar um título explícito.
+func tituloDePRD(prd string) string {
+	titulo := ""
+	for _, linha := range strings.Split(prd, "\n") {
+		if l := strings.TrimSpace(linha); l != "" {
+			titulo = l
+			break
+		}
+	}
+	// remove marcação de título markdown ("# ", "## "…) só para o rótulo.
+	titulo = strings.TrimLeft(titulo, "#")
+	titulo = strings.TrimSpace(titulo)
+	const max = 80
+	if len([]rune(titulo)) > max {
+		titulo = string([]rune(titulo)[:max]) + "…"
+	}
+	if titulo == "" {
+		titulo = "Nova demanda"
+	}
+	return titulo
 }
 
 // handleListarDemandas devolve as demandas, opcionalmente filtradas por

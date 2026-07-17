@@ -13,6 +13,7 @@
   <nav class="sidebar">
     <div class="logo">Praxis <span>Autonomous</span><small>orquestrador de desenvolvimento</small></div>
     <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
+    <button class="nav-item" data-view="nova"><span class="ico">＋</span> Nova demanda</button>
     <button class="nav-item" data-view="projetos"><span class="ico">🗀</span> Projetos</button>
     <button class="nav-item" data-view="motores"><span class="ico">⚙</span> Motores</button>
     <button class="nav-item" data-view="config"><span class="ico">⚒</span> Configurações</button>
@@ -29,6 +30,13 @@
       <p class="sub">Cada demanda roda sozinha em sua branch. Abra o card para acompanhar as fases e o log ao vivo.</p>
       <div class="filtros" id="filtros-demandas"></div>
       <div id="lista-demandas"></div>
+    </section>
+
+    <!-- ======================= NOVA DEMANDA (chat) ======================= -->
+    <section class="view" id="view-nova">
+      <h1 class="page">Nova demanda</h1>
+      <p class="sub">Escolha o projeto e cole o PRD ou descreva o chamado. A demanda nasce como conversa — tudo fica registrado no chat até virar plano.</p>
+      <div class="panel" style="max-width:760px" id="painel-nova"></div>
     </section>
 
     <!-- ======================= PROJETOS ======================= -->

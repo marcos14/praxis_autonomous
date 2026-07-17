@@ -112,7 +112,9 @@ function fecharCard(overlay) {
   overlay.remove();
 }
 
-async function abrirCard(id) {
+// abrirCard abre o modal da demanda. Exportado para a tela "Nova demanda" abrir o
+// card da demanda recém-criada.
+export async function abrirCard(id) {
   let dados;
   try {
     dados = await api.obterDemanda(id);
@@ -125,13 +127,16 @@ async function abrirCard(id) {
   const overlay = el("div", { class: "overlay open" });
   overlay.addEventListener("click", (ev) => { if (ev.target === overlay) fecharCard(overlay); });
 
-  const corpoFases = el("div", { class: "tab-body active", id: "tb-fases" });
+  const corpoChat = el("div", { class: "tab-body active", id: "tb-chat" });
+  const corpoFases = el("div", { class: "tab-body", id: "tb-fases" });
   const corpoLog = el("div", { class: "tab-body", id: "tb-log" });
   const corpoEventos = el("div", { class: "tab-body", id: "tb-eventos" });
 
   renderFases(corpoFases, dados);
+  ativarChat(corpoChat, id); // a aba Chat/PRD abre ativa: a demanda nasce como conversa
 
   const abas = [
+    ["Chat / PRD", corpoChat, null],
     ["Fases", corpoFases, null],
     ["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)],
     ["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)],
@@ -165,10 +170,78 @@ async function abrirCard(id) {
       ),
     ),
     tabs,
-    corpoFases, corpoLog, corpoEventos,
+    corpoChat, corpoFases, corpoLog, corpoEventos,
   );
   overlay.append(modal);
   document.body.append(overlay);
+}
+
+// ---------- aba Chat/PRD (Fase 3a) ----------
+
+// PAPEIS mapeia o papel de uma fala do chat ao rótulo e à classe visual da bolha.
+const PAPEIS = {
+  user: ["Você", "user"],
+  analista: ["Praxis · Analista", "agent"],
+  planejador: ["Praxis · Planejador", "agent"],
+  sistema: ["", "sys"],
+};
+
+// bolha renderiza uma fala do chat como uma bolha (nó DOM).
+function bolha(m) {
+  const [rotulo, classe] = PAPEIS[m.papel] || [m.papel, "sys"];
+  if (classe === "sys") {
+    return el("div", { class: "msg sys", text: m.conteudo || rotulo });
+  }
+  return el("div", { class: "msg " + classe },
+    rotulo ? el("div", { class: "who", text: rotulo }) : null,
+    el("div", { class: "txt", text: m.conteudo }),
+  );
+}
+
+// ativarChat monta a conversa da demanda: lista as falas (do PRD em diante) e
+// oferece um campo para o usuário complementar a demanda (POST /chat).
+async function ativarChat(cont, id) {
+  limpar(cont);
+  const box = el("div", { class: "chat" });
+  const inp = el("input", { type: "text", placeholder: "Complementar a demanda…" });
+  const btn = el("button", { class: "btn", text: "Enviar" });
+  cont.append(box, el("div", { class: "chat-input" }, inp, btn));
+
+  async function recarregar() {
+    let msgs;
+    try {
+      msgs = (await api.listarChat(id)) || [];
+    } catch (e) {
+      limpar(box).append(el("p", { class: "vazio", text: "Falha ao carregar o chat: " + e.message }));
+      return;
+    }
+    limpar(box);
+    if (msgs.length === 0) {
+      box.append(el("p", { class: "vazio", text: "Nenhuma mensagem ainda." }));
+      return;
+    }
+    for (const m of msgs) box.append(bolha(m));
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function enviar() {
+    const texto = inp.value.trim();
+    if (!texto) return;
+    btn.disabled = true;
+    try {
+      await api.enviarChat(id, texto);
+      inp.value = "";
+      await recarregar();
+    } catch (e) {
+      bannerErro("Falha ao enviar: " + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  btn.addEventListener("click", enviar);
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") enviar(); });
+
+  await recarregar();
 }
 
 // ---------- ações de controle (Fase 2i) ----------

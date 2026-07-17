@@ -2,6 +2,7 @@
 // dispara a montagem de cada view ao ser exibida. Sem framework: só ES modules.
 
 import { montarDemandas } from "./demandas.js";
+import { montarNovaDemanda } from "./nova.js";
 import { montarProjetos } from "./projetos.js";
 import { montarMotores } from "./motores.js";
 import { montarConfig } from "./config.js";
@@ -11,6 +12,7 @@ import { bannerErro } from "./ui.js";
 // para refletir o estado atual do banco).
 const views = {
   demandas: montarDemandas,
+  nova: montarNovaDemanda,
   projetos: montarProjetos,
   motores: montarMotores,
   config: montarConfig,
