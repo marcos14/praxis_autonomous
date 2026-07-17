@@ -8,6 +8,7 @@ import { montarMotores } from "./motores.js";
 import { montarConfig } from "./config.js";
 import { montarKanban, desmontarKanban } from "./kanban.js";
 import { montarHome, desmontarHome } from "./home.js";
+import { montarManual } from "./manual.js";
 import { bannerErro } from "./ui.js";
 
 // views mapeia o nome da view à sua função de montagem (chamada a cada exibição,
@@ -20,6 +21,7 @@ const views = {
   projetos: montarProjetos,
   motores: montarMotores,
   config: montarConfig,
+  manual: montarManual,
 };
 
 // desmontar mapeia (opcionalmente) o nome da view à sua função de limpeza,

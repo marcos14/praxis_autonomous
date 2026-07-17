@@ -356,3 +356,18 @@ table.plain tr:last-child td { border-bottom: none; }
 .token-row:last-child { border-bottom: none; }
 .token-row.revogado { opacity: .55; }
 .token-nome { font-size: 13px; font-weight: 600; }
+
+/* ======================= MANUAL (Fase 5b) ======================= */
+.manual-wrap { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+.manual-nav { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 4px; }
+.manual-toc { font-size: 12.5px; color: var(--muted); text-decoration: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.manual-toc:hover { color: var(--ink); background: var(--surface-2); }
+.manual { max-width: 760px; line-height: 1.65; color: var(--ink-2); }
+.manual-sec { margin-bottom: 22px; }
+.manual h2 { font-size: 16px; color: var(--ink); margin: 6px 0 10px; }
+.manual ol, .manual ul { margin: 8px 0 8px 22px; }
+.manual li { margin-bottom: 6px; }
+.manual p { margin: 8px 0; }
+.manual b { color: var(--ink); }
+.manual code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; font-family: Consolas, monospace; }
+@media (max-width: 720px) { .manual-wrap { grid-template-columns: 1fr; } .manual-nav { position: static; flex-direction: row; flex-wrap: wrap; } }

@@ -109,6 +109,10 @@ export const api = {
   pendencias: () => req("GET", "/api/v1/pendencias"),
   atividade: (limite) => req("GET", "/api/v1/activity" + (limite ? "?limite=" + limite : "")),
 
+  // manual embutido (Fase 5b).
+  listarManual: () => req("GET", "/api/v1/manual"),
+  secaoManual: (slug) => req("GET", `/api/v1/manual/${slug}`),
+
   // tokens de API (Fase 5a): papel ∈ {leitor, operador, admin}.
   listarTokens: () => req("GET", "/api/v1/tokens"),
   criarToken: (nome, papel) => req("POST", "/api/v1/tokens", { nome, papel }),
