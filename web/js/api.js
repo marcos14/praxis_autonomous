@@ -89,6 +89,22 @@ export const api = {
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).
   urlLogsDemanda: (id) => `/api/v1/demands/${id}/logs`,
 
+  // kanban (Fase 4a): board = demandas enriquecidas (progresso + motor); ordem =
+  // reordenar prioridade (arraste); urlEventos = SSE global de eventos.
+  board: (q = {}) => {
+    const p = new URLSearchParams();
+    if (q.project) p.set("project", q.project);
+    if (q.status) p.set("status", q.status);
+    const qs = p.toString();
+    return req("GET", "/api/v1/board" + (qs ? "?" + qs : ""));
+  },
+  reordenarDemandas: (ids) => req("PUT", "/api/v1/demands/ordem", { ids }),
+  urlEventos: () => "/api/v1/events",
+
+  // métricas da Home (Fase 4b).
+  metricas: (periodo) => req("GET", "/api/v1/metrics" + (periodo ? "?periodo=" + encodeURIComponent(periodo) : "")),
+  pendencias: () => req("GET", "/api/v1/pendencias"),
+
   // config em camadas (Fase 1e)
   obterConfigGlobal: () => req("GET", "/api/v1/config"),
   definirConfigGlobal: (entradas) => req("PUT", "/api/v1/config", entradas),

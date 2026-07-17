@@ -12,6 +12,7 @@
   <!-- ======================= SIDEBAR ======================= -->
   <nav class="sidebar">
     <div class="logo">Praxis <span>Autonomous</span><small>orquestrador de desenvolvimento</small></div>
+    <button class="nav-item" data-view="kanban"><span class="ico">▤</span> Kanban</button>
     <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
     <button class="nav-item" data-view="nova"><span class="ico">＋</span> Nova demanda</button>
     <button class="nav-item" data-view="projetos"><span class="ico">🗀</span> Projetos</button>
@@ -23,6 +24,14 @@
   <main class="main">
     <!-- Banner de erro/aviso global (preenchido pelo JS) -->
     <div class="banner banner-erro" id="banner-erro" hidden></div>
+
+    <!-- ======================= KANBAN ======================= -->
+    <section class="view" id="view-kanban">
+      <h1 class="page">Kanban</h1>
+      <p class="sub">Cada coluna é um status. Arraste um card para reordenar a prioridade; as transições de estado acontecem pelos botões do card.</p>
+      <div class="filtros" id="filtros-kanban"></div>
+      <div class="kanban" id="kanban-board"></div>
+    </section>
 
     <!-- ======================= DEMANDAS ======================= -->
     <section class="view" id="view-demandas">

@@ -64,6 +64,45 @@ func (d *DB) RegistrarEvento(ctx context.Context, e Evento) (Evento, error) {
 	return e, nil
 }
 
+// EventosApos devolve os eventos com id > aposID em ordem CRESCENTE (id
+// crescente), para o tailing incremental do SSE global (Fase 4a). limite <= 0
+// aplica um teto de segurança (evita despejar um backlog enorme num cliente que
+// acabou de conectar com aposID=0). Slice não-nil.
+func (d *DB) EventosApos(ctx context.Context, aposID int64, limite int) ([]Evento, error) {
+	if limite <= 0 {
+		limite = 500
+	}
+	rows, err := d.Leitor.QueryContext(ctx,
+		`SELECT `+colunasEvento+` FROM events WHERE id > ? ORDER BY id ASC LIMIT ?`,
+		aposID, limite)
+	if err != nil {
+		return nil, fmt.Errorf("eventos após %d: %w", aposID, err)
+	}
+	defer rows.Close()
+	eventos := []Evento{}
+	for rows.Next() {
+		e, err := scanEvento(rows)
+		if err != nil {
+			return nil, err
+		}
+		eventos = append(eventos, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("eventos após %d: %w", aposID, err)
+	}
+	return eventos, nil
+}
+
+// UltimoEventoID devolve o maior id da tabela events (0 se vazia). O SSE global
+// usa como cursor inicial para transmitir só os eventos novos após a conexão.
+func (d *DB) UltimoEventoID(ctx context.Context) (int64, error) {
+	var id sql.NullInt64
+	if err := d.Leitor.QueryRowContext(ctx, `SELECT MAX(id) FROM events`).Scan(&id); err != nil {
+		return 0, fmt.Errorf("último evento: %w", err)
+	}
+	return id.Int64, nil
+}
+
 // ListarEventos devolve os eventos que casam com o filtro, dos mais recentes
 // para os mais antigos (id decrescente). Slice não-nil.
 func (d *DB) ListarEventos(ctx context.Context, f FiltroEventos) ([]Evento, error) {

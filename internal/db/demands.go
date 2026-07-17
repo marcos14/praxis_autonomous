@@ -208,6 +208,110 @@ func (d *DB) ListarDemandas(ctx context.Context, f FiltroDemandas) ([]Demanda, e
 	return demandas, nil
 }
 
+// DemandaResumo enriquece a demanda com os agregados usados pelo quadro kanban
+// (Fase 4a): total de fases, fases concluídas (para a barra de progresso) e o
+// motor da execução mais recente (para o filtro por motor e o rótulo do card).
+type DemandaResumo struct {
+	Demanda
+	FasesTotal      int    `json:"fases_total"`
+	FasesConcluidas int    `json:"fases_concluidas"`
+	Motor           string `json:"motor"`
+}
+
+// ListarDemandasResumo devolve as demandas do filtro já enriquecidas com os
+// agregados do card do kanban (contagem de fases e motor da última execução),
+// na mesma ordem de ListarDemandas (prioridade, id decrescente). Slice não-nil.
+func (d *DB) ListarDemandasResumo(ctx context.Context, f FiltroDemandas) ([]DemandaResumo, error) {
+	sqlStr := `SELECT ` + colunasDemandaPrefix("d") + `,
+		(SELECT COUNT(*) FROM phases p WHERE p.demand_id = d.id) AS fases_total,
+		(SELECT COUNT(*) FROM phases p WHERE p.demand_id = d.id AND p.status = '` + StatusFaseConcluida + `') AS fases_concluidas,
+		COALESCE((SELECT r.engine FROM runs r WHERE r.demand_id = d.id AND r.engine <> '' ORDER BY r.id DESC LIMIT 1), '') AS motor
+		FROM demands d`
+	cond := []string{}
+	args := []any{}
+	if f.ProjectID != nil {
+		cond = append(cond, "d.project_id = ?")
+		args = append(args, *f.ProjectID)
+	}
+	if strings.TrimSpace(f.Status) != "" {
+		cond = append(cond, "d.status = ?")
+		args = append(args, f.Status)
+	}
+	if len(cond) > 0 {
+		sqlStr += " WHERE " + strings.Join(cond, " AND ")
+	}
+	sqlStr += " ORDER BY d.prioridade, d.id DESC"
+
+	rows, err := d.Leitor.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listar resumo de demandas: %w", err)
+	}
+	defer rows.Close()
+
+	resumos := []DemandaResumo{}
+	for rows.Next() {
+		var r DemandaResumo
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Titulo, &r.Origem, &r.OrigemRef,
+			&r.Status, &r.Prioridade, &r.Branch, &r.WorktreePath, &r.PlanoMD,
+			&r.CustoUSD, &r.BudgetUSD, &r.Erro, &r.CriadoEm, &r.AtualizadoEm,
+			&r.FasesTotal, &r.FasesConcluidas, &r.Motor); err != nil {
+			return nil, err
+		}
+		resumos = append(resumos, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listar resumo de demandas: %w", err)
+	}
+	return resumos, nil
+}
+
+// colunasDemandaPrefix devolve colunasDemanda com cada coluna qualificada por um
+// alias de tabela (ex.: "d.id, d.project_id, ..."), para uso em consultas com
+// JOIN/subconsulta onde as colunas precisam ser desambiguadas.
+func colunasDemandaPrefix(alias string) string {
+	partes := strings.Split(colunasDemanda, ",")
+	for i, p := range partes {
+		partes[i] = alias + "." + strings.TrimSpace(p)
+	}
+	return strings.Join(partes, ", ")
+}
+
+// ReordenarDemandas reatribui a prioridade das demandas informadas conforme a
+// posição na lista (0..N-1) — usado pelo arraste no kanban (Fase 4a), que só
+// reordena a prioridade, nunca muda o status. Aceita um subconjunto das
+// demandas; um id inexistente aborta a operação com ErrNaoEncontrado. A
+// ordenação de ListarDemandas é por prioridade crescente, então posição menor =
+// mais no topo.
+func (d *DB) ReordenarDemandas(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	tx, err := d.Escritor.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("reordenar demandas: %w", err)
+	}
+	defer tx.Rollback()
+	for pos, id := range ids {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE demands SET prioridade = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+			pos, id)
+		if err != nil {
+			return fmt.Errorf("reordenar demandas: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("reordenar demandas: %w", err)
+		}
+		if n == 0 {
+			return ErrNaoEncontrado
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("reordenar demandas: %w", err)
+	}
+	return nil
+}
+
 // ObterDemanda devolve a demanda de id. Se não existir, devolve ErrNaoEncontrado.
 func (d *DB) ObterDemanda(ctx context.Context, id int64) (Demanda, error) {
 	row := d.Leitor.QueryRowContext(ctx,

@@ -6,11 +6,13 @@ import { montarNovaDemanda } from "./nova.js";
 import { montarProjetos } from "./projetos.js";
 import { montarMotores } from "./motores.js";
 import { montarConfig } from "./config.js";
+import { montarKanban, desmontarKanban } from "./kanban.js";
 import { bannerErro } from "./ui.js";
 
 // views mapeia o nome da view à sua função de montagem (chamada a cada exibição,
 // para refletir o estado atual do banco).
 const views = {
+  kanban: montarKanban,
   demandas: montarDemandas,
   nova: montarNovaDemanda,
   projetos: montarProjetos,
@@ -18,12 +20,23 @@ const views = {
   config: montarConfig,
 };
 
+// desmontar mapeia (opcionalmente) o nome da view à sua função de limpeza,
+// chamada ao SAIR da view (ex.: fechar o SSE do kanban).
+const desmontar = {
+  kanban: desmontarKanban,
+};
+
 const nomesValidos = new Set(Object.keys(views));
+let viewAtual = "";
 
 // irPara ativa a view pedida: alterna as seções, destaca o item do menu, limpa o
-// banner de erro e (re)monta o conteúdo. Views desconhecidas caem em "projetos".
+// banner de erro e (re)monta o conteúdo. Views desconhecidas caem em "home".
 async function irPara(nome) {
-  if (!nomesValidos.has(nome)) nome = "projetos";
+  if (!nomesValidos.has(nome)) nome = "kanban";
+  if (viewAtual && viewAtual !== nome && desmontar[viewAtual]) {
+    try { desmontar[viewAtual](); } catch { /* ignora falha de limpeza */ }
+  }
+  viewAtual = nome;
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   document.getElementById("view-" + nome).classList.add("active");
   document.querySelectorAll(".nav-item").forEach((n) =>
@@ -58,7 +71,7 @@ function iniciar() {
     btn.addEventListener("click", () => irPara(btn.dataset.view)));
   window.addEventListener("hashchange", () => irPara(location.hash.slice(1)));
   atualizarRodape();
-  irPara(location.hash.slice(1) || "projetos");
+  irPara(location.hash.slice(1) || "kanban");
 }
 
 if (document.readyState === "loading") {

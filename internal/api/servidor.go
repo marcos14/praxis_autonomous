@@ -64,6 +64,9 @@ type Servidor struct {
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
 	intervaloPollLog time.Duration
+	// intervaloPollEventos é a cadência de releitura da tabela events no SSE
+	// global (Fase 4a). Definido no Novo; os testes ajustam para acelerar.
+	intervaloPollEventos time.Duration
 }
 
 // Novo monta o servidor: registra as rotas e encadeia os middlewares base (log
@@ -75,12 +78,15 @@ func Novo(opts Opcoes) *Servidor {
 		logger = slog.Default()
 	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
-		planejamento: opts.Planejamento, intervaloPollLog: intervaloPollLogPadrao}
+		planejamento: opts.Planejamento, intervaloPollLog: intervaloPollLogPadrao,
+		intervaloPollEventos: intervaloPollEventosPadrao}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.registrarRotasProjetos(mux)
 	s.registrarRotasDemandas(mux)
+	s.registrarRotasBoard(mux)
+	s.registrarRotasEventos(mux)
 	s.registrarRotasMotores(mux)
 	s.registrarRotasConfig(mux)
 	s.registrarRotasWeb(mux)

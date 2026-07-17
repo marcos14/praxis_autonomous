@@ -8,6 +8,17 @@ import { el, limpar, bannerErro } from "./ui.js";
 let projetos = [];
 let filtro = { project: "", status: "" };
 
+// setProjetos permite a outras telas (kanban, Home) preencher a lista de
+// projetos usada pelo card modal antes de chamar abrirCard, para o card exibir
+// o nome do projeto sem depender de a tela Demandas ter sido montada.
+export function setProjetos(lista) {
+  projetos = lista || [];
+}
+
+// STATUS_KANBAN é a ordem canônica das colunas do kanban e da pill de status,
+// reexportada para as outras telas (kanban/Home) manterem os mesmos rótulos.
+export { STATUS };
+
 // STATUS descreve os estados da demanda: rótulo amigável e classe do "dot" da pill.
 const STATUS = {
   recebida: ["recebida", "dot-muted"],
@@ -26,18 +37,18 @@ const STATUS = {
   cancelada: ["cancelada", "dot-muted"],
 };
 
-function pillStatus(status) {
+export function pillStatus(status) {
   const [rotulo, dot] = STATUS[status] || [status, "dot-muted"];
   return el("span", { class: "pill" }, el("span", { class: "dot " + dot }), rotulo);
 }
 
 // dinheiro formata um valor USD como "US$ 1,50" (pt-BR).
-function dinheiro(v) {
+export function dinheiro(v) {
   return "US$ " + Number(v || 0).toFixed(2).replace(".", ",");
 }
 
 // quando formata um timestamp ISO para leitura (pt-BR); devolve o cru se falhar.
-function quando(iso) {
+export function quando(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleString("pt-BR");
