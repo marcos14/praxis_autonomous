@@ -96,6 +96,56 @@ func (d *DB) CriarFase(ctx context.Context, f Fase) (Fase, error) {
 	return f, nil
 }
 
+// SubstituirFases troca TODO o conjunto de fases da demanda pelas dadas, numa
+// única transação (o planejador reescreve as fases ao gerar o plano, e o usuário
+// as reescreve ao editar/reordenar/remover na aba Plano & Fases — Fase 3c). A
+// ordem é reatribuída sequencialmente (1..N) na ordem do slice, ignorando o
+// campo Ordem de entrada. Devolve as fases persistidas (com id/ordem). Demanda
+// inexistente vira ErrNaoEncontrado; código repetido vira ErrCodigoFaseDuplicado.
+func (d *DB) SubstituirFases(ctx context.Context, demandID int64, fases []Fase) ([]Fase, error) {
+	tx, err := d.Escritor.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("substituir fases: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM phases WHERE demand_id = ?`, demandID); err != nil {
+		return nil, fmt.Errorf("limpar fases da demanda %d: %w", demandID, err)
+	}
+
+	criadas := make([]Fase, 0, len(fases))
+	for i, f := range fases {
+		f.DemandID = demandID
+		f.Ordem = i + 1
+		if strings.TrimSpace(f.Status) == "" {
+			f.Status = StatusFasePendente
+		}
+		f.DependeDe = normalizarLista(f.DependeDe)
+		deps, err := json.Marshal(f.DependeDe)
+		if err != nil {
+			return nil, fmt.Errorf("codificar depende_de da fase %q: %w", f.Codigo, err)
+		}
+		row := tx.QueryRowContext(ctx, `
+			INSERT INTO phases
+				(demand_id, codigo, titulo, status, depende_de, requer_humano,
+				 gate_extra, modelo, tentativas, custo_usd, concluido_em, observacao, ordem)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			RETURNING id`,
+			f.DemandID, f.Codigo, f.Titulo, f.Status, string(deps), booleanParaInt(f.RequerHumano),
+			f.GateExtra, f.Modelo, f.Tentativas, f.CustoUSD, f.ConcluidoEm, f.Observacao, f.Ordem,
+		)
+		if err := row.Scan(&f.ID); err != nil {
+			return nil, traduzirErroFase(err)
+		}
+		criadas = append(criadas, f)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("substituir fases: %w", err)
+	}
+	return criadas, nil
+}
+
 // ListarFases devolve as fases da demanda demandID ordenadas por ordem e, em
 // empate, por id. Slice não-nil.
 func (d *DB) ListarFases(ctx context.Context, demandID int64) ([]Fase, error) {

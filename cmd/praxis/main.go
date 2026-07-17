@@ -119,13 +119,14 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// não impede o serviço de subir.
 	recuperarPosRestart(ctx, banco, logger)
 
-	// Intake (Fase 3b): dispara o analista readonly em background quando uma
-	// demanda nasce por chat. Roda com o ctx de vida do serviço (cancelado no
-	// shutdown); Aguardar drena as análises em voo antes de fechar o banco.
+	// Intake (Fases 3b/3c): dispara o analista readonly (perguntas) e o planejador
+	// (plano + fases) em background. Roda com o ctx de vida do serviço (cancelado
+	// no shutdown); Aguardar drena as análises/planejamentos em voo antes de fechar
+	// o banco.
 	intakeSvc := novoIntake(ctx, banco, logger)
 	defer intakeSvc.Aguardar()
 
-	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger, Intake: intakeSvc})
+	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger, Intake: intakeSvc, Planejamento: intakeSvc})
 	return servirHTTP(ctx, *addr, srv.Handler(), out, logger)
 }
 

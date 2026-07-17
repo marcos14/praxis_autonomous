@@ -77,3 +77,31 @@ func TestServicoDispararAnalisaEmBackground(t *testing.T) {
 		t.Fatalf("len perguntas = %d, quero 1", len(perguntas))
 	}
 }
+
+func TestServicoDispararPlanejamentoEmBackground(t *testing.T) {
+	d := abrirDB(t)
+	ctx := context.Background()
+	dem := demandaPlanejando(t, d, "Emitir boleto híbrido com PIX.")
+
+	saida := `{"plano_md":"# Plano","fases":[{"codigo":"1","titulo":"Schema"}]}`
+
+	svc := NovoServico(OpcoesServico{
+		Store: d,
+		Selecionar: seletorStub(stubMotor{nome: "claude", caps: motor.Capacidades{SchemaNativo: true},
+			fn: func(motor.OpcoesRun) (*motor.ResultadoRun, error) {
+				return &motor.ResultadoRun{Estruturado: json.RawMessage(saida), CustoUSD: 0.3}, nil
+			}}),
+	})
+
+	svc.DispararPlanejamento(dem.ID)
+	svc.Aguardar()
+
+	got, _ := d.ObterDemanda(ctx, dem.ID)
+	if got.Status != db.StatusDemandaAguardandoAprovacao {
+		t.Fatalf("status = %q, quero aguardando_aprovacao", got.Status)
+	}
+	fases, _ := d.ListarFases(ctx, dem.ID)
+	if len(fases) != 1 {
+		t.Fatalf("len fases = %d, quero 1", len(fases))
+	}
+}

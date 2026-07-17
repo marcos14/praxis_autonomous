@@ -80,6 +80,10 @@ export const api = {
   // perguntas do analista (Fase 3b): listar e responder ("responder tudo e gerar plano").
   listarPerguntas: (id) => req("GET", `/api/v1/demands/${id}/questions`),
   responderPerguntas: (id, respostas) => req("POST", `/api/v1/demands/${id}/answers`, { respostas }),
+  // plano & fases (Fase 3c): editar o conjunto de fases, aprovar ou rejeitar o plano.
+  editarFases: (id, fases) => req("PUT", `/api/v1/demands/${id}/phases`, { fases }),
+  aprovarPlano: (id) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: true }),
+  rejeitarPlano: (id, comentario) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: false, comentario }),
   // ações de controle de execução (Fase 2i): pausar | retomar | cancelar.
   acaoDemanda: (id, acao) => req("POST", `/api/v1/demands/${id}/actions`, { acao }),
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).

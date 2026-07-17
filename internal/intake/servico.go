@@ -75,8 +75,62 @@ func (s *Servico) Disparar(demandaID int64) {
 	}()
 }
 
-// Aguardar bloqueia até as análises em voo terminarem (usado no shutdown gracioso).
+// DispararPlanejamento inicia o planejamento da demanda em background (Fase 3c):
+// não bloqueia o chamador (o handler HTTP que transitou a demanda para
+// `planejando`/rejeitou o plano). Falhas viram log/evento.
+func (s *Servico) DispararPlanejamento(demandaID int64) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		if err := s.Planejar(s.ctx, demandaID); err != nil {
+			s.logf(fmt.Sprintf("intake: planejamento da demanda %d falhou: %v", demandaID, err))
+		}
+	}()
+}
+
+// Aguardar bloqueia até as análises/planejamentos em voo terminarem (usado no
+// shutdown gracioso).
 func (s *Servico) Aguardar() { s.wg.Wait() }
+
+// Planejar monta o Planejador a partir do banco e o executa (síncrono). Exposto
+// para o `serve`/testes rodarem o planejamento sem a goroutine.
+func (s *Servico) Planejar(ctx context.Context, demandaID int64) error {
+	p, err := s.montarPlanejador(ctx, demandaID)
+	if err != nil {
+		return err
+	}
+	return p.Planejar(ctx, demandaID)
+}
+
+// montarPlanejador resolve o projeto e o motor da demanda e devolve um Planejador
+// pronto. Reusa a resolução de motor do analista (planejar é, como analisar, uma
+// tarefa readonly de raciocínio sobre o código, com o modelo_analise).
+func (s *Servico) montarPlanejador(ctx context.Context, demandaID int64) (*Planejador, error) {
+	dem, err := s.store.ObterDemanda(ctx, demandaID)
+	if err != nil {
+		return nil, fmt.Errorf("intake: obter demanda %d: %w", demandaID, err)
+	}
+	proj, err := s.store.ObterProjeto(ctx, dem.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
+	}
+	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotor(ctx)
+
+	return &Planejador{
+		Store:      s.store,
+		Motor:      motorNome,
+		Modelo:     modelo,
+		Esforco:    esforco,
+		ConfigDir:  configDir,
+		Dir:        proj.Pasta,
+		DirLogs:    s.dirLogs,
+		AddDirs:    proj.AddDirs,
+		BudgetUSD:  budget,
+		TimeoutMin: timeout,
+		Selecionar: s.selecionar,
+		Agora:      s.agora,
+	}, nil
+}
 
 // Analisar monta o Analista a partir do banco e o executa (síncrono). Exposto
 // para o `serve`/testes rodarem a análise sem a goroutine.

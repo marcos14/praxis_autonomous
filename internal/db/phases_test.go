@@ -50,6 +50,71 @@ func TestCriarFaseDefaultsEDependeDe(t *testing.T) {
 	}
 }
 
+func TestSubstituirFases(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	dem := demandaTeste(t, d, "sub")
+
+	// conjunto inicial (3 fases).
+	if _, err := d.SubstituirFases(ctx, dem, []Fase{
+		{Codigo: "1", Titulo: "Fundação"},
+		{Codigo: "2", Titulo: "API", DependeDe: []string{"1"}},
+		{Codigo: "3", Titulo: "UI", DependeDe: []string{"2"}},
+	}); err != nil {
+		t.Fatalf("SubstituirFases inicial: %v", err)
+	}
+
+	// substitui por um conjunto novo (2 fases, ordem diferente, códigos novos).
+	criadas, err := d.SubstituirFases(ctx, dem, []Fase{
+		{Codigo: "a", Titulo: "Primeira", RequerHumano: true},
+		{Codigo: "b", Titulo: "Segunda", DependeDe: []string{"a"}},
+	})
+	if err != nil {
+		t.Fatalf("SubstituirFases: %v", err)
+	}
+	if len(criadas) != 2 {
+		t.Fatalf("len criadas = %d, quero 2", len(criadas))
+	}
+	// ordem reatribuída 1..N na ordem do slice.
+	if criadas[0].Ordem != 1 || criadas[1].Ordem != 2 {
+		t.Fatalf("ordem = %d,%d, quero 1,2", criadas[0].Ordem, criadas[1].Ordem)
+	}
+	if !criadas[0].RequerHumano {
+		t.Fatal("requer_humano não persistido")
+	}
+
+	// o conjunto antigo foi trocado por inteiro.
+	todas, err := d.ListarFases(ctx, dem)
+	if err != nil {
+		t.Fatalf("ListarFases: %v", err)
+	}
+	if len(todas) != 2 || todas[0].Codigo != "a" || todas[1].Codigo != "b" {
+		t.Fatalf("fases após substituir = %+v, quero [a b]", todas)
+	}
+	if todas[0].Status != StatusFasePendente {
+		t.Fatalf("status default = %q", todas[0].Status)
+	}
+}
+
+func TestSubstituirFasesCodigoDuplicado(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	dem := demandaTeste(t, d, "dup")
+
+	_, err := d.SubstituirFases(ctx, dem, []Fase{
+		{Codigo: "1", Titulo: "x"},
+		{Codigo: "1", Titulo: "y"},
+	})
+	if !errors.Is(err, ErrCodigoFaseDuplicado) {
+		t.Fatalf("erro = %v, quero ErrCodigoFaseDuplicado", err)
+	}
+	// transação: nada persistido no erro.
+	todas, _ := d.ListarFases(ctx, dem)
+	if len(todas) != 0 {
+		t.Fatalf("fases = %d, quero 0 (rollback)", len(todas))
+	}
+}
+
 func TestCriarFaseCodigoDuplicado(t *testing.T) {
 	d := abrirTemp(t)
 	ctx := context.Background()

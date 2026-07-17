@@ -132,10 +132,10 @@ export async function abrirCard(id) {
   const corpoLog = el("div", { class: "tab-body", id: "tb-log" });
   const corpoEventos = el("div", { class: "tab-body", id: "tb-eventos" });
 
-  renderFases(corpoFases, dados);
+  renderFases(corpoFases, dados, overlay);
 
   // Aba Perguntas (Fase 3b): só aparece quando o analista já gerou perguntas.
-  // Quando presente, é a primeira aba e abre ativa (o card avisa "é a sua vez").
+  // Quando presente, é a primeira aba (o card avisa "é a sua vez").
   let perguntas = [];
   try {
     perguntas = (await api.listarPerguntas(id)) || [];
@@ -152,17 +152,24 @@ export async function abrirCard(id) {
     abas.push([`Perguntas (${perguntas.length})`, corpoPerg, null]);
   }
   abas.push(["Chat / PRD", corpoChat, () => ativarChat(corpoChat, id)]);
-  abas.push(["Fases", corpoFases, null]);
+  abas.push(["Plano & Fases", corpoFases, null]);
   abas.push(["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)]);
   abas.push(["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)]);
 
-  // marca a primeira aba como ativa e a inicializa se ela tiver "ativar".
-  abas[0][1].classList.add("active");
-  if (abas[0][2]) abas[0][2]();
+  // Aba ativa por padrão: quando a demanda aguarda aprovação, é a sua vez de
+  // revisar o plano → abre em Plano & Fases; senão, a primeira aba (Perguntas se
+  // houver, senão Chat).
+  let idxAtiva = 0;
+  if (dados.status === "aguardando_aprovacao") {
+    const i = abas.findIndex(([nome]) => nome === "Plano & Fases");
+    if (i >= 0) idxAtiva = i;
+  }
+  abas[idxAtiva][1].classList.add("active");
+  if (abas[idxAtiva][2]) abas[idxAtiva][2]();
 
   const tabs = el("div", { class: "tabs" });
   abas.forEach(([nome, corpo, ativar], i) => {
-    const btn = el("button", { class: "tab" + (i === 0 ? " active" : ""), text: nome, onclick: () => {
+    const btn = el("button", { class: "tab" + (i === idxAtiva ? " active" : ""), text: nome, onclick: () => {
       tabs.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
       overlay.querySelectorAll(".tab-body").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
@@ -391,7 +398,15 @@ function iconeFase(f) {
   }
 }
 
-function renderFases(cont, dados) {
+function renderFases(cont, dados, overlay) {
+  // Quando a demanda aguarda aprovação, a aba vira o editor do plano (Fase 3c):
+  // editar/reordenar/remover/exigir humano + aprovar/rejeitar. Nos demais estados
+  // é leitura (progresso das fases).
+  if (dados.status === "aguardando_aprovacao") {
+    renderFasesEditavel(cont, dados, overlay);
+    return;
+  }
+
   limpar(cont);
   const fases = dados.fases || [];
   if (fases.length === 0) {
@@ -413,6 +428,128 @@ function renderFases(cont, dados) {
   if (dados.plano_md) {
     cont.append(el("div", { class: "plano-md", text: dados.plano_md }));
   }
+}
+
+// renderFasesEditavel monta o editor do plano para uma demanda aguardando
+// aprovação: uma linha por fase (código, título, dependências, "exige humano"),
+// mover para cima/baixo, remover, adicionar; e as ações Salvar / Aprovar /
+// Rejeitar (com comentário). A edição é local até "Salvar alterações"; Aprovar
+// exige salvar antes (o backend valida o conjunto atual).
+function renderFasesEditavel(cont, dados, overlay) {
+  limpar(cont);
+  cont.append(el("div", { class: "banner banner-info",
+    text: "O planejador gerou o plano abaixo. Ajuste as fases (título, código, dependências, exige humano), salve e aprove para executar — ou rejeite com um comentário para replanejar." }));
+
+  // estado local editável: cópia rasa das fases.
+  const fases = (dados.fases || []).map((f) => ({
+    codigo: f.codigo || "",
+    titulo: f.titulo || "",
+    depende_de: (f.depende_de || []).slice(),
+    requer_humano: !!f.requer_humano,
+    gate_extra: f.gate_extra || "",
+    modelo: f.modelo || "",
+    observacao: f.observacao || "",
+  }));
+
+  const lista = el("div", { class: "fases-edit" });
+  cont.append(lista);
+
+  function redesenhar() {
+    limpar(lista);
+    if (fases.length === 0) {
+      lista.append(el("p", { class: "vazio", text: "Sem fases. Adicione ao menos uma antes de aprovar." }));
+    }
+    fases.forEach((f, i) => {
+      const inCodigo = el("input", { class: "f-cod", type: "text", value: f.codigo, placeholder: "cód" });
+      inCodigo.addEventListener("input", () => { f.codigo = inCodigo.value; });
+      const inTitulo = el("input", { class: "f-tit", type: "text", value: f.titulo, placeholder: "título da fase" });
+      inTitulo.addEventListener("input", () => { f.titulo = inTitulo.value; });
+      const inDep = el("input", { class: "f-dep", type: "text", value: f.depende_de.join(", "), placeholder: "depende de (ex.: 1, 2a)" });
+      inDep.addEventListener("input", () => {
+        f.depende_de = inDep.value.split(",").map((s) => s.trim()).filter(Boolean);
+      });
+      const chkHum = el("input", { type: "checkbox" });
+      chkHum.checked = f.requer_humano;
+      chkHum.addEventListener("change", () => { f.requer_humano = chkHum.checked; });
+
+      const btnUp = el("button", { class: "btn sm ghost", text: "↑", title: "subir",
+        onclick: () => { if (i > 0) { [fases[i - 1], fases[i]] = [fases[i], fases[i - 1]]; redesenhar(); } } });
+      const btnDown = el("button", { class: "btn sm ghost", text: "↓", title: "descer",
+        onclick: () => { if (i < fases.length - 1) { [fases[i + 1], fases[i]] = [fases[i], fases[i + 1]]; redesenhar(); } } });
+      const btnDel = el("button", { class: "btn sm danger", text: "✕", title: "remover",
+        onclick: () => { fases.splice(i, 1); redesenhar(); } });
+
+      lista.append(el("div", { class: "fase-edit-row" },
+        inCodigo, inTitulo, inDep,
+        el("label", { class: "f-hum", title: "exige humano" }, chkHum, "✋"),
+        el("div", { class: "f-btns" }, btnUp, btnDown, btnDel),
+      ));
+    });
+  }
+  redesenhar();
+
+  const btnAdd = el("button", { class: "btn sm ghost", text: "+ Adicionar fase",
+    onclick: () => { fases.push({ codigo: "", titulo: "", depende_de: [], requer_humano: false, gate_extra: "", modelo: "", observacao: "" }); redesenhar(); } });
+  cont.append(el("div", { class: "fases-edit-add" }, btnAdd));
+
+  if (dados.plano_md) {
+    cont.append(el("div", { class: "plano-md", text: dados.plano_md }));
+  }
+
+  // ações do plano.
+  const reabrir = async () => { fecharCard(overlay); await recarregarLista(); await abrirCard(dados.id); };
+  const payloadFases = () => fases.map((f) => ({
+    codigo: f.codigo.trim(), titulo: f.titulo.trim(), depende_de: f.depende_de,
+    requer_humano: f.requer_humano, gate_extra: f.gate_extra, modelo: f.modelo, observacao: f.observacao,
+  }));
+
+  const btnSalvar = el("button", { class: "btn ghost", text: "Salvar alterações" });
+  btnSalvar.addEventListener("click", async () => {
+    btnSalvar.disabled = true;
+    try {
+      await api.editarFases(dados.id, payloadFases());
+    } catch (e) {
+      bannerErro("Falha ao salvar as fases: " + e.message);
+      btnSalvar.disabled = false;
+      return;
+    }
+    bannerErro("");
+    await reabrir();
+  });
+
+  const btnAprovar = el("button", { class: "btn good", text: "Aprovar e executar →" });
+  btnAprovar.addEventListener("click", async () => {
+    btnAprovar.disabled = true;
+    try {
+      // salva o estado atual antes de aprovar (o backend valida o conjunto persistido).
+      await api.editarFases(dados.id, payloadFases());
+      await api.aprovarPlano(dados.id);
+    } catch (e) {
+      bannerErro("Falha ao aprovar: " + e.message);
+      btnAprovar.disabled = false;
+      return;
+    }
+    bannerErro("");
+    await reabrir();
+  });
+
+  const btnRejeitar = el("button", { class: "btn danger", text: "Rejeitar…" });
+  btnRejeitar.addEventListener("click", async () => {
+    const comentario = (prompt("O que ajustar no plano? (o planejador vai refazê-lo com base neste comentário)") || "").trim();
+    if (!comentario) return;
+    btnRejeitar.disabled = true;
+    try {
+      await api.rejeitarPlano(dados.id, comentario);
+    } catch (e) {
+      bannerErro("Falha ao rejeitar: " + e.message);
+      btnRejeitar.disabled = false;
+      return;
+    }
+    bannerErro("");
+    await reabrir();
+  });
+
+  cont.append(el("div", { class: "perguntas-acoes" }, btnSalvar, btnAprovar, btnRejeitar));
 }
 
 // ---------- aba Log ao vivo (SSE) ----------

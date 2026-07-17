@@ -29,6 +29,11 @@ type Opcoes struct {
 	// demanda nasce por chat (Fase 3b). Opcional: nil = a demanda fica em
 	// `recebida` até ser analisada (mecanismo antes do wiring).
 	Intake Analisador
+	// Planejamento dispara o planejador (plano + fases readonly) em background
+	// quando a demanda entra em `planejando` (respostas recebidas) ou o plano é
+	// rejeitado com comentário (Fase 3c). Opcional: nil = a demanda fica em
+	// `planejando` até ser planejada (mecanismo antes do wiring).
+	Planejamento Planejador
 }
 
 // Analisador dispara a análise readonly de uma demanda em background (Fase 3b). É
@@ -39,14 +44,22 @@ type Analisador interface {
 	Disparar(demandaID int64)
 }
 
+// Planejador dispara o planejamento readonly de uma demanda em background (Fase
+// 3c). É um seam: em produção o *intake.Servico o satisfaz. Quando nil, a demanda
+// que entra em `planejando` fica lá até ser planejada.
+type Planejador interface {
+	DispararPlanejamento(demandaID int64)
+}
+
 // Servidor encapsula o roteador e as dependências da API. Construa com Novo e
 // exponha o http.Handler via Handler.
 type Servidor struct {
-	banco   *db.DB
-	log     *slog.Logger
-	handler http.Handler
-	exec    ControladorExecucao
-	intake  Analisador
+	banco        *db.DB
+	log          *slog.Logger
+	handler      http.Handler
+	exec         ControladorExecucao
+	intake       Analisador
+	planejamento Planejador
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -61,7 +74,8 @@ func Novo(opts Opcoes) *Servidor {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake, intervaloPollLog: intervaloPollLogPadrao}
+	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
+		planejamento: opts.Planejamento, intervaloPollLog: intervaloPollLogPadrao}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)

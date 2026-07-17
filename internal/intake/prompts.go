@@ -11,9 +11,10 @@ import (
 )
 
 // Nomes dos prompts de intake conhecidos (chave no banco e nome do arquivo
-// embutido em prompts/<nome>.md). O planejador (Fase 3c) acrescenta o seu.
+// embutido em prompts/<nome>.md).
 const (
-	PromptAnalista = "analista"
+	PromptAnalista   = "analista"
+	PromptPlanejador = "planejador"
 )
 
 // promptsEmbutidos carrega os defaults de prompt versionados junto do binário. É

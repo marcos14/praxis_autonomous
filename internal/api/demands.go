@@ -9,7 +9,8 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/db"
 )
 
-// reqFaseNova é uma fase informada na criação de uma demanda manual (sem intake).
+// reqFaseNova é uma fase informada na criação de uma demanda manual (sem intake)
+// ou na edição do plano na aba Plano & Fases (Fase 3c).
 type reqFaseNova struct {
 	Codigo       string   `json:"codigo"`
 	Titulo       string   `json:"titulo"`
@@ -17,6 +18,7 @@ type reqFaseNova struct {
 	RequerHumano bool     `json:"requer_humano"`
 	GateExtra    string   `json:"gate_extra"`
 	Modelo       string   `json:"modelo"`
+	Observacao   string   `json:"observacao"`
 	Ordem        int      `json:"ordem"`
 }
 
@@ -54,6 +56,8 @@ func (s *Servidor) registrarRotasDemandas(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/demands/{id}/chat", s.handleListarChat)
 	mux.HandleFunc("GET /api/v1/demands/{id}/questions", s.handleListarPerguntas)
 	mux.HandleFunc("POST /api/v1/demands/{id}/answers", s.handleResponderPerguntas)
+	mux.HandleFunc("PUT /api/v1/demands/{id}/phases", s.handleEditarFases)
+	mux.HandleFunc("POST /api/v1/demands/{id}/approve-plan", s.handleAprovarPlano)
 }
 
 // handleCriarDemanda cria uma demanda sob um projeto, em um de dois modos:
@@ -278,46 +282,9 @@ func montarDemanda(projectID int64, req reqDemanda) (db.Demanda, []db.Fase, stri
 		return db.Demanda{}, nil, "origem deve ser 'ui' ou 'api'"
 	}
 
-	// valida as fases: codigo/titulo obrigatórios e codigos únicos na demanda.
-	codigos := map[string]bool{}
-	fases := make([]db.Fase, 0, len(req.Fases))
-	for i, rf := range req.Fases {
-		codigo := strings.TrimSpace(rf.Codigo)
-		if codigo == "" {
-			return db.Demanda{}, nil, "toda fase precisa de um codigo"
-		}
-		if strings.TrimSpace(rf.Titulo) == "" {
-			return db.Demanda{}, nil, "a fase " + codigo + " precisa de um titulo"
-		}
-		if codigos[codigo] {
-			return db.Demanda{}, nil, "codigo de fase repetido: " + codigo
-		}
-		codigos[codigo] = true
-
-		ordem := rf.Ordem
-		if ordem == 0 {
-			ordem = i + 1
-		}
-		fases = append(fases, db.Fase{
-			Codigo:       codigo,
-			Titulo:       strings.TrimSpace(rf.Titulo),
-			Status:       db.StatusFasePendente,
-			DependeDe:    rf.DependeDe,
-			RequerHumano: rf.RequerHumano,
-			GateExtra:    strings.TrimSpace(rf.GateExtra),
-			Modelo:       strings.TrimSpace(rf.Modelo),
-			Ordem:        ordem,
-		})
-	}
-	// depende_de não pode apontar para uma fase inexistente na demanda (dangling):
-	// isso travaria a fila (a dependência nunca conclui).
-	for _, f := range fases {
-		for _, dep := range f.DependeDe {
-			dep = strings.TrimSpace(dep)
-			if dep != "" && !codigos[dep] {
-				return db.Demanda{}, nil, "a fase " + f.Codigo + " depende de um codigo inexistente: " + dep
-			}
-		}
+	fases, msg := validarFasesReq(req.Fases)
+	if msg != "" {
+		return db.Demanda{}, nil, msg
 	}
 
 	dem := db.Demanda{
@@ -331,6 +298,50 @@ func montarDemanda(projectID int64, req reqDemanda) (db.Demanda, []db.Fase, stri
 		BudgetUSD:  req.BudgetUSD,
 	}
 	return dem, fases, ""
+}
+
+// validarFasesReq valida uma lista de fases vinda da API (criação manual ou
+// edição do plano) e a converte em []db.Fase. Regras: código e título
+// obrigatórios, códigos únicos na demanda, e depende_de sem apontar para um
+// código inexistente (dangling travaria a fila). A ordem é derivada da posição
+// (1..N); o campo Ordem de entrada é ignorado (o store reatribui na persistência).
+// Devolve uma mensagem não-vazia em falha de validação.
+func validarFasesReq(reqFases []reqFaseNova) ([]db.Fase, string) {
+	codigos := map[string]bool{}
+	fases := make([]db.Fase, 0, len(reqFases))
+	for i, rf := range reqFases {
+		codigo := strings.TrimSpace(rf.Codigo)
+		if codigo == "" {
+			return nil, "toda fase precisa de um codigo"
+		}
+		if strings.TrimSpace(rf.Titulo) == "" {
+			return nil, "a fase " + codigo + " precisa de um titulo"
+		}
+		if codigos[codigo] {
+			return nil, "codigo de fase repetido: " + codigo
+		}
+		codigos[codigo] = true
+		fases = append(fases, db.Fase{
+			Codigo:       codigo,
+			Titulo:       strings.TrimSpace(rf.Titulo),
+			Status:       db.StatusFasePendente,
+			DependeDe:    rf.DependeDe,
+			RequerHumano: rf.RequerHumano,
+			GateExtra:    strings.TrimSpace(rf.GateExtra),
+			Modelo:       strings.TrimSpace(rf.Modelo),
+			Observacao:   strings.TrimSpace(rf.Observacao),
+			Ordem:        i + 1,
+		})
+	}
+	for _, f := range fases {
+		for _, dep := range f.DependeDe {
+			dep = strings.TrimSpace(dep)
+			if dep != "" && !codigos[dep] {
+				return nil, "a fase " + f.Codigo + " depende de um codigo inexistente: " + dep
+			}
+		}
+	}
+	return fases, ""
 }
 
 // responderErroDemanda traduz os erros do store para respostas HTTP.

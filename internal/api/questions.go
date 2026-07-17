@@ -82,5 +82,12 @@ func (s *Servidor) handleResponderPerguntas(w http.ResponseWriter, r *http.Reque
 		s.log.Warn("registrar evento de respostas", "erro", err, "demanda", did)
 	}
 
+	// Dispara o planejador (readonly) em background — a demanda "anda sozinha" de
+	// `planejando` até `aguardando_aprovacao` (Fase 3c). Sem wiring, fica em
+	// `planejando` (mecanismo antes do wiring).
+	if s.planejamento != nil {
+		s.planejamento.DispararPlanejamento(atual.ID)
+	}
+
 	s.responderDemandaComFases(w, r, atual)
 }
