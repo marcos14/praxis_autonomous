@@ -25,6 +25,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
+	"github.com/marcos14/praxis-autonomous/internal/manutencao"
 	"github.com/marcos14/praxis-autonomous/internal/notify"
 	"github.com/marcos14/praxis-autonomous/internal/procs"
 	"github.com/marcos14/praxis-autonomous/internal/scheduler"
@@ -85,6 +86,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	switch rest[0] {
 	case "serve":
 		return serve(ctx, rest[1:], out, errOut)
+	case "service":
+		return service(rest[1:], out, errOut)
 	default:
 		return fmt.Errorf("subcomando desconhecido: %q", rest[0])
 	}
@@ -131,6 +134,10 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// Notificações (Fase 4e): despachante em background que tail-a os eventos do
 	// banco e envia para os canais configurados (config global "notificacoes").
 	iniciarNotificacoes(ctx, banco, logger)
+
+	// Manutenção (Fase 5d): backup periódico do banco, rotação e retenção de
+	// logs/eventos, em background ligado ao ctx de vida do serviço.
+	iniciarManutencao(ctx, banco, logger)
 
 	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger, Intake: intakeSvc, Planejamento: intakeSvc})
 	return servirHTTP(ctx, *addr, srv.Handler(), out, logger)
@@ -182,6 +189,24 @@ func iniciarNotificacoes(ctx context.Context, banco *db.DB, logger *slog.Logger)
 		Log:    func(msg string) { logger.Info(msg) },
 	})
 	go desp.Rodar(ctx)
+}
+
+// iniciarManutencao sobe a rotina de manutenção (Fase 5d) em background: backup
+// periódico do banco em PRAXIS_HOME/backups, rotação e retenção de logs/eventos.
+// Sem PRAXIS_HOME resolvido, não sobe (só loga um aviso).
+func iniciarManutencao(ctx context.Context, banco *db.DB, logger *slog.Logger) {
+	home, err := db.PraxisHome()
+	if err != nil {
+		logger.Warn("manutenção: resolver PRAXIS_HOME", "erro", err)
+		return
+	}
+	m := manutencao.Nova(manutencao.Opcoes{
+		Store:      banco,
+		DirBackups: filepath.Join(home, "backups"),
+		DirLogs:    filepath.Join(home, "logs"),
+		Log:        func(msg string) { logger.Info(msg) },
+	})
+	go m.Rodar(ctx)
 }
 
 // recuperarPosRestart executa a recuperação de boot da Fase 2i (prune de

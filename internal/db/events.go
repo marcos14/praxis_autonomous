@@ -93,6 +93,22 @@ func (d *DB) EventosApos(ctx context.Context, aposID int64, limite int) ([]Event
 	return eventos, nil
 }
 
+// RemoverEventosAntesDe apaga os eventos com criado_em anterior a corte
+// (ISO-8601, ex.: '2026-06-01T00:00:00Z') — a rotina de retenção (Fase 5d).
+// Devolve quantas linhas foram removidas.
+func (d *DB) RemoverEventosAntesDe(ctx context.Context, corte string) (int64, error) {
+	res, err := d.Escritor.ExecContext(ctx,
+		`DELETE FROM events WHERE criado_em < ?`, corte)
+	if err != nil {
+		return 0, fmt.Errorf("remover eventos antigos: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("remover eventos antigos: %w", err)
+	}
+	return n, nil
+}
+
 // UltimoEventoID devolve o maior id da tabela events (0 se vazia). O SSE global
 // usa como cursor inicial para transmitir só os eventos novos após a conexão.
 func (d *DB) UltimoEventoID(ctx context.Context) (int64, error) {
