@@ -28,6 +28,12 @@ type Config struct {
 	MaxCorrecoes     int               // ciclos de corretor por rodada de gates
 	MaxCiclosRevisao int               // ciclos de correcao apos reprovacao do revisor
 	Fallback         Fallback          // troca de motor quando a franquia esgota
+	// Gates/GatesExtra sao os gates deterministicos resolvidos por demanda (da
+	// config efetiva do projeto). Quando presentes e o Runner nao tem um Gates
+	// fixo (producao), o Runner monta um RunnerGates por fase com estes gates,
+	// compartilhando o semaforo global. Vazio = sem gate deterministico.
+	Gates      []Gate
+	GatesExtra []GateExtra
 }
 
 // Fallback descreve a ordem de troca de motores quando o motor corrente sinaliza

@@ -34,7 +34,11 @@ type Runner struct {
 	Store *db.DB      // fila/estado no banco (demandas, fases, runs, eventos)
 	Git   *gitops.Ops // operacoes git serializadas por projeto
 	Home  string      // PRAXIS_HOME (base de worktrees/ e logs/); "" resolve via db.PraxisHome
-	Gates Gates       // runner de gates (Fase 2c); nil = etapa de gates aprovada
+	Gates Gates       // runner de gates FIXO (testes); nil = monta um por fase de cfg.Gates
+	// SemGates e o semaforo global compartilhado pelos RunnerGates montados por
+	// fase (quando Gates == nil). nil = sem limite. Em producao o wiring do serve
+	// injeta um NovoSemaforoGates(gates_simultaneos).
+	SemGates *SemaforoGates
 	// Prompt carrega o template de um prompt por nome (executor.md/corretor.md/
 	// revisor.md). Repassado ao ContextoExec.
 	Prompt func(nome string) (string, error)
@@ -170,7 +174,7 @@ func (r *Runner) RodarFase(ctx context.Context, dem db.Demanda, fase db.Fase, cf
 		Config:     cfg,
 		Store:      r.Store,
 		Git:        r.Git,
-		Gates:      r.Gates,
+		Gates:      r.resolverGates(cfg, dirLogs),
 		Prompt:     r.Prompt,
 		Ctx:        ctx,
 		PausaCh:    pausaCh,
@@ -195,6 +199,26 @@ func (r *Runner) RodarFase(ctx context.Context, dem db.Demanda, fase db.Fase, cf
 		res.CommitsNaoPublicados = rp.CommitsNaoPublicados
 	}
 	return res, nil
+}
+
+// resolverGates escolhe o runner de gates da fase: o Gates FIXO do Runner (usado
+// pelos testes) quando presente; senao, monta um RunnerGates por fase a partir
+// dos gates resolvidos em cfg (config efetiva do projeto), compartilhando o
+// semaforo global do Runner. Sem gates configurados, devolve nil (a etapa de
+// gates e tratada como aprovada — o harness ainda se autoverifica pelo prompt).
+func (r *Runner) resolverGates(cfg Config, dirLogs string) Gates {
+	if r.Gates != nil {
+		return r.Gates
+	}
+	if len(cfg.Gates) == 0 && len(cfg.GatesExtra) == 0 {
+		return nil
+	}
+	return &RunnerGates{
+		Gates:      cfg.Gates,
+		GatesExtra: cfg.GatesExtra,
+		DirLogs:    dirLogs,
+		Sem:        r.SemGates,
+	}
 }
 
 // TentativasPush e o numero de tentativas do push automatico da branch apos um

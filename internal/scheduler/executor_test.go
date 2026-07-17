@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -326,5 +327,36 @@ func TestDemandaRequerHumanoPausa(t *testing.T) {
 	}
 	if fases[0].Tentativas != 0 {
 		t.Fatalf("fase requer_humano teve %d tentativas, quero 0", fases[0].Tentativas)
+	}
+}
+
+// TestResolverConfigBancoGates confirma que a config "gates" (lista de comandos)
+// do projeto vira os gates da pipeline.Config resolvida (wiring 2g.n1).
+func TestResolverConfigBancoGates(t *testing.T) {
+	repo := repoLocal(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "Gates", Slug: "gates", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeLocal, Ativo: true,
+	})
+	if err != nil {
+		t.Fatalf("criar projeto: %v", err)
+	}
+	if err := d.DefinirConfigProjeto(ctx, proj.ID, map[string]json.RawMessage{
+		"gates": json.RawMessage(`["go build ./...","go test ./..."]`),
+	}); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	dem := db.Demanda{ProjectID: proj.ID, Titulo: "d", Status: db.StatusDemandaPronta}
+	cfg, err := resolverConfigBanco(ctx, d, dem, "")
+	if err != nil {
+		t.Fatalf("resolverConfigBanco: %v", err)
+	}
+	if len(cfg.Gates) != 1 || len(cfg.Gates[0].Comandos) != 2 {
+		t.Fatalf("gates resolvidos = %#v, quero 1 bloco com 2 comandos", cfg.Gates)
+	}
+	if cfg.Gates[0].Comandos[0] != "go build ./..." {
+		t.Fatalf("comando[0] = %q", cfg.Gates[0].Comandos[0])
 	}
 }

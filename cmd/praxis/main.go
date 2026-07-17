@@ -120,11 +120,16 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}()
 	logger.Info("banco aberto", "caminho", banco.Caminho)
 
+	// Dependências compartilhadas do ciclo de execução: operações git (mutex por
+	// projeto) e o registro de PIDs dos harnesses (para matar órfãos no boot).
+	git := gitops.Novo()
+	registro := registroPIDs(logger)
+
 	// Recuperação pós-restart (Fase 2i): antes de servir, faz o prune dos
 	// worktrees, mata processos de harness órfãos de uma queda anterior e
 	// re-enfileira as demandas presas em `executando`. Best-effort: uma falha aqui
 	// não impede o serviço de subir.
-	recuperarPosRestart(ctx, banco, logger)
+	recuperarPosRestart(ctx, banco, git, registro, logger)
 
 	// Intake (Fases 3b/3c): dispara o analista readonly (perguntas) e o planejador
 	// (plano + fases) em background. Roda com o ctx de vida do serviço (cancelado
@@ -132,6 +137,12 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// o banco.
 	intakeSvc := novoIntake(ctx, banco, logger)
 	defer intakeSvc.Aguardar()
+
+	// Scheduler (fecha 2g.n1): executa as demandas em background — a demanda
+	// aprovada "anda sozinha" (executor→gates→corretor→revisor→commit por fase).
+	// É passado à API como ControladorExecucao para pausar/cancelar interromperem
+	// o worker ao vivo.
+	sched := iniciarScheduler(ctx, banco, git, registro, logger)
 
 	// Notificações (Fase 4e): despachante em background que tail-a os eventos do
 	// banco e envia para os canais configurados (config global "notificacoes").
@@ -141,8 +152,29 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// logs/eventos, em background ligado ao ctx de vida do serviço.
 	iniciarManutencao(ctx, banco, logger)
 
-	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger, Intake: intakeSvc, Planejamento: intakeSvc})
+	opts := api.Opcoes{Banco: banco, Log: logger, Git: git, Intake: intakeSvc, Planejamento: intakeSvc}
+	if sched != nil {
+		opts.Exec = sched
+	}
+	srv := api.Novo(opts)
 	return servirHTTP(ctx, *addr, srv.Handler(), out, logger)
+}
+
+// registroPIDs cria o registro de PIDs dos harnesses em PRAXIS_HOME/pids. Falha
+// (PRAXIS_HOME indisponível) vira aviso e nil — o serviço sobe sem registro (os
+// órfãos não serão mortos no boot, mas o resto opera).
+func registroPIDs(logger *slog.Logger) *procs.Registro {
+	home, err := db.PraxisHome()
+	if err != nil {
+		logger.Warn("registro de PIDs: resolver PRAXIS_HOME", "erro", err)
+		return nil
+	}
+	registro, err := procs.NovoRegistro(filepath.Join(home, "pids"))
+	if err != nil {
+		logger.Warn("registro de PIDs", "erro", err)
+		return nil
+	}
+	return registro
 }
 
 // novoIntake monta o serviço de intake (Fase 3b) com a pasta de logs em
@@ -213,19 +245,11 @@ func iniciarManutencao(ctx context.Context, banco *db.DB, logger *slog.Logger) {
 
 // recuperarPosRestart executa a recuperação de boot da Fase 2i (prune de
 // worktrees, morte de processos órfãos e refila das demandas `executando`). É
-// best-effort: qualquer falha vira log e o serviço sobe mesmo assim.
-func recuperarPosRestart(ctx context.Context, banco *db.DB, logger *slog.Logger) {
-	home, err := db.PraxisHome()
-	if err != nil {
-		logger.Warn("recuperação pós-restart: resolver PRAXIS_HOME", "erro", err)
-		return
-	}
-	registro, err := procs.NovoRegistro(filepath.Join(home, "pids"))
-	if err != nil {
-		logger.Warn("recuperação pós-restart: registro de PIDs", "erro", err)
-		registro = nil
-	}
-	rec, err := scheduler.RecuperarPosRestart(ctx, banco, gitops.Novo(), registro, func(msg string) { logger.Info(msg) })
+// best-effort: qualquer falha vira log e o serviço sobe mesmo assim. Recebe as
+// dependências compartilhadas (git/registro) para usar as mesmas instâncias do
+// scheduler (mesmo mutex por projeto, mesmo registro de PIDs).
+func recuperarPosRestart(ctx context.Context, banco *db.DB, git *gitops.Ops, registro *procs.Registro, logger *slog.Logger) {
+	rec, err := scheduler.RecuperarPosRestart(ctx, banco, git, registro, func(msg string) { logger.Info(msg) })
 	if err != nil {
 		logger.Warn("recuperação pós-restart", "erro", err)
 		return

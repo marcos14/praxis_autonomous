@@ -386,6 +386,11 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 	if n, ok := configInt(efetiva, "max_ciclos_revisao"); ok {
 		cfg.MaxCiclosRevisao = n
 	}
+	if cmds := configListaStrings(efetiva, "gates"); len(cmds) > 0 {
+		// a config "gates" é uma lista de comandos de shell; vira um bloco de gate
+		// fixo rodado em toda fase (build/lint/test do projeto-alvo).
+		cfg.Gates = []pipeline.Gate{{Nome: "gates", Comandos: cmds}}
+	}
 
 	// diretórios extras liberados ao harness vêm do cadastro do projeto.
 	if proj, err := store.ObterProjeto(ctx, dem.ProjectID); err == nil {
@@ -439,4 +444,24 @@ func configInt(efetiva map[string]db.ValorEfetivo, chave string) (int, bool) {
 		return 0, false
 	}
 	return int(f), true
+}
+
+// configListaStrings lê uma chave de config efetiva que é uma lista de strings
+// (ex.: "gates"). Devolve os itens não-vazios; nil quando ausente/incompatível.
+func configListaStrings(efetiva map[string]db.ValorEfetivo, chave string) []string {
+	v, ok := efetiva[chave]
+	if !ok {
+		return nil
+	}
+	var itens []string
+	if err := json.Unmarshal(v.Valor, &itens); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(itens))
+	for _, it := range itens {
+		if it = strings.TrimSpace(it); it != "" {
+			out = append(out, it)
+		}
+	}
+	return out
 }

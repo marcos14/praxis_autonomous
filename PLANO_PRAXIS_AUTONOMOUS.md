@@ -522,6 +522,19 @@ POST/DELETE /tokens                     GET /manual/*
 
 Fases inseridas automaticamente a partir de pendencias descobertas pelo revisor.
 
+### 2g.n1 — Wiring do scheduler no serve com prompts do pipeline (2026-07-17)
+
+Status: concluída (gates verdes)
+
+**Fundamental** — fecha a lacuna entre o mecanismo (scheduler/pipeline completos e testados) e o produto rodando de fato em background. Sem isto, uma demanda aprovada ficava presa em `pronta` para sempre, quebrando o princípio "background por padrão".
+
+- Prompts do ciclo de fase **executor/corretor/revisor** portados dos `defaults/` do Praxis clássico e **adaptados** à nova arquitetura: `{PLANO}` é o markdown da demanda **inline** (não um arquivo no worktree); removidas as instruções de editar plano/Registro; reforçado "não commitar/pushar". Embutidos em `internal/intake/prompts/` (`//go:embed`), resolvidos por `intake.ProvedorPrompt` (aceita nome com/sem `.md`; override no banco → default embutido).
+- **Gates por projeto:** `pipeline.Config` ganhou `Gates`/`GatesExtra`; `resolverConfigBanco` lê a config efetiva `gates` (lista de comandos) e o `Runner.resolverGates` monta um `RunnerGates` **por fase** compartilhando o `SemaforoGates` global (`SemGates`) — o design pretendido (um RunnerGates por demanda/projeto). `Runner.Gates` fixo continua tendo precedência (testes).
+- **Wiring no `serve`:** `iniciarScheduler` monta `pipeline.Runner` (Store/Git/Home/Prompt/Procs/SemGates) + `scheduler.ExecutorDemanda` + `scheduler.Novo(FonteBanco, limites da config global)` e sobe `Rodar(ctx)` em goroutine. `git`/`registro` de PIDs agora são criados uma vez e compartilhados entre `recuperarPosRestart` e o scheduler. O scheduler é passado à API como `Opcoes.Exec` (ControladorExecucao) — pausar/cancelar interrompem o worker ao vivo.
+- Smoke do binário: `serve` loga `scheduler no ar`; `/healthz` ok.
+
+**Pendências descobertas:** override de gates por projeto além do bloco único (gate_extra por fase já é suportado pela estrutura); log do limite `max_global` mostra o valor cru (0=default) — cosmético.
+
 ### 1a.n1 — Persistência do espelho de franquia em engine_accounts
 
 Status: avaliar viabilidade

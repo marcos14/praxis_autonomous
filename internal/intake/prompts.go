@@ -15,7 +15,23 @@ import (
 const (
 	PromptAnalista   = "analista"
 	PromptPlanejador = "planejador"
+	// Prompts do ciclo de execução da fase (pipeline). Distintos dos de intake;
+	// resolvidos pelo mesmo mecanismo (embutido + override no banco).
+	PromptExecutor = "executor"
+	PromptCorretor = "corretor"
+	PromptRevisor  = "revisor"
 )
+
+// ProvedorPrompt devolve um provedor de prompts para o pipeline (Runner.Prompt):
+// aceita nomes com ou sem o sufixo ".md" (o pipeline usa "executor.md" etc.) e
+// resolve via ResolverPrompt (override do banco → default embutido). O ctx é o de
+// vida do serviço.
+func ProvedorPrompt(ctx context.Context, store *db.DB) func(string) (string, error) {
+	return func(nome string) (string, error) {
+		nome = strings.TrimSuffix(strings.TrimSpace(nome), ".md")
+		return ResolverPrompt(ctx, store, nome)
+	}
+}
 
 // promptsEmbutidos carrega os defaults de prompt versionados junto do binário. É
 // o "default embutido" de "prompts no banco com default embutido" (Fase 3b): a
