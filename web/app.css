@@ -345,3 +345,14 @@ table.plain tr:last-child td { border-bottom: none; }
 .commit-row:last-child { border-bottom: none; }
 .commit-hash { font-family: Consolas, monospace; color: var(--muted); flex: 0 0 auto; }
 .commit-msg { color: var(--ink-2); }
+
+/* ======================= TOKENS DE API (Fase 5a) ======================= */
+.token-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.token-form input { flex: 1; min-width: 200px; }
+.token-form select { background: var(--surface-2); border: 1px solid var(--border); color: var(--ink); border-radius: 8px; padding: 7px 10px; font-family: inherit; }
+.token-novo { margin-top: 12px; }
+.token-valor { display: block; margin-top: 6px; font-family: Consolas, monospace; font-size: 12.5px; word-break: break-all; background: var(--surface); padding: 8px 10px; border-radius: 8px; }
+.token-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.token-row:last-child { border-bottom: none; }
+.token-row.revogado { opacity: .55; }
+.token-nome { font-size: 13px; font-weight: 600; }

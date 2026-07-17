@@ -46,6 +46,87 @@ export async function montarConfig() {
   form.append(el("div", { class: "hint", text: "Chaves em branco não são gravadas (a config efetiva de cada projeto cai no default do sistema)." }));
   form.append(btn);
   painel.append(form);
+
+  await montarTokens();
+}
+
+// ---------- Tokens de API (Fase 5a) ----------
+
+const PAPEIS_TOKEN = ["leitor", "operador", "admin"];
+
+async function montarTokens() {
+  const painel = document.getElementById("painel-tokens");
+  if (!painel) return;
+  limpar(painel);
+
+  const inpNome = el("input", { type: "text", placeholder: "nome (ex.: sistema de chamados)" });
+  const selPapel = el("select", {}, ...PAPEIS_TOKEN.map((p) => el("option", { value: p, text: p })));
+  selPapel.value = "operador";
+  const btnNovo = el("button", { class: "btn sm", text: "Gerar token" });
+  const form = el("div", { class: "token-form" }, inpNome, selPapel, btnNovo);
+  const lista = el("div", { id: "lista-tokens", style: "margin-top:14px" });
+  painel.append(form, lista);
+
+  btnNovo.addEventListener("click", async () => {
+    const nome = inpNome.value.trim();
+    if (!nome) { bannerErro("Informe um nome para o token."); return; }
+    btnNovo.disabled = true;
+    try {
+      const tok = await api.criarToken(nome, selPapel.value);
+      inpNome.value = "";
+      painel.querySelector(".token-novo")?.remove();
+      painel.insertBefore(el("div", { class: "banner banner-ok token-novo" },
+        el("div", { text: "Token criado — copie agora, não será mostrado de novo:" }),
+        el("code", { class: "token-valor", text: tok.token }),
+      ), lista);
+      await recarregarTokens();
+    } catch (e) {
+      bannerErro("Falha ao criar token: " + e.message);
+    } finally {
+      btnNovo.disabled = false;
+    }
+  });
+
+  await recarregarTokens();
+}
+
+async function recarregarTokens() {
+  const lista = document.getElementById("lista-tokens");
+  if (!lista) return;
+  limpar(lista);
+  let tokens;
+  try {
+    tokens = (await api.listarTokens()) || [];
+  } catch (e) {
+    lista.append(el("p", { class: "sub", text: "Falha ao listar tokens: " + e.message }));
+    return;
+  }
+  if (tokens.length === 0) {
+    lista.append(el("p", { class: "sub", style: "margin:0", text: "Nenhum token criado." }));
+    return;
+  }
+  for (const t of tokens) {
+    const revogado = !!t.revogado_em;
+    const row = el("div", { class: "token-row" + (revogado ? " revogado" : "") },
+      el("div", {},
+        el("span", { class: "token-nome", text: t.nome }),
+        el("span", { class: "pill", style: "margin-left:8px", text: t.papel }),
+        revogado ? el("span", { class: "pill", style: "margin-left:6px;color:var(--muted)", text: "revogado" }) : null,
+      ),
+      revogado ? null : el("button", { class: "btn sm danger", text: "Revogar",
+        onclick: () => revogar(t.id) }),
+    );
+    lista.append(row);
+  }
+}
+
+async function revogar(id) {
+  try {
+    await api.revogarToken(id);
+    await recarregarTokens();
+  } catch (e) {
+    bannerErro("Falha ao revogar: " + e.message);
+  }
 }
 
 async function salvar(inputs, campos, btn) {

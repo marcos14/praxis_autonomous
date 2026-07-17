@@ -109,6 +109,11 @@ export const api = {
   pendencias: () => req("GET", "/api/v1/pendencias"),
   atividade: (limite) => req("GET", "/api/v1/activity" + (limite ? "?limite=" + limite : "")),
 
+  // tokens de API (Fase 5a): papel ∈ {leitor, operador, admin}.
+  listarTokens: () => req("GET", "/api/v1/tokens"),
+  criarToken: (nome, papel) => req("POST", "/api/v1/tokens", { nome, papel }),
+  revogarToken: (id) => req("DELETE", `/api/v1/tokens/${id}`),
+
   // config em camadas (Fase 1e)
   obterConfigGlobal: () => req("GET", "/api/v1/config"),
   definirConfigGlobal: (entradas) => req("PUT", "/api/v1/config", entradas),

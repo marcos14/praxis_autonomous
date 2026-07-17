@@ -100,9 +100,12 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasIntegracao(mux)
 	s.registrarRotasMotores(mux)
 	s.registrarRotasConfig(mux)
+	s.registrarRotasTokens(mux)
 	s.registrarRotasWeb(mux)
 
-	s.handler = encadear(mux, comRecover(logger), comLog(logger))
+	// A ordem coloca o recover na camada mais externa e a autorização (comAuth)
+	// logo dentro do log — a auth roda depois do log/recover e antes dos handlers.
+	s.handler = encadear(mux, comRecover(logger), comLog(logger), s.comAuth)
 	return s
 }
 

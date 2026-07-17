@@ -39,6 +39,11 @@ var migracoes = []migracao{
 		nome:   "prompts editáveis no banco (analista, planejador, …)",
 		sql:    schemaPrompts,
 	},
+	{
+		versao: 5,
+		nome:   "tokens de API com papéis (api_tokens)",
+		sql:    schemaTokens,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -319,5 +324,20 @@ CREATE TABLE prompts (
     nome          TEXT    PRIMARY KEY,
     conteudo      TEXT    NOT NULL,
     atualizado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+`
+
+// schemaTokens é a migração 5: os tokens de API do sistema de chamados (Fase
+// 5a), com papel (leitor/operador/admin). Guarda apenas o HASH do token
+// (token_hash, SHA-256 hex) — o valor em claro é mostrado uma única vez na
+// criação e nunca é persistido. revogado_em não-nulo = token revogado.
+const schemaTokens = `
+CREATE TABLE api_tokens (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome       TEXT    NOT NULL,
+    token_hash TEXT    NOT NULL UNIQUE,
+    papel      TEXT    NOT NULL CHECK (papel IN ('leitor','operador','admin')),
+    criado_em  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    revogado_em TEXT
 );
 `
