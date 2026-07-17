@@ -36,6 +36,9 @@ let viewAtual = "";
 
 // irPara ativa a view pedida: alterna as seções, destaca o item do menu, limpa o
 // banner de erro e (re)monta o conteúdo. Views desconhecidas caem em "home".
+// É a ÚNICA porta de montagem — não altera o location.hash (isso é papel de
+// irParaHash), para não disparar um segundo hashchange e montar a view duas vezes
+// (o que duplicava o conteúdo em telas com await entre limpar e append).
 async function irPara(nome) {
   if (!nomesValidos.has(nome)) nome = "home";
   if (viewAtual && viewAtual !== nome && desmontar[viewAtual]) {
@@ -46,7 +49,6 @@ async function irPara(nome) {
   document.getElementById("view-" + nome).classList.add("active");
   document.querySelectorAll(".nav-item").forEach((n) =>
     n.classList.toggle("active", n.dataset.view === nome));
-  if (location.hash.slice(1) !== nome) location.hash = nome;
   bannerErro("");
   window.scrollTo(0, 0);
   try {
@@ -54,6 +56,16 @@ async function irPara(nome) {
   } catch (e) {
     bannerErro("Erro ao montar a tela: " + (e && e.message ? e.message : e));
   }
+}
+
+// irParaHash navega para uma view via URL: quando o hash já é o alvo (re-clique
+// na view atual), monta direto; senão troca o hash e deixa o listener de
+// hashchange chamar irPara — assim a montagem acontece UMA única vez por
+// navegação.
+function irParaHash(nome) {
+  const alvo = nomesValidos.has(nome) ? nome : "home";
+  if (location.hash.slice(1) === alvo) irPara(alvo);
+  else location.hash = alvo;
 }
 
 // atualizarRodape mostra a versão e o estado do serviço/banco no rodapé do menu.
@@ -73,10 +85,10 @@ async function atualizarRodape() {
 
 function iniciar() {
   document.querySelectorAll(".nav-item").forEach((btn) =>
-    btn.addEventListener("click", () => irPara(btn.dataset.view)));
+    btn.addEventListener("click", () => irParaHash(btn.dataset.view)));
   window.addEventListener("hashchange", () => irPara(location.hash.slice(1)));
   atualizarRodape();
-  irPara(location.hash.slice(1) || "home");
+  irParaHash(location.hash.slice(1) || "home");
 }
 
 if (document.readyState === "loading") {
