@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
+	"github.com/marcos14/praxis-autonomous/internal/notify"
 	"github.com/marcos14/praxis-autonomous/internal/procs"
 	"github.com/marcos14/praxis-autonomous/internal/scheduler"
 )
@@ -126,6 +128,10 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	intakeSvc := novoIntake(ctx, banco, logger)
 	defer intakeSvc.Aguardar()
 
+	// Notificações (Fase 4e): despachante em background que tail-a os eventos do
+	// banco e envia para os canais configurados (config global "notificacoes").
+	iniciarNotificacoes(ctx, banco, logger)
+
 	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger, Intake: intakeSvc, Planejamento: intakeSvc})
 	return servirHTTP(ctx, *addr, srv.Handler(), out, logger)
 }
@@ -147,6 +153,35 @@ func novoIntake(ctx context.Context, banco *db.DB, logger *slog.Logger) *intake.
 		Ctx:     ctx,
 		Log:     func(msg string) { logger.Info(msg) },
 	})
+}
+
+// iniciarNotificacoes sobe o despachante de notificações (Fase 4e) em uma
+// goroutine ligada ao ctx de vida do serviço. A config de canais/eventos é lida
+// da config global (chave "notificacoes") a cada ciclo — mudanças na tela de
+// Configurações valem sem reiniciar. Sem canal ativo, o despachante só avança o
+// cursor (nenhum envio).
+func iniciarNotificacoes(ctx context.Context, banco *db.DB, logger *slog.Logger) {
+	provedor := func(ctx context.Context) (notify.Config, error) {
+		entradas, err := banco.ObterConfigGlobal(ctx)
+		if err != nil {
+			return notify.Config{}, err
+		}
+		bruto, ok := entradas["notificacoes"]
+		if !ok || len(bruto) == 0 {
+			return notify.Config{}, nil
+		}
+		var cfg notify.Config
+		if err := json.Unmarshal(bruto, &cfg); err != nil {
+			return notify.Config{}, err
+		}
+		return cfg, nil
+	}
+	desp := notify.NovoDespachante(notify.OpcoesDespachante{
+		Fonte:  banco,
+		Config: provedor,
+		Log:    func(msg string) { logger.Info(msg) },
+	})
+	go desp.Rodar(ctx)
 }
 
 // recuperarPosRestart executa a recuperação de boot da Fase 2i (prune de

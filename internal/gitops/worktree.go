@@ -56,6 +56,35 @@ func (o *Ops) WorktreeRemove(repo, caminho string) error {
 	return err
 }
 
+// RemoverBranch apaga a branch local (git branch -D). Guarda de seguranca: so
+// aceita branches praxis/*. Usada na limpeza pos-integracao (Fase 4e). O worktree
+// que a usava deve ter sido removido antes. Serializado pelo mutex do projeto.
+func (o *Ops) RemoverBranch(repo, branch string) error {
+	if err := validarBranchPraxis(branch); err != nil {
+		return err
+	}
+	defer o.trava(repo)()
+	_, err := git(repo, "branch", "-D", branch)
+	return err
+}
+
+// BranchIntegrada informa se a branch ja esta totalmente contida em base (todos
+// os seus commits alcancaveis a partir de base) — ou seja, o merge ja aconteceu
+// (na main local ou, apos fetch, em origin/main passado como base). Usada para
+// detectar o fechamento no modo merge_request (Fase 4e). So leitura.
+func BranchIntegrada(repo, base, branch string) (bool, error) {
+	base = strings.TrimSpace(base)
+	branch = strings.TrimSpace(branch)
+	if base == "" || branch == "" {
+		return false, nil
+	}
+	commits, err := CommitsAFrente(repo, base, branch)
+	if err != nil {
+		return false, err
+	}
+	return len(commits) == 0, nil
+}
+
 // WorktreePrune limpa registros de worktrees cujo diretorio sumiu (orfaos apos
 // crash/remocao manual). Serializado pelo mutex do projeto.
 func (o *Ops) WorktreePrune(repo string) error {

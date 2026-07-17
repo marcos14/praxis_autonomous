@@ -30,6 +30,8 @@ type respMergePreview struct {
 	Limpo                bool                `json:"limpo"`
 	Conflitos            []string            `json:"conflitos"`
 	Aviso                string              `json:"aviso,omitempty"`
+	Status               string              `json:"status"`        // status atual da demanda (pode ter mudado na reconciliação)
+	JaIntegrada          bool                `json:"ja_integrada"`  // true = branch já mesclada na main
 }
 
 // handleMergePreview devolve o preview de integração da demanda com a main:
@@ -51,16 +53,21 @@ func (s *Servidor) handleMergePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := strings.TrimSpace(proj.BranchPrincipal)
-	if base == "" {
-		base = "main"
+	// Reconciliação do modo merge_request (Fase 4e): se o MR já foi mesclado na
+	// main, marca a demanda integrada e limpa worktree/branch antes de responder.
+	if atual, integrou := s.reconciliarMR(r, proj, dem); integrou {
+		dem = atual
 	}
+
+	base := baseDoProjeto(proj)
 	repo := proj.Pasta
 
 	resp := respMergePreview{
 		Branch:         dem.Branch,
 		Base:           base,
 		ModoIntegracao: proj.ModoIntegracao,
+		Status:         dem.Status,
+		JaIntegrada:    dem.Status == db.StatusDemandaIntegrada,
 		Conflitos:      []string{},
 		Commits:        []gitops.CommitInfo{},
 	}
@@ -180,6 +187,10 @@ func (s *Servidor) acaoIntegrar(w http.ResponseWriter, r *http.Request, dem db.D
 	}
 	dem.Status = db.StatusDemandaIntegrada
 	dem.Erro = ""
+	// limpeza pós-integração (Fase 4e): remove worktree + branch e zera o
+	// worktree_path do registro (best-effort — não desfaz o merge já feito).
+	s.limparPosIntegracao(r, proj, dem)
+	dem.WorktreePath = ""
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
 		s.responderErroDemanda(w, err)
@@ -188,6 +199,60 @@ func (s *Servidor) acaoIntegrar(w http.ResponseWriter, r *http.Request, dem db.D
 	s.registrarEventoDemanda(r, atual, "demanda_integrada", "Praxis: demanda integrada",
 		"branch "+dem.Branch+" integrada na "+base+" (merge --no-ff).")
 	s.responderDemandaComFases(w, r, atual)
+}
+
+// limparPosIntegracao remove o worktree e apaga a branch local da demanda após a
+// integração (Fase 4e). Best-effort: falhas viram log/evento, sem reverter a
+// integração. Remove o worktree ANTES da branch (uma branch em check-out num
+// worktree não pode ser apagada).
+func (s *Servidor) limparPosIntegracao(r *http.Request, proj db.Projeto, dem db.Demanda) {
+	if wt := strings.TrimSpace(dem.WorktreePath); wt != "" {
+		if err := s.git.WorktreeRemove(proj.Pasta, wt); err != nil {
+			s.log.Warn("remover worktree pós-integração", "erro", err, "demanda", dem.ID)
+		}
+	}
+	if br := strings.TrimSpace(dem.Branch); br != "" {
+		if err := s.git.RemoverBranch(proj.Pasta, br); err != nil {
+			s.log.Warn("remover branch pós-integração", "erro", err, "demanda", dem.ID)
+		}
+	}
+	s.registrarEventoDemanda(r, dem, "limpeza_pos_integracao", "Praxis: worktree/branch removidos",
+		"worktree e branch "+dem.Branch+" removidos após a integração.")
+}
+
+// reconciliarMR detecta, no modo merge_request, que a branch da demanda já foi
+// mesclada na main (o dev abriu e mergeou o MR na plataforma): faz fetch da base,
+// e se a branch estiver totalmente contida em origin/<base> (ou na base local),
+// marca a demanda como integrada e limpa worktree/branch. Best-effort e
+// idempotente. Devolve a demanda (possivelmente atualizada) e se integrou agora.
+func (s *Servidor) reconciliarMR(r *http.Request, proj db.Projeto, dem db.Demanda) (db.Demanda, bool) {
+	if proj.ModoIntegracao != db.ModoIntegracaoMergeRequest ||
+		dem.Status == db.StatusDemandaIntegrada || strings.TrimSpace(dem.Branch) == "" {
+		return dem, false
+	}
+	base := baseDoProjeto(proj)
+	ref := base
+	if gitops.TemRemote(proj.Pasta) {
+		if err := s.git.Fetch(proj.Pasta, base); err == nil {
+			ref = "origin/" + base
+		}
+	}
+	integrada, err := gitops.BranchIntegrada(proj.Pasta, ref, dem.Branch)
+	if err != nil || !integrada {
+		return dem, false
+	}
+	dem.Status = db.StatusDemandaIntegrada
+	dem.Erro = ""
+	s.limparPosIntegracao(r, proj, dem)
+	dem.WorktreePath = ""
+	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
+	if err != nil {
+		s.log.Warn("reconciliar MR: atualizar demanda", "erro", err, "demanda", dem.ID)
+		return dem, false
+	}
+	s.registrarEventoDemanda(r, atual, "demanda_integrada", "Praxis: demanda integrada",
+		"merge da branch "+dem.Branch+" detectado na "+base+"; demanda integrada.")
+	return atual, true
 }
 
 // acaoAtualizarBranch traz a main (atualizada) para dentro da branch da demanda

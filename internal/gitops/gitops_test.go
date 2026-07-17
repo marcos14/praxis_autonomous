@@ -390,3 +390,34 @@ func TestMergeNaBranch(t *testing.T) {
 		t.Fatalf("arquivo da main não veio para a branch: %v", err)
 	}
 }
+
+func TestRemoverBranchEBranchIntegrada(t *testing.T) {
+	repo, _ := repoComRemote(t)
+	o := Novo()
+	gitT(t, repo, "checkout", "-b", "praxis/d20-int", "main")
+	escrever(t, repo, "f.txt", "x\n")
+	gitT(t, repo, "add", "-A")
+	gitT(t, repo, "commit", "-m", "fase")
+	gitT(t, repo, "checkout", "main")
+
+	// antes do merge: não integrada (1 commit à frente).
+	if ok, err := BranchIntegrada(repo, "main", "praxis/d20-int"); err != nil || ok {
+		t.Fatalf("BranchIntegrada antes do merge = %v (err=%v), quero false", ok, err)
+	}
+	gitT(t, repo, "merge", "--no-ff", "-m", "merge", "praxis/d20-int")
+	// depois do merge: integrada.
+	if ok, err := BranchIntegrada(repo, "main", "praxis/d20-int"); err != nil || !ok {
+		t.Fatalf("BranchIntegrada após merge = %v (err=%v), quero true", ok, err)
+	}
+	// remove a branch.
+	if err := o.RemoverBranch(repo, "praxis/d20-int"); err != nil {
+		t.Fatalf("RemoverBranch: %v", err)
+	}
+	if out, _ := git(repo, "branch", "--list", "praxis/d20-int"); strings.TrimSpace(out) != "" {
+		t.Fatalf("branch ainda existe: %q", out)
+	}
+	// guarda: recusa branch fora de praxis/.
+	if err := o.RemoverBranch(repo, "main"); err != ErrBranchNaoPraxis {
+		t.Fatalf("RemoverBranch(main) = %v, quero ErrBranchNaoPraxis", err)
+	}
+}

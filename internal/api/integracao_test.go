@@ -287,3 +287,52 @@ func TestAtualizarBranchLimpo(t *testing.T) {
 		t.Fatalf("main não foi trazida para a branch: %v", err)
 	}
 }
+
+func TestIntegrarLimpaWorktreeEBranch(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	branch := "praxis/d21-clean"
+	// repo com main; branch num worktree, com um commit não conflitante.
+	dir := t.TempDir()
+	gitTeste(t, dir, "init", "-q", "-b", "main")
+	gitTeste(t, dir, "config", "user.email", "t@praxis.local")
+	gitTeste(t, dir, "config", "user.name", "Praxis Teste")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, dir, "add", "-A")
+	gitTeste(t, dir, "commit", "-q", "-m", "inicial")
+	wt := filepath.Join(t.TempDir(), "wt21")
+	gitTeste(t, dir, "worktree", "add", "-q", "-b", branch, wt, "main")
+	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, wt, "add", "-A")
+	gitTeste(t, wt, "commit", "-q", "-m", "fase 1")
+
+	proj := criarProjetoEmRepo(t, srv, dir, db.ModoIntegracaoMergeLocal)
+	dem, err := banco.CriarDemanda(context.Background(), db.Demanda{
+		ProjectID: proj, Titulo: "d21", Status: db.StatusDemandaConcluida, Branch: branch, WorktreePath: wt})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/demands/"+strconv.FormatInt(dem.ID, 10)+"/actions",
+		map[string]any{"acao": "integrar"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	// worktree removido do disco.
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Fatalf("worktree deveria ter sido removido (stat err=%v)", err)
+	}
+	// branch removida do repo.
+	out, _ := exec.Command("git", "-C", dir, "branch", "--list", branch).CombinedOutput()
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("branch deveria ter sido removida, got %q", out)
+	}
+	// worktree_path zerado no registro.
+	atual, _ := banco.ObterDemanda(context.Background(), dem.ID)
+	if atual.WorktreePath != "" {
+		t.Fatalf("worktree_path deveria estar vazio, got %q", atual.WorktreePath)
+	}
+}
