@@ -1204,3 +1204,31 @@ Meta: enfileirarFasesNovas em internal/scheduler/executor.go insere todas as fas
 **Pendências descobertas**
 - **`AtualizarStatusDemanda` dedicado (atomicidade):** hoje pausar/cancelar/retomar fazem `ObterDemanda`→muta struct→`AtualizarDemanda`, que reescreve **todas** as colunas. Sob concorrência real (ação do usuário + scheduler carimbando `executando` ao mesmo tempo) há uma janela de last-write-wins que a reconfirmação mitiga mas não elimina. **Meta:** um update de status por coluna (`UPDATE demands SET status=? WHERE id=? AND status IN (...)`) para transições atômicas condicionais. Mini-checklist: [ ] `db.TransicionarStatusDemanda(id, de[], para)` (CAS); [ ] a API e o scheduler usam-no nas transições de status; [ ] teste de corrida ação×scheduler. **Não** implementado por ser refino de robustez (o caminho feliz e os testes atuais passam) e tocar o store de forma transversal (M4/pós-M2).
 - **Reconciliação worktree↔branch órfã no boot (herdada da 2e):** `RecuperarPosRestart` faz `worktree prune` mas **não** reata uma branch `praxis/*` cujo diretório de worktree sumiu (o `Preparar` da 2e falharia ao recriar por branch duplicada). **Meta:** no boot (ou no `Preparar`), detectar branch existente sem worktree e **reanexar** (`git worktree add <path> <branch>`, sem `-b`). Mini-checklist: [ ] detectar `git rev-parse --verify <branch>` com worktree ausente; [ ] reanexar; [ ] teste: remover o dir do worktree → recuperação/Preparar reata sem erro. Registrada também na 2e; continua pendente (candidata a fase própria).
+
+**Re-execução / verificação (2026-07-16):** a fase reapareceu como `executando` no `fases.csv` (havia sido concluída e commitada no commit `33bbf0e`); mesmo padrão de soluço de orquestração da 2h — o código da 2i já estava no HEAD (pacote `internal/procs`, `internal/api/actions.go`, `internal/scheduler/{recuperar.go,interromper_test.go}` + alterações em motor/pipeline/scheduler/executor/UI, todos rastreados). Re-verifiquei tudo nesta re-execução: `go build ./...`, `go vet ./...` e `go test ./... -count=1` **verdes** (todos os pacotes, incluindo `internal/procs` e `internal/scheduler`); os arquivos da 2i estão **gofmt-limpos** (o único arquivo que `gofmt -l` aponta é `internal/db/config_test.go`, herdado da Fase 1e — commit `4d5e1af` — alinhamento de comentário; **não** é regressão da 2i e `gofmt` não é gate do projeto). **Smoke no binário real** (`praxis serve`, `PRAXIS_HOME` temp): boot loga "recuperação pós-restart concluída"; criado projeto+demanda de 2 fases; `pausar→pausada`, `pausar` de novo → **200** (idempotente), `retomar→pronta`, `cancelar→cancelada`, `retomar` de cancelada → **409 `estado_invalido`**, ação desconhecida → **400**, demanda inexistente → **404**; eventos `demanda_pausada/retomada/cancelada` registrados. Nenhuma alteração de código foi necessária. `automacao/fases.csv` **não** foi tocado (a mudança para `executando` é do orquestrador). Não foi feito `git commit`/`push`.
+
+### 2i.n1 — Reconciliação worktree↔branch órfã no boot
+
+Status: avaliar viabilidade
+Depende de: 2i
+
+> Baixo valor tecnico: aguarda avaliacao humana de viabilidade. Nao sera executada automaticamente enquanto o status for `avaliar viabilidade`.
+
+Meta: Na recuperação pós-restart, reanexar (git worktree add <path> <branch>, sem -b) uma branch praxis/* cuja pasta de worktree sumiu (crash/prune manual), evitando que Preparar falhe por branch duplicada e impeça a retomada da demanda.
+
+- [ ] Detectar branch existente (git rev-parse --verify <branch>) com worktree ausente após o prune do boot
+- [ ] Reanexar a worktree à branch existente em vez de recriar com -b
+- [ ] Teste: remover o dir do worktree de uma branch praxis/* → recuperação/Preparar reata sem erro e a demanda conclui
+
+### 2i.n2 — Transição atômica de status da demanda (CAS)
+
+Status: avaliar viabilidade
+Depende de: 2i
+
+> Baixo valor tecnico: aguarda avaliacao humana de viabilidade. Nao sera executada automaticamente enquanto o status for `avaliar viabilidade`.
+
+Meta: Introduzir um update de status por coluna condicional (db.TransicionarStatusDemanda(id, de[], para)) para transições atômicas, eliminando a janela de last-write-wins entre a ação do usuário (pausar/cancelar/retomar via ObterDemanda→muta→AtualizarDemanda) e o scheduler carimbando executando.
+
+- [ ] db.TransicionarStatusDemanda(id, de[], para) com UPDATE ... WHERE id=? AND status IN (...)
+- [ ] API (aplicarAcao) e scheduler (confirmarEMarcarExecutando) usam a transição atômica
+- [ ] Teste de corrida ação×scheduler comprovando ausência de last-write-wins
