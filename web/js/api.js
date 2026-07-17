@@ -77,6 +77,9 @@ export const api = {
   // chat da demanda (Fase 3a): listar as falas e acrescentar uma do usuário.
   listarChat: (id) => req("GET", `/api/v1/demands/${id}/chat`),
   enviarChat: (id, conteudo) => req("POST", `/api/v1/demands/${id}/chat`, { conteudo }),
+  // perguntas do analista (Fase 3b): listar e responder ("responder tudo e gerar plano").
+  listarPerguntas: (id) => req("GET", `/api/v1/demands/${id}/questions`),
+  responderPerguntas: (id, respostas) => req("POST", `/api/v1/demands/${id}/answers`, { respostas }),
   // ações de controle de execução (Fase 2i): pausar | retomar | cancelar.
   acaoDemanda: (id, acao) => req("POST", `/api/v1/demands/${id}/actions`, { acao }),
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).

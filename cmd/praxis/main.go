@@ -23,6 +23,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/api"
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
+	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/procs"
 	"github.com/marcos14/praxis-autonomous/internal/scheduler"
 )
@@ -118,8 +119,33 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// não impede o serviço de subir.
 	recuperarPosRestart(ctx, banco, logger)
 
-	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger})
+	// Intake (Fase 3b): dispara o analista readonly em background quando uma
+	// demanda nasce por chat. Roda com o ctx de vida do serviço (cancelado no
+	// shutdown); Aguardar drena as análises em voo antes de fechar o banco.
+	intakeSvc := novoIntake(ctx, banco, logger)
+	defer intakeSvc.Aguardar()
+
+	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger, Intake: intakeSvc})
 	return servirHTTP(ctx, *addr, srv.Handler(), out, logger)
+}
+
+// novoIntake monta o serviço de intake (Fase 3b) com a pasta de logs em
+// PRAXIS_HOME/logs e o ctx de vida do serviço. Falha ao resolver PRAXIS_HOME não
+// impede subir: o intake grava os .jsonl no diretório de trabalho (o analista
+// ainda funciona).
+func novoIntake(ctx context.Context, banco *db.DB, logger *slog.Logger) *intake.Servico {
+	dirLogs := ""
+	if home, err := db.PraxisHome(); err == nil {
+		dirLogs = filepath.Join(home, "logs")
+	} else {
+		logger.Warn("intake: resolver PRAXIS_HOME para logs", "erro", err)
+	}
+	return intake.NovoServico(intake.OpcoesServico{
+		Store:   banco,
+		DirLogs: dirLogs,
+		Ctx:     ctx,
+		Log:     func(msg string) { logger.Info(msg) },
+	})
 }
 
 // recuperarPosRestart executa a recuperação de boot da Fase 2i (prune de

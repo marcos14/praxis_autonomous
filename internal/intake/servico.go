@@ -1,0 +1,146 @@
+package intake
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/motor"
+)
+
+// Servico resolve a config do banco e dispara o analista em background quando uma
+// demanda precisa ser analisada (Fase 3b). É o WIRING do mecanismo Analista: a
+// API o chama (Disparar) ao criar uma demanda por chat; o `serve` o injeta.
+//
+// "Background por padrão" (princípio do redesenho): Disparar não bloqueia o
+// handler HTTP — spawna uma goroutine com o ctx de vida do serviço. O scheduler
+// completo (2g.n1) ainda não conduz o intake; até lá este Servico é o caminho que
+// faz a demanda "andar sozinha" da criação até `aguardando_respostas`.
+type Servico struct {
+	store   *db.DB
+	dirLogs string
+	ctx     context.Context
+	logf    func(string)
+
+	wg sync.WaitGroup
+
+	// Seams de teste (nil em produção):
+	selecionar func(nome string) (motor.Motor, error)
+	agora      func() time.Time
+}
+
+// OpcoesServico configura o Servico. Store e Ctx são obrigatórios.
+type OpcoesServico struct {
+	Store   *db.DB
+	DirLogs string          // pasta dos .jsonl (PRAXIS_HOME/logs)
+	Ctx     context.Context // ctx de vida do serviço (cancelado no shutdown)
+	Log     func(string)
+
+	// Seams de teste:
+	Selecionar func(nome string) (motor.Motor, error)
+	Agora      func() time.Time
+}
+
+// NovoServico monta o Servico aplicando defaults nos seams.
+func NovoServico(o OpcoesServico) *Servico {
+	ctx := o.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	logf := o.Log
+	if logf == nil {
+		logf = func(string) {}
+	}
+	return &Servico{
+		store:      o.Store,
+		dirLogs:    o.DirLogs,
+		ctx:        ctx,
+		logf:       logf,
+		selecionar: o.Selecionar,
+		agora:      o.Agora,
+	}
+}
+
+// Disparar inicia a análise da demanda em background (não bloqueia o chamador).
+// Falhas viram log/evento — o handler HTTP que chama não deve depender do desfecho.
+func (s *Servico) Disparar(demandaID int64) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		if err := s.Analisar(s.ctx, demandaID); err != nil {
+			s.logf(fmt.Sprintf("intake: análise da demanda %d falhou: %v", demandaID, err))
+		}
+	}()
+}
+
+// Aguardar bloqueia até as análises em voo terminarem (usado no shutdown gracioso).
+func (s *Servico) Aguardar() { s.wg.Wait() }
+
+// Analisar monta o Analista a partir do banco e o executa (síncrono). Exposto
+// para o `serve`/testes rodarem a análise sem a goroutine.
+func (s *Servico) Analisar(ctx context.Context, demandaID int64) error {
+	a, err := s.montarAnalista(ctx, demandaID)
+	if err != nil {
+		return err
+	}
+	return a.Analisar(ctx, demandaID)
+}
+
+// montarAnalista resolve o projeto e o motor da demanda e devolve um Analista pronto.
+func (s *Servico) montarAnalista(ctx context.Context, demandaID int64) (*Analista, error) {
+	dem, err := s.store.ObterDemanda(ctx, demandaID)
+	if err != nil {
+		return nil, fmt.Errorf("intake: obter demanda %d: %w", demandaID, err)
+	}
+	proj, err := s.store.ObterProjeto(ctx, dem.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
+	}
+	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotor(ctx)
+
+	return &Analista{
+		Store:      s.store,
+		Motor:      motorNome,
+		Modelo:     modelo,
+		Esforco:    esforco,
+		ConfigDir:  configDir,
+		Dir:        proj.Pasta,
+		DirLogs:    s.dirLogs,
+		AddDirs:    proj.AddDirs,
+		BudgetUSD:  budget,
+		TimeoutMin: timeout,
+		Selecionar: s.selecionar,
+		Agora:      s.agora,
+	}, nil
+}
+
+// resolverMotor escolhe o motor de ANÁLISE: o primeiro motor ativo por
+// prioridade (a ordem de fallback), com seu modelo_analise, budget e timeout, e o
+// config_dir da primeira conta ativa (afinidade simples). Sem motor cadastrado,
+// cai no default "claude" com modelo default — o analista funciona out-of-the-box.
+//
+// É a resolução mínima que o analista precisa; a resolução completa (motor por
+// operação, fallback, contas com afinidade) é do wiring do scheduler (2g.n1).
+func (s *Servico) resolverMotor(ctx context.Context) (nome, modelo, esforco, configDir string, budget float64, timeout int) {
+	motores, err := s.store.ListarMotores(ctx)
+	if err != nil {
+		s.logf(fmt.Sprintf("intake: listar motores: %v", err))
+		return "claude", "", "", "", 0, 0
+	}
+	for _, m := range motores {
+		if !m.Ativo {
+			continue
+		}
+		cfg := ""
+		for _, c := range m.Contas {
+			if c.Ativo {
+				cfg = c.ConfigDir
+				break
+			}
+		}
+		return m.Nome, m.ModeloAnalise, "", cfg, m.BudgetFaseUSD, m.TimeoutMin
+	}
+	return "claude", "", "", "", 0, 0
+}

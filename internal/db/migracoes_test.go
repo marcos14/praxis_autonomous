@@ -145,6 +145,16 @@ func TestSchemaIntakeCriaTabelasEIndices(t *testing.T) {
 	}
 }
 
+func TestSchemaPromptsCriaTabela(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+	if !existeNoSchema(t, db, "table", "prompts") {
+		t.Error("tabela \"prompts\" não foi criada")
+	}
+}
+
 func TestChatMessagesRejeitaPapelInvalido(t *testing.T) {
 	db := abrirBruto(t)
 	if _, _, err := Migrar(db); err != nil {

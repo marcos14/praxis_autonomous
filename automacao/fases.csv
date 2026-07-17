@@ -18,7 +18,7 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 2h;Card da demanda com fases e log ao vivo (SSE);concluida;1h+2g;nao;nao;;;3;2.82;2026-07-16 21:23;ok — custo US$ 2.44
 2i;Pausar/retomar/cancelar e retomada pós-restart;concluida;2d+2g;nao;sim;;;2;2.59;2026-07-16 22:04;ok — custo US$ 2.59
 3a;Chat da demanda persistido e nova demanda;concluida;1a+1h;nao;nao;;;1;6.94;2026-07-16 22:19;ok — custo US$ 6.94
-3b;Analista (perguntas readonly);pendente;3a+1f;nao;nao;;;;;;"Prompt analista readonly → JSON (resumo, arquivos_provaveis, perguntas); prompts no banco com default embutido."
+3b;Analista (perguntas readonly);executando;3a+1f;nao;nao;;;1;;;"Prompt analista readonly → JSON (resumo, arquivos_provaveis, perguntas); prompts no banco com default embutido."
 3c;Planejador (plano + fases) e aprovação;pendente;3b+2a;nao;sim;;;;;;"Marca fim do M3 (fluxo ponta a ponta). Prompt derivado de inicializar.go/defaults de C:\Projetos\praxis; rejeitar-com-comentário → replanejar."
 4a;Kanban com SSE;pendente;1h+2a;nao;nao;;;;;;"Transições só por botão; arrastar só reordena prioridade; GET /events (SSE global)."
 4b;Home com métricas e 'Precisa de você';pendente;1h+2a;nao;nao;;;;;;"Tiles via metrics_dia/view; gráfico por dia; tabela por projeto; atividade recente (SSE)."
@@ -39,3 +39,4 @@ fase;titulo;status;depende_de;requer_humano;notificar;gate_extra;modelo;tentativ
 2g.n2;Teto de fases novas do revisor (max_fases_novas);avaliar viabilidade;2g;sim;nao;;;;;;"Guardrail contra criação/custo em runaway no fluxo autônomo; o plano funciona sem ela pois o revisor tende a se autolimitar, mas a chave já é prometida na UI."
 2i.n1;Reconciliação worktree↔branch órfã no boot;avaliar viabilidade;2i;sim;nao;;;;;;"Pendência herdada da 2e e reconfirmada na 2i (Pendências descobertas); ambas as notas a marcam como 'candidata a fase própria'. O prune do boot da 2i pode criar exatamente a condição dir-ausente/branch-presente que quebra o Preparar na retomada."
 2i.n2;Transição atômica de status da demanda (CAS);avaliar viabilidade;2i;sim;nao;;;;;;"Refino de robustez: a reconfirmação de status no scheduler já mitiga (mas não elimina) a corrida; caminho feliz e testes atuais passam. Toca o store de forma transversal (candidata a M4/pós-M2)."
+3b.n1;Endpoint e UI para editar prompts;avaliar viabilidade;3b;sim;nao;;;;;;"Baixo valor: o sistema funciona out-of-the-box com os defaults embutidos; overrides são refinamento. Candidata a 'avaliar viabilidade' (decisão humana), como as fases 2i.n1/2i.n2."

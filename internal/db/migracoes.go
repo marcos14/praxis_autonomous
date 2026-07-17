@@ -34,6 +34,11 @@ var migracoes = []migracao{
 		nome:   "intake da demanda (chat_messages, questions)",
 		sql:    schemaIntake,
 	},
+	{
+		versao: 4,
+		nome:   "prompts editáveis no banco (analista, planejador, …)",
+		sql:    schemaPrompts,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -301,4 +306,18 @@ CREATE TABLE questions (
 );
 
 CREATE INDEX ix_questions_demand ON questions (demand_id);
+`
+
+// schemaPrompts é a migração 4: os prompts dos harnesses (analista, planejador,
+// executor/corretor/revisor) editáveis no banco. A tabela guarda apenas os
+// OVERRIDES; quando uma linha não existe, o binário usa o default embutido
+// (//go:embed no pacote intake) — daí "prompts no banco com default embutido"
+// (Fase 3b). nome é a chave (ex.: 'analista'); conteudo é o template markdown com
+// marcadores {VAR}. Segue as convenções: datas em ISO-8601 UTC.
+const schemaPrompts = `
+CREATE TABLE prompts (
+    nome          TEXT    PRIMARY KEY,
+    conteudo      TEXT    NOT NULL,
+    atualizado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 `

@@ -52,6 +52,8 @@ func (s *Servidor) registrarRotasDemandas(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/demands/{id}/actions", s.handleAcaoDemanda)
 	mux.HandleFunc("POST /api/v1/demands/{id}/chat", s.handleChatDemanda)
 	mux.HandleFunc("GET /api/v1/demands/{id}/chat", s.handleListarChat)
+	mux.HandleFunc("GET /api/v1/demands/{id}/questions", s.handleListarPerguntas)
+	mux.HandleFunc("POST /api/v1/demands/{id}/answers", s.handleResponderPerguntas)
 }
 
 // handleCriarDemanda cria uma demanda sob um projeto, em um de dois modos:
@@ -150,6 +152,13 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 		Detalhe: "Demanda criada a partir do PRD colado no chat.",
 	}); err != nil {
 		s.log.Warn("registrar evento de criação da demanda", "erro", err, "demanda", did)
+	}
+
+	// Dispara o analista (readonly) em background — a demanda "anda sozinha" da
+	// criação até `aguardando_respostas` (Fase 3b). Sem intake acoplado, fica em
+	// `recebida` (mecanismo antes do wiring).
+	if s.intake != nil {
+		s.intake.Disparar(criada.ID)
 	}
 
 	responderJSON(w, http.StatusCreated, respDemanda{Demanda: criada, Fases: []db.Fase{}})

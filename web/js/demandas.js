@@ -127,20 +127,39 @@ export async function abrirCard(id) {
   const overlay = el("div", { class: "overlay open" });
   overlay.addEventListener("click", (ev) => { if (ev.target === overlay) fecharCard(overlay); });
 
-  const corpoChat = el("div", { class: "tab-body active", id: "tb-chat" });
+  const corpoChat = el("div", { class: "tab-body", id: "tb-chat" });
   const corpoFases = el("div", { class: "tab-body", id: "tb-fases" });
   const corpoLog = el("div", { class: "tab-body", id: "tb-log" });
   const corpoEventos = el("div", { class: "tab-body", id: "tb-eventos" });
 
   renderFases(corpoFases, dados);
-  ativarChat(corpoChat, id); // a aba Chat/PRD abre ativa: a demanda nasce como conversa
 
-  const abas = [
-    ["Chat / PRD", corpoChat, null],
-    ["Fases", corpoFases, null],
-    ["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)],
-    ["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)],
-  ];
+  // Aba Perguntas (Fase 3b): só aparece quando o analista já gerou perguntas.
+  // Quando presente, é a primeira aba e abre ativa (o card avisa "é a sua vez").
+  let perguntas = [];
+  try {
+    perguntas = (await api.listarPerguntas(id)) || [];
+  } catch {
+    perguntas = [];
+  }
+  const temPerguntas = perguntas.length > 0;
+
+  const abas = [];
+  let corpoPerg = null;
+  if (temPerguntas) {
+    corpoPerg = el("div", { class: "tab-body", id: "tb-perg" });
+    renderPerguntas(corpoPerg, dados, perguntas, overlay);
+    abas.push([`Perguntas (${perguntas.length})`, corpoPerg, null]);
+  }
+  abas.push(["Chat / PRD", corpoChat, () => ativarChat(corpoChat, id)]);
+  abas.push(["Fases", corpoFases, null]);
+  abas.push(["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)]);
+  abas.push(["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)]);
+
+  // marca a primeira aba como ativa e a inicializa se ela tiver "ativar".
+  abas[0][1].classList.add("active");
+  if (abas[0][2]) abas[0][2]();
+
   const tabs = el("div", { class: "tabs" });
   abas.forEach(([nome, corpo, ativar], i) => {
     const btn = el("button", { class: "tab" + (i === 0 ? " active" : ""), text: nome, onclick: () => {
@@ -170,7 +189,7 @@ export async function abrirCard(id) {
       ),
     ),
     tabs,
-    corpoChat, corpoFases, corpoLog, corpoEventos,
+    corpoPerg, corpoChat, corpoFases, corpoLog, corpoEventos,
   );
   overlay.append(modal);
   document.body.append(overlay);
@@ -242,6 +261,82 @@ async function ativarChat(cont, id) {
   inp.addEventListener("keydown", (e) => { if (e.key === "Enter") enviar(); });
 
   await recarregar();
+}
+
+// ---------- aba Perguntas (Fase 3b) ----------
+
+// IMPACTO_DOT mapeia o impacto de uma pergunta à classe do "dot" da pill.
+const IMPACTO_DOT = { alto: "dot-crit", medio: "dot-warn", baixo: "dot-muted" };
+
+// renderPerguntas monta a aba Perguntas: quando a demanda está aguardando
+// respostas, cada pergunta vira um formulário (chips de sugestão ou texto livre) e
+// há o botão "Responder tudo e gerar plano"; nos demais estados é só leitura
+// (mostra a resposta dada ou a sugestão).
+function renderPerguntas(cont, dados, perguntas, overlay) {
+  limpar(cont);
+  const editavel = dados.status === "aguardando_respostas";
+  cont.append(el("div", { class: "banner banner-info", text: editavel
+    ? "O analista leu o código e gerou as perguntas abaixo. Sugestões já vêm preenchidas — confirme ou ajuste e gere o plano."
+    : "Perguntas do analista para esta demanda." }));
+
+  const estado = {}; // id da pergunta → valor da resposta corrente (modo editável)
+
+  perguntas.forEach((q, i) => {
+    const item = el("div", { class: "q-item" + (!editavel && q.resposta ? " answered" : "") });
+    if (q.impacto) {
+      const dot = IMPACTO_DOT[q.impacto] || "dot-muted";
+      const rot = q.impacto === "alto" ? "alto impacto" : q.impacto;
+      item.append(el("span", { class: "imp pill" }, el("span", { class: "dot " + dot }), rot));
+    }
+    item.append(el("div", { class: "q", text: `${i + 1}. ${q.pergunta}` }));
+    if (q.contexto) item.append(el("div", { class: "ctx", text: q.contexto }));
+
+    const temOpcoes = q.opcoes && q.opcoes.length > 0;
+    if (editavel) {
+      estado[q.id] = q.resposta || q.sugestao || "";
+      const answer = el("div", { class: "answer" });
+      if (temOpcoes && q.tipo !== "texto") {
+        const chips = [];
+        q.opcoes.forEach((op) => {
+          const rotulo = op + (op === q.sugestao ? " (sugestão)" : "");
+          const chip = el("button", { class: "chip" + (op === estado[q.id] ? " sel" : ""), text: rotulo,
+            onclick: () => { estado[q.id] = op; chips.forEach((c) => c.classList.remove("sel")); chip.classList.add("sel"); } });
+          chips.push(chip);
+          answer.append(chip);
+        });
+      } else {
+        const inp = el("input", { type: "text", value: estado[q.id] });
+        inp.addEventListener("input", () => { estado[q.id] = inp.value; });
+        answer.append(inp);
+      }
+      item.append(answer);
+    } else if (q.resposta) {
+      item.append(el("div", { class: "resp" }, el("b", { text: "✓ Respondida: " }), q.resposta));
+    } else {
+      item.append(el("div", { class: "resp", text: q.sugestao ? "Sugestão do analista: " + q.sugestao : "Sem resposta." }));
+    }
+    cont.append(item);
+  });
+
+  if (editavel) {
+    const btn = el("button", { class: "btn", text: "Responder tudo e gerar plano →" });
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const respostas = perguntas.map((q) => ({ id: q.id, resposta: (estado[q.id] || "").trim() }));
+      try {
+        await api.responderPerguntas(dados.id, respostas);
+      } catch (e) {
+        bannerErro("Falha ao responder: " + e.message);
+        btn.disabled = false;
+        return;
+      }
+      bannerErro("");
+      fecharCard(overlay);
+      await recarregarLista();
+      await abrirCard(dados.id);
+    });
+    cont.append(el("div", { class: "perguntas-acoes" }, btn));
+  }
 }
 
 // ---------- ações de controle (Fase 2i) ----------

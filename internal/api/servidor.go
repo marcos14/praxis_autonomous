@@ -25,6 +25,18 @@ type Opcoes struct {
 	// andamento. Opcional: nil = a ação só transita o status no banco (o scheduler
 	// ainda não está acoplado ao serve — pendência 2g.n1/M3).
 	Exec ControladorExecucao
+	// Intake dispara o analista (perguntas readonly) em background quando uma
+	// demanda nasce por chat (Fase 3b). Opcional: nil = a demanda fica em
+	// `recebida` até ser analisada (mecanismo antes do wiring).
+	Intake Analisador
+}
+
+// Analisador dispara a análise readonly de uma demanda em background (Fase 3b). É
+// um seam: em produção o *intake.Servico o satisfaz (resolve config do banco e
+// roda o harness em modo somente leitura). Quando nil, a criação por chat não
+// dispara análise automática.
+type Analisador interface {
+	Disparar(demandaID int64)
 }
 
 // Servidor encapsula o roteador e as dependências da API. Construa com Novo e
@@ -34,6 +46,7 @@ type Servidor struct {
 	log     *slog.Logger
 	handler http.Handler
 	exec    ControladorExecucao
+	intake  Analisador
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -48,7 +61,7 @@ func Novo(opts Opcoes) *Servidor {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intervaloPollLog: intervaloPollLogPadrao}
+	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake, intervaloPollLog: intervaloPollLogPadrao}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
