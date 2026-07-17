@@ -220,6 +220,32 @@ export async function abrirCard(id) {
   );
   overlay.append(modal);
   document.body.append(overlay);
+
+  // Badge de sobreposição (Fase 5c): busca best-effort; se houver, insere um
+  // aviso com as demandas que tocam os mesmos arquivos.
+  mostrarSobreposicao(modal, id);
+}
+
+// mostrarSobreposicao consulta as sobreposições da demanda e, se houver, injeta
+// um banner logo abaixo do cabeçalho do card, listando as demandas em comum.
+async function mostrarSobreposicao(modal, id) {
+  let sobre;
+  try {
+    sobre = (await api.overlapDemanda(id)) || [];
+  } catch {
+    return;
+  }
+  if (!sobre.length) return;
+  const banner = el("div", { class: "banner banner-warn", style: "margin:0 22px 12px" },
+    el("div", { text: `⚠ Sobreposição de arquivos com ${sobre.length} outra(s) demanda(s):` }));
+  for (const s of sobre) {
+    banner.append(el("div", { class: "overlap-linha" },
+      el("b", { text: `#${s.demand_id} — ${s.titulo}` }),
+      el("span", { class: "overlap-arqs", text: " · " + s.arquivos.join(", ") }),
+    ));
+  }
+  const head = modal.querySelector(".modal-head");
+  head.insertAdjacentElement("afterend", banner);
 }
 
 // ---------- aba Chat/PRD (Fase 3a) ----------

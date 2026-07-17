@@ -56,6 +56,7 @@ function renderFiltros() {
 }
 
 let cacheBoard = [];
+let cacheOverlaps = {}; // demandID (string) → sobreposições[]
 
 async function recarregar() {
   let board;
@@ -67,6 +68,12 @@ async function recarregar() {
   }
   bannerErro("");
   cacheBoard = board;
+  // sobreposições (Fase 5c): best-effort; um erro não impede o board.
+  try {
+    cacheOverlaps = (await api.overlaps()) || {};
+  } catch {
+    cacheOverlaps = {};
+  }
   atualizarFiltroMotor(board);
   renderColunas(board);
 }
@@ -156,6 +163,12 @@ function cardEl(d) {
   if (d.motor) meta.append(el("span", { class: "pill", text: d.motor }));
   meta.append(el("span", { class: "pill", text: dinheiro(d.custo_usd) }));
   if (alerta) meta.append(el("span", { class: "pill alerta-pill", text: "precisa de você" }));
+  const sobre = cacheOverlaps[String(d.id)];
+  if (sobre && sobre.length) {
+    const arqs = [...new Set(sobre.flatMap((s) => s.arquivos))];
+    meta.append(el("span", { class: "pill overlap-pill", title: "arquivos em comum: " + arqs.join(", "),
+      text: `⚠ sobrepõe ${sobre.length}` }));
+  }
   card.append(meta);
   return card;
 }

@@ -421,3 +421,30 @@ func TestRemoverBranchEBranchIntegrada(t *testing.T) {
 		t.Fatalf("RemoverBranch(main) = %v, quero ErrBranchNaoPraxis", err)
 	}
 }
+
+func TestDiffNames(t *testing.T) {
+	repo, _ := repoComRemote(t)
+	gitT(t, repo, "checkout", "-b", "praxis/d30-diff", "main")
+	escrever(t, repo, "novo.txt", "x\n")
+	escrever(t, repo, "a.txt", "modificado\n") // a.txt já existe na main
+	gitT(t, repo, "add", "-A")
+	gitT(t, repo, "commit", "-m", "muda arquivos")
+	gitT(t, repo, "checkout", "main")
+
+	nomes, err := DiffNames(repo, "main", "praxis/d30-diff")
+	if err != nil {
+		t.Fatalf("DiffNames: %v", err)
+	}
+	temNovo, temA := false, false
+	for _, n := range nomes {
+		if n == "novo.txt" {
+			temNovo = true
+		}
+		if n == "a.txt" {
+			temA = true
+		}
+	}
+	if !temNovo || !temA {
+		t.Fatalf("DiffNames = %v, quero conter novo.txt e a.txt", nomes)
+	}
+}

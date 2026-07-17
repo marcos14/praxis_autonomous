@@ -102,6 +102,7 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasConfig(mux)
 	s.registrarRotasTokens(mux)
 	s.registrarRotasManual(mux)
+	s.registrarRotasOverlap(mux)
 	s.registrarRotasWeb(mux)
 
 	// A ordem coloca o recover na camada mais externa e a autorização (comAuth)

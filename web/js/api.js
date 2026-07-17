@@ -89,6 +89,9 @@ export const api = {
   acaoDemanda: (id, acao) => req("POST", `/api/v1/demands/${id}/actions`, { acao }),
   // preview de integração (Fases 4c/4d): commits, conflito com a main e link do MR.
   mergePreview: (id) => req("GET", `/api/v1/demands/${id}/merge-preview`),
+  // sobreposição entre demandas (Fase 5c): mapa global (badges) e detalhe por demanda.
+  overlaps: () => req("GET", "/api/v1/overlaps"),
+  overlapDemanda: (id) => req("GET", `/api/v1/demands/${id}/overlap`),
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).
   urlLogsDemanda: (id) => `/api/v1/demands/${id}/logs`,
 

@@ -371,3 +371,9 @@ table.plain tr:last-child td { border-bottom: none; }
 .manual b { color: var(--ink); }
 .manual code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; font-family: Consolas, monospace; }
 @media (max-width: 720px) { .manual-wrap { grid-template-columns: 1fr; } .manual-nav { position: static; flex-direction: row; flex-wrap: wrap; } }
+
+/* ======================= SOBREPOSIÇÃO (Fase 5c) ======================= */
+.overlap-pill { color: var(--warning); border-color: var(--warning); }
+.banner-warn { background: rgba(250,178,25,.10); border: 1px solid rgba(250,178,25,.4); color: #e8c579; }
+.overlap-linha { font-size: 12px; margin-top: 4px; }
+.overlap-arqs { color: var(--muted); font-family: Consolas, monospace; font-size: 11px; }

@@ -67,6 +67,29 @@ func (o *Ops) PreviaMerge(repo, base, branch string) (Previa, error) {
 	}
 }
 
+// DiffNames lista os arquivos que a branch altera em relação à base (merge-base
+// de base e branch), via `git diff --name-only base...branch`. Alimenta a detecção
+// de sobreposição entre demandas (Fase 5c). Só leitura. Base/branch inexistente
+// devolve erro.
+func DiffNames(repo, base, branch string) ([]string, error) {
+	base = strings.TrimSpace(base)
+	branch = strings.TrimSpace(branch)
+	if base == "" || branch == "" {
+		return nil, fmt.Errorf("gitops: base/branch vazia")
+	}
+	out, err := git(repo, "diff", "--name-only", base+"..."+branch)
+	if err != nil {
+		return nil, err
+	}
+	nomes := []string{}
+	for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			nomes = append(nomes, l)
+		}
+	}
+	return nomes, nil
+}
+
 // MergeNaBranch traz `incoming` (ex.: "main" ou "origin/main") para dentro da
 // branch atualmente em check-out no worktree, via `git merge --no-edit`. É a
 // operação do "Atualizar branch" (traz a main para a branch da demanda, Fase 4d).
