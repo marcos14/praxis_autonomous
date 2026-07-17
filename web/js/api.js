@@ -84,8 +84,11 @@ export const api = {
   editarFases: (id, fases) => req("PUT", `/api/v1/demands/${id}/phases`, { fases }),
   aprovarPlano: (id) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: true }),
   rejeitarPlano: (id, comentario) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: false, comentario }),
-  // ações de controle de execução (Fase 2i): pausar | retomar | cancelar.
+  // ações de controle de execução (Fase 2i/4c/4d): pausar | retomar | cancelar |
+  // publicar_branch | integrar | atualizar_branch.
   acaoDemanda: (id, acao) => req("POST", `/api/v1/demands/${id}/actions`, { acao }),
+  // preview de integração (Fases 4c/4d): commits, conflito com a main e link do MR.
+  mergePreview: (id) => req("GET", `/api/v1/demands/${id}/merge-preview`),
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).
   urlLogsDemanda: (id) => `/api/v1/demands/${id}/logs`,
 

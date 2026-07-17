@@ -142,6 +142,7 @@ export async function abrirCard(id) {
   const corpoFases = el("div", { class: "tab-body", id: "tb-fases" });
   const corpoLog = el("div", { class: "tab-body", id: "tb-log" });
   const corpoEventos = el("div", { class: "tab-body", id: "tb-eventos" });
+  const corpoIntegr = el("div", { class: "tab-body", id: "tb-integr" });
 
   renderFases(corpoFases, dados, overlay);
 
@@ -164,15 +165,23 @@ export async function abrirCard(id) {
   }
   abas.push(["Chat / PRD", corpoChat, () => ativarChat(corpoChat, id)]);
   abas.push(["Plano & Fases", corpoFases, null]);
+  // Aba Integração (Fases 4c/4d): só quando a demanda já tem branch.
+  const temIntegracao = !!dados.branch;
+  if (temIntegracao) {
+    abas.push(["Integração", corpoIntegr, () => ativarIntegracao(corpoIntegr, id, overlay)]);
+  }
   abas.push(["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)]);
   abas.push(["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)]);
 
   // Aba ativa por padrão: quando a demanda aguarda aprovação, é a sua vez de
-  // revisar o plano → abre em Plano & Fases; senão, a primeira aba (Perguntas se
-  // houver, senão Chat).
+  // revisar o plano → abre em Plano & Fases; conflito/concluída → Integração;
+  // senão, a primeira aba (Perguntas se houver, senão Chat).
   let idxAtiva = 0;
   if (dados.status === "aguardando_aprovacao") {
     const i = abas.findIndex(([nome]) => nome === "Plano & Fases");
+    if (i >= 0) idxAtiva = i;
+  } else if (temIntegracao && (dados.status === "conflito" || dados.status === "concluida")) {
+    const i = abas.findIndex(([nome]) => nome === "Integração");
     if (i >= 0) idxAtiva = i;
   }
   abas[idxAtiva][1].classList.add("active");
@@ -207,7 +216,7 @@ export async function abrirCard(id) {
       ),
     ),
     tabs,
-    corpoPerg, corpoChat, corpoFases, corpoLog, corpoEventos,
+    corpoPerg, corpoChat, corpoFases, corpoIntegr, corpoLog, corpoEventos,
   );
   overlay.append(modal);
   document.body.append(overlay);
@@ -385,6 +394,96 @@ async function executarAcao(id, acao, overlay) {
     await api.acaoDemanda(id, acao);
   } catch (e) {
     bannerErro(`Falha ao ${acao}: ${e.message}`);
+    return;
+  }
+  bannerErro("");
+  fecharCard(overlay);
+  await recarregarLista();
+  await abrirCard(id);
+}
+
+// ---------- aba Integração (Fases 4c/4d) ----------
+
+// ativarIntegracao mostra o estado de fechamento da demanda: branch, commits,
+// commits não publicados (+ publicar), preview de conflito com a main e, no modo
+// merge_request, o link para abrir o MR. No modo merge_local, o botão Integrar
+// faz o merge na main; em qualquer modo, "Atualizar branch" traz a main para a
+// branch (Fase 4d).
+async function ativarIntegracao(cont, id, overlay) {
+  limpar(cont).append(el("p", { class: "sub", text: "Carregando integração…" }));
+  let mp;
+  try {
+    mp = await api.mergePreview(id);
+  } catch (e) {
+    limpar(cont).append(el("div", { class: "banner banner-erro", text: "Falha ao carregar integração: " + e.message }));
+    return;
+  }
+  limpar(cont);
+
+  cont.append(el("div", { class: "integr-head" },
+    el("div", {},
+      el("div", { class: "integr-branch", text: mp.branch }),
+      el("div", { class: "sub", style: "margin:2px 0 0", text: `alvo: ${mp.base} · modo: ${mp.modo_integracao}` }),
+    ),
+  ));
+
+  // Preview de conflito.
+  if (mp.aviso) {
+    cont.append(el("div", { class: "banner banner-info", text: mp.aviso }));
+  } else if (mp.limpo) {
+    cont.append(el("div", { class: "banner banner-ok", text: "✓ Sem conflitos com a main — pronto para integrar." }));
+  } else {
+    const box = el("div", { class: "banner banner-erro" },
+      el("div", { text: `⚠ Conflito com a main em ${mp.conflitos.length} arquivo(s):` }));
+    for (const f of mp.conflitos) box.append(el("div", { class: "conf-file", text: f }));
+    cont.append(box);
+  }
+
+  // Commits não publicados (alerta 2f).
+  if (mp.commits_nao_publicados > 0) {
+    cont.append(el("div", { class: "banner banner-info", style: "display:flex;align-items:center;gap:10px;justify-content:space-between" },
+      el("span", { text: `${mp.commits_nao_publicados} commit(s) não publicado(s).` }),
+      el("button", { class: "btn sm", text: "Publicar branch",
+        onclick: () => executarAcaoIntegr(id, "publicar_branch", cont, overlay) })));
+  }
+
+  // Botões de fechamento.
+  const acoes = el("div", { class: "integr-acoes" });
+  if (mp.modo_integracao === "merge_request" && mp.url_mr) {
+    acoes.append(el("a", { class: "btn", href: mp.url_mr, target: "_blank", rel: "noopener", text: "Abrir Merge Request ↗" }));
+  }
+  if (mp.modo_integracao === "merge_local") {
+    acoes.append(el("button", { class: "btn good", text: "Integrar na main",
+      onclick: () => executarAcaoIntegr(id, "integrar", cont, overlay) }));
+  }
+  acoes.append(el("button", { class: "btn ghost", text: "Atualizar branch (trazer main)",
+    onclick: () => executarAcaoIntegr(id, "atualizar_branch", cont, overlay) }));
+  cont.append(acoes);
+
+  // Lista de commits.
+  cont.append(el("h3", { style: "margin:18px 0 8px", text: `Commits (${mp.commits.length})` }));
+  if (mp.commits.length === 0) {
+    cont.append(el("p", { class: "sub", text: "Nenhum commit à frente da main." }));
+  } else {
+    const lista = el("div", { class: "commits" });
+    for (const c of mp.commits) {
+      lista.append(el("div", { class: "commit-row" },
+        el("span", { class: "commit-hash", text: c.hash }),
+        el("span", { class: "commit-msg", text: c.assunto }),
+      ));
+    }
+    cont.append(lista);
+  }
+}
+
+// executarAcaoIntegr dispara uma ação de integração e recarrega o card.
+async function executarAcaoIntegr(id, acao, cont, overlay) {
+  cont.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  try {
+    await api.acaoDemanda(id, acao);
+  } catch (e) {
+    bannerErro(`Falha ao ${acao}: ${e.message}`);
+    cont.querySelectorAll("button").forEach((b) => (b.disabled = false));
     return;
   }
   bannerErro("");

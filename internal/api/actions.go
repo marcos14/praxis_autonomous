@@ -55,8 +55,11 @@ func (s *Servidor) handleAcaoDemanda(w http.ResponseWriter, r *http.Request) {
 		s.aplicarAcao(w, r, dem, acaoRetomar)
 	case "cancelar":
 		s.aplicarAcao(w, r, dem, acaoCancelar)
+	case "publicar_branch":
+		s.acaoPublicarBranch(w, r, dem)
 	default:
-		responderErro(w, http.StatusBadRequest, "invalido", "ação desconhecida: use pausar, retomar ou cancelar")
+		responderErro(w, http.StatusBadRequest, "invalido",
+			"ação desconhecida: use pausar, retomar, cancelar ou publicar_branch")
 	}
 }
 

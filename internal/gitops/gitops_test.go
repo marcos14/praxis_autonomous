@@ -341,3 +341,29 @@ func TestMutexPorProjetoMesmaChave(t *testing.T) {
 }
 
 func isWindows() bool { return os.PathSeparator == '\\' }
+
+func TestCommitsAFrente(t *testing.T) {
+	repo, _ := repoComRemote(t)
+	gitT(t, repo, "checkout", "-b", "praxis/d8-af", "main")
+	escrever(t, repo, "b.txt", "novo\n")
+	gitT(t, repo, "add", "-A")
+	gitT(t, repo, "commit", "-m", "fase 1: b.txt")
+	escrever(t, repo, "c.txt", "outro\n")
+	gitT(t, repo, "add", "-A")
+	gitT(t, repo, "commit", "-m", "fase 2: c.txt")
+
+	commits, err := CommitsAFrente(repo, "main", "praxis/d8-af")
+	if err != nil {
+		t.Fatalf("CommitsAFrente: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("commits = %d, quero 2 (%+v)", len(commits), commits)
+	}
+	// mais recente primeiro.
+	if commits[0].Assunto != "fase 2: c.txt" {
+		t.Fatalf("commits[0].Assunto = %q, quero 'fase 2: c.txt'", commits[0].Assunto)
+	}
+	if commits[0].Hash == "" {
+		t.Fatal("commit sem hash")
+	}
+}

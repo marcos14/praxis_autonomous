@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/gitops"
 )
 
 // intervaloPollLogPadrao é a cadência com que o SSE de log ao vivo relê o .jsonl
@@ -34,6 +35,9 @@ type Opcoes struct {
 	// rejeitado com comentário (Fase 3c). Opcional: nil = a demanda fica em
 	// `planejando` até ser planejada (mecanismo antes do wiring).
 	Planejamento Planejador
+	// Git executa as operações de integração (merge-preview, push, merge --no-ff,
+	// remoção de worktree) das Fases 4c/4d/4e. Se nil, o Novo usa gitops.Novo().
+	Git *gitops.Ops
 }
 
 // Analisador dispara a análise readonly de uma demanda em background (Fase 3b). É
@@ -60,6 +64,7 @@ type Servidor struct {
 	exec         ControladorExecucao
 	intake       Analisador
 	planejamento Planejador
+	git          *gitops.Ops
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -77,8 +82,12 @@ func Novo(opts Opcoes) *Servidor {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	gitOps := opts.Git
+	if gitOps == nil {
+		gitOps = gitops.Novo()
+	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
-		planejamento: opts.Planejamento, intervaloPollLog: intervaloPollLogPadrao,
+		planejamento: opts.Planejamento, git: gitOps, intervaloPollLog: intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 
 	mux := http.NewServeMux()
@@ -88,6 +97,7 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasBoard(mux)
 	s.registrarRotasEventos(mux)
 	s.registrarRotasHome(mux)
+	s.registrarRotasIntegracao(mux)
 	s.registrarRotasMotores(mux)
 	s.registrarRotasConfig(mux)
 	s.registrarRotasWeb(mux)

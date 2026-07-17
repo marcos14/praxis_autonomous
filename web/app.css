@@ -332,3 +332,16 @@ table.plain tr:last-child td { border-bottom: none; }
 .ativ-item:last-child { border-bottom: none; }
 .ativ-item .at { color: var(--ink-2); }
 .ativ-item .aq { color: var(--muted); font-size: 10.5px; }
+
+/* ======================= INTEGRAÇÃO (Fases 4c/4d) ======================= */
+.banner-ok { background: rgba(12,163,12,.10); border: 1px solid rgba(12,163,12,.4); color: #9fe0a0; }
+.integr-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.integr-branch { font-family: Consolas, monospace; font-size: 14px; font-weight: 600; color: var(--blue); }
+.integr-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.integr-acoes a.btn { text-decoration: none; display: inline-block; }
+.conf-file { font-family: Consolas, monospace; font-size: 12px; margin-top: 3px; padding-left: 12px; }
+.commits { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.commit-row { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.commit-row:last-child { border-bottom: none; }
+.commit-hash { font-family: Consolas, monospace; color: var(--muted); flex: 0 0 auto; }
+.commit-msg { color: var(--ink-2); }

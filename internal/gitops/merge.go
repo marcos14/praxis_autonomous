@@ -67,6 +67,40 @@ func (o *Ops) PreviaMerge(repo, base, branch string) (Previa, error) {
 	}
 }
 
+// CommitInfo descreve um commit para exibição no card (hash curto + assunto).
+type CommitInfo struct {
+	Hash    string `json:"hash"`    // hash abreviado
+	Assunto string `json:"assunto"` // primeira linha da mensagem
+}
+
+// CommitsAFrente lista os commits presentes em branch e ausentes em base (o que
+// a demanda acrescenta sobre a main), do mais recente para o mais antigo. Só
+// leitura — não toma o mutex. Base ou branch inexistente devolve erro.
+func CommitsAFrente(repo, base, branch string) ([]CommitInfo, error) {
+	base = strings.TrimSpace(base)
+	branch = strings.TrimSpace(branch)
+	if base == "" || branch == "" {
+		return nil, fmt.Errorf("gitops: base/branch vazia")
+	}
+	out, err := git(repo, "log", "--format=%h%x1f%s", base+".."+branch)
+	if err != nil {
+		return nil, err
+	}
+	commits := []CommitInfo{}
+	for _, linha := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if strings.TrimSpace(linha) == "" {
+			continue
+		}
+		partes := strings.SplitN(linha, "\x1f", 2)
+		c := CommitInfo{Hash: strings.TrimSpace(partes[0])}
+		if len(partes) == 2 {
+			c.Assunto = strings.TrimSpace(partes[1])
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
+}
+
 // MergeNoFF integra branch em base com --no-ff (sempre gera commit de merge),
 // para o modo de integracao merge_local. Faz checkout de base no repo principal
 // e o merge. Serializado pelo mutex do projeto. Em conflito, devolve erro e
