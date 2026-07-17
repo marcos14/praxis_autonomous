@@ -12,6 +12,7 @@
   <!-- ======================= SIDEBAR ======================= -->
   <nav class="sidebar">
     <div class="logo">Praxis <span>Autonomous</span><small>orquestrador de desenvolvimento</small></div>
+    <button class="nav-item" data-view="home"><span class="ico">◎</span> Home</button>
     <button class="nav-item" data-view="kanban"><span class="ico">▤</span> Kanban</button>
     <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
     <button class="nav-item" data-view="nova"><span class="ico">＋</span> Nova demanda</button>
@@ -24,6 +25,19 @@
   <main class="main">
     <!-- Banner de erro/aviso global (preenchido pelo JS) -->
     <div class="banner banner-erro" id="banner-erro" hidden></div>
+
+    <!-- ======================= HOME ======================= -->
+    <section class="view" id="view-home">
+      <h1 class="page">Home</h1>
+      <p class="sub">Visão do mês: gastos, demandas ativas e o que precisa de você.</p>
+      <div class="tiles" id="home-tiles"></div>
+      <div class="two-col" style="margin-top:20px">
+        <div class="panel" id="home-grafico"></div>
+        <div class="panel" id="home-precisa"></div>
+      </div>
+      <div class="panel" id="home-projetos" style="margin-top:20px"></div>
+      <div class="panel" id="home-atividade" style="margin-top:20px"></div>
+    </section>
 
     <!-- ======================= KANBAN ======================= -->
     <section class="view" id="view-kanban">

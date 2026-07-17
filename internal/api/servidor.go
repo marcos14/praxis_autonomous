@@ -87,6 +87,7 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasDemandas(mux)
 	s.registrarRotasBoard(mux)
 	s.registrarRotasEventos(mux)
+	s.registrarRotasHome(mux)
 	s.registrarRotasMotores(mux)
 	s.registrarRotasConfig(mux)
 	s.registrarRotasWeb(mux)

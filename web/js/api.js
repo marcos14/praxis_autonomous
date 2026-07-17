@@ -101,9 +101,10 @@ export const api = {
   reordenarDemandas: (ids) => req("PUT", "/api/v1/demands/ordem", { ids }),
   urlEventos: () => "/api/v1/events",
 
-  // métricas da Home (Fase 4b).
+  // Home (Fase 4b): métricas agregadas, "Precisa de você" e atividade recente.
   metricas: (periodo) => req("GET", "/api/v1/metrics" + (periodo ? "?periodo=" + encodeURIComponent(periodo) : "")),
   pendencias: () => req("GET", "/api/v1/pendencias"),
+  atividade: (limite) => req("GET", "/api/v1/activity" + (limite ? "?limite=" + limite : "")),
 
   // config em camadas (Fase 1e)
   obterConfigGlobal: () => req("GET", "/api/v1/config"),
