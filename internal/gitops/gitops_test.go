@@ -367,3 +367,26 @@ func TestCommitsAFrente(t *testing.T) {
 		t.Fatal("commit sem hash")
 	}
 }
+
+func TestMergeNaBranch(t *testing.T) {
+	repo, _ := repoComRemote(t)
+	o := Novo()
+	// branch da demanda num worktree, criada antes de a main avançar.
+	wt := filepath.Join(t.TempDir(), "wt-atualizar")
+	if err := o.WorktreeAdd(repo, wt, "praxis/d9-upd", "main"); err != nil {
+		t.Fatal(err)
+	}
+	// a main avança com um arquivo novo (não conflita com a branch).
+	escrever(t, repo, "novo-na-main.txt", "main\n")
+	gitT(t, repo, "add", "-A")
+	gitT(t, repo, "commit", "-m", "main avanca")
+
+	// traz a main para dentro da branch da demanda (no worktree).
+	if err := o.MergeNaBranch(wt, "main", "atualiza branch"); err != nil {
+		t.Fatalf("MergeNaBranch: %v", err)
+	}
+	// o arquivo da main agora existe no worktree da branch.
+	if _, err := os.Stat(filepath.Join(wt, "novo-na-main.txt")); err != nil {
+		t.Fatalf("arquivo da main não veio para a branch: %v", err)
+	}
+}

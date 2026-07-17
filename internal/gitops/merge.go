@@ -67,6 +67,30 @@ func (o *Ops) PreviaMerge(repo, base, branch string) (Previa, error) {
 	}
 }
 
+// MergeNaBranch traz `incoming` (ex.: "main" ou "origin/main") para dentro da
+// branch atualmente em check-out no worktree, via `git merge --no-edit`. É a
+// operação do "Atualizar branch" (traz a main para a branch da demanda, Fase 4d).
+// Se o merge conflitar, ABORTA (`git merge --abort`) e devolve erro — o worktree
+// fica intacto; o chamador deve ter checado antes com PreviaMerge. Serializado
+// pelo mutex do projeto (o worktree compartilha a chave do repo principal).
+func (o *Ops) MergeNaBranch(worktree, incoming, msg string) error {
+	incoming = strings.TrimSpace(incoming)
+	if incoming == "" {
+		return fmt.Errorf("gitops: ref de origem vazia")
+	}
+	defer o.trava(worktree)()
+	args := []string{"merge", "--no-edit", incoming}
+	if msg != "" {
+		args = append(args, "-m", msg)
+	}
+	if out, err := git(worktree, args...); err != nil {
+		// deixa o worktree limpo (sem estado de merge pendente).
+		_, _ = git(worktree, "merge", "--abort")
+		return fmt.Errorf("git merge de %s no worktree %s: %w — %s", incoming, worktree, err, out)
+	}
+	return nil
+}
+
 // CommitInfo descreve um commit para exibição no card (hash curto + assunto).
 type CommitInfo struct {
 	Hash    string `json:"hash"`    // hash abreviado

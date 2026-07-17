@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -114,6 +115,151 @@ func (s *Servidor) acaoPublicarBranch(w http.ResponseWriter, r *http.Request, de
 	s.registrarEventoDemanda(r, dem, "branch_publicada", "Praxis: branch publicada",
 		"branch "+dem.Branch+" publicada em origin.")
 	s.responderDemandaComFases(w, r, dem)
+}
+
+// baseDoProjeto devolve a branch principal do projeto (default "main").
+func baseDoProjeto(proj db.Projeto) string {
+	if b := strings.TrimSpace(proj.BranchPrincipal); b != "" {
+		return b
+	}
+	return "main"
+}
+
+// marcarConflito coloca a demanda em `conflito`, gravando os arquivos afetados
+// no campo erro, e registra o evento. Devolve a demanda atualizada.
+func (s *Servidor) marcarConflito(r *http.Request, dem db.Demanda, contexto string, arquivos []string) db.Demanda {
+	dem.Status = db.StatusDemandaConflito
+	dem.Erro = contexto + ": " + strings.Join(arquivos, ", ")
+	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
+	if err != nil {
+		s.log.Error("marcar conflito", "erro", err, "demanda", dem.ID)
+		atual = dem
+	}
+	s.registrarEventoDemanda(r, atual, "conflito", "Praxis: conflito com a main",
+		contexto+" — arquivos em conflito: "+strings.Join(arquivos, ", "))
+	return atual
+}
+
+// acaoIntegrar integra a branch da demanda na main via merge --no-ff local (modo
+// merge_local, Fase 4d). Antes do merge, simula com PreviaMerge: em conflito,
+// coloca a demanda em `conflito` (+ arquivos) e devolve 409, sem tocar a main;
+// limpo, faz o merge, marca `integrada` e registra o evento. A limpeza do
+// worktree/branch é da Fase 4e. Só faz sentido no modo merge_local.
+func (s *Servidor) acaoIntegrar(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
+	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	if strings.TrimSpace(dem.Branch) == "" {
+		responderErro(w, http.StatusConflict, "sem_branch", "a demanda ainda não tem branch para integrar")
+		return
+	}
+	if proj.ModoIntegracao != db.ModoIntegracaoMergeLocal {
+		responderErro(w, http.StatusConflict, "modo_invalido",
+			"integrar local só no modo merge_local; no modo merge_request, abra o MR na plataforma")
+		return
+	}
+	base := baseDoProjeto(proj)
+
+	previa, err := s.git.PreviaMerge(proj.Pasta, base, dem.Branch)
+	if err != nil {
+		responderErro(w, http.StatusBadGateway, "preview_falhou", "não foi possível simular o merge: "+err.Error())
+		return
+	}
+	if !previa.Limpo {
+		atual := s.marcarConflito(r, dem, "conflito ao integrar na "+base, previa.Conflitos)
+		responderJSONConflito(w, atual, previa.Conflitos)
+		return
+	}
+
+	msg := "Merge da demanda #" + strconv.FormatInt(dem.ID, 10) + " (" + dem.Branch + ") na " + base
+	if err := s.git.MergeNoFF(proj.Pasta, base, dem.Branch, msg); err != nil {
+		responderErro(w, http.StatusBadGateway, "merge_falhou", "falha ao integrar: "+err.Error())
+		return
+	}
+	dem.Status = db.StatusDemandaIntegrada
+	dem.Erro = ""
+	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	s.registrarEventoDemanda(r, atual, "demanda_integrada", "Praxis: demanda integrada",
+		"branch "+dem.Branch+" integrada na "+base+" (merge --no-ff).")
+	s.responderDemandaComFases(w, r, atual)
+}
+
+// acaoAtualizarBranch traz a main (atualizada) para dentro da branch da demanda
+// (Fase 4d), resolvendo divergências antes do MR/merge. Faz fetch se houver
+// remote (usa origin/<base>), simula com PreviaMerge e, se limpo, faz o merge no
+// worktree; em conflito, coloca a demanda em `conflito` e devolve 409.
+func (s *Servidor) acaoAtualizarBranch(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
+	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	if strings.TrimSpace(dem.Branch) == "" || strings.TrimSpace(dem.WorktreePath) == "" {
+		responderErro(w, http.StatusConflict, "sem_branch",
+			"a demanda ainda não tem branch/worktree para atualizar")
+		return
+	}
+	base := baseDoProjeto(proj)
+
+	// Traz a main mais recente quando há remote; passa a usar origin/<base>.
+	ref := base
+	if gitops.TemRemote(proj.Pasta) {
+		if err := s.git.Fetch(proj.Pasta, base); err != nil {
+			s.log.Warn("atualizar_branch: fetch falhou (segue com a main local)", "erro", err, "demanda", dem.ID)
+		} else {
+			ref = "origin/" + base
+		}
+	}
+
+	previa, err := s.git.PreviaMerge(proj.Pasta, dem.Branch, ref)
+	if err != nil {
+		responderErro(w, http.StatusBadGateway, "preview_falhou", "não foi possível simular a atualização: "+err.Error())
+		return
+	}
+	if !previa.Limpo {
+		atual := s.marcarConflito(r, dem, "conflito ao trazer a "+base+" para a branch", previa.Conflitos)
+		responderJSONConflito(w, atual, previa.Conflitos)
+		return
+	}
+
+	msg := "Atualiza " + dem.Branch + " com " + ref
+	if err := s.git.MergeNaBranch(dem.WorktreePath, ref, msg); err != nil {
+		responderErro(w, http.StatusBadGateway, "merge_falhou", "falha ao atualizar a branch: "+err.Error())
+		return
+	}
+	// Sai do estado de conflito se estava nele; volta a `concluida` se já tinha
+	// terminado as fases, senão preserva o status atual não-conflito.
+	if dem.Status == db.StatusDemandaConflito {
+		dem.Status = db.StatusDemandaConcluida
+	}
+	dem.Erro = ""
+	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	s.registrarEventoDemanda(r, atual, "branch_atualizada", "Praxis: branch atualizada",
+		"branch "+dem.Branch+" atualizada com "+ref+".")
+	s.responderDemandaComFases(w, r, atual)
+}
+
+// responderJSONConflito devolve 409 com a demanda (agora em conflito) e a lista
+// de arquivos afetados, para o card exibir o conflito e oferecer a resolução.
+func responderJSONConflito(w http.ResponseWriter, dem db.Demanda, arquivos []string) {
+	responderJSON(w, http.StatusConflict, map[string]any{
+		"erro": map[string]any{
+			"codigo":   "conflito",
+			"mensagem": "conflito com a main em " + strconv.Itoa(len(arquivos)) + " arquivo(s)",
+			"arquivos": arquivos,
+			"demanda":  dem,
+		},
+	})
 }
 
 // montarURLMR monta o link para abrir o merge/pull request na plataforma, a

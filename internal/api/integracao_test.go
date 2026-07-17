@@ -128,3 +128,162 @@ func TestMontarURLMR(t *testing.T) {
 		t.Fatalf("sem url_plataforma deveria ser vazio, got %q", vazio)
 	}
 }
+
+// repoMergeLocal cria um repo com main e uma branch praxis/<branch> com um
+// commit em b.txt (não conflitante). Devolve o caminho do repo.
+func repoMergeLocalLimpo(t *testing.T, branch string) string {
+	return repoComBranchDemanda(t, branch)
+}
+
+// repoConflito cria um repo onde a branch e a main tocam o MESMO arquivo em
+// conteúdos divergentes (conflito garantido no merge).
+func repoConflito(t *testing.T, branch string) string {
+	t.Helper()
+	dir := t.TempDir()
+	gitTeste(t, dir, "init", "-q", "-b", "main")
+	gitTeste(t, dir, "config", "user.email", "t@praxis.local")
+	gitTeste(t, dir, "config", "user.name", "Praxis Teste")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, dir, "add", "-A")
+	gitTeste(t, dir, "commit", "-q", "-m", "inicial")
+	gitTeste(t, dir, "checkout", "-q", "-b", branch, "main")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("versao da branch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, dir, "add", "-A")
+	gitTeste(t, dir, "commit", "-q", "-m", "branch muda a.txt")
+	gitTeste(t, dir, "checkout", "-q", "main")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("versao da main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, dir, "add", "-A")
+	gitTeste(t, dir, "commit", "-q", "-m", "main muda a.txt")
+	return dir
+}
+
+func TestIntegrarMergeLocalLimpo(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	branch := "praxis/d10-ml"
+	repo := repoMergeLocalLimpo(t, branch)
+	proj := criarProjetoEmRepo(t, srv, repo, db.ModoIntegracaoMergeLocal)
+	dem, err := banco.CriarDemanda(context.Background(), db.Demanda{
+		ProjectID: proj, Titulo: "d10", Status: db.StatusDemandaConcluida, Branch: branch})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/demands/"+strconv.FormatInt(dem.ID, 10)+"/actions",
+		map[string]any{"acao": "integrar"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	d := decodDemanda(t, rec)
+	if d.Status != db.StatusDemandaIntegrada {
+		t.Fatalf("status = %q, quero integrada", d.Status)
+	}
+	// a main agora contém o commit de merge.
+	log := func() string {
+		cmd := exec.Command("git", "-C", repo, "log", "--oneline", "main")
+		out, _ := cmd.CombinedOutput()
+		return string(out)
+	}()
+	if !strings.Contains(log, "Merge da demanda") {
+		t.Fatalf("main sem commit de merge:\n%s", log)
+	}
+}
+
+func TestIntegrarConflitoMarcaStatus(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	branch := "praxis/d11-cf"
+	repo := repoConflito(t, branch)
+	proj := criarProjetoEmRepo(t, srv, repo, db.ModoIntegracaoMergeLocal)
+	dem, err := banco.CriarDemanda(context.Background(), db.Demanda{
+		ProjectID: proj, Titulo: "d11", Status: db.StatusDemandaConcluida, Branch: branch})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/demands/"+strconv.FormatInt(dem.ID, 10)+"/actions",
+		map[string]any{"acao": "integrar"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, quero 409 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	// a demanda deve estar em conflito.
+	atual, err := banco.ObterDemanda(context.Background(), dem.ID)
+	if err != nil {
+		t.Fatalf("obter: %v", err)
+	}
+	if atual.Status != db.StatusDemandaConflito {
+		t.Fatalf("status = %q, quero conflito", atual.Status)
+	}
+	if !strings.Contains(atual.Erro, "a.txt") {
+		t.Fatalf("erro = %q, quero citar a.txt", atual.Erro)
+	}
+}
+
+func TestIntegrarModoMergeRequestRecusa(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	branch := "praxis/d12-mr"
+	repo := repoComBranchDemanda(t, branch)
+	proj := criarProjetoEmRepo(t, srv, repo, db.ModoIntegracaoMergeRequest)
+	dem, err := banco.CriarDemanda(context.Background(), db.Demanda{
+		ProjectID: proj, Titulo: "d12", Status: db.StatusDemandaConcluida, Branch: branch})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/demands/"+strconv.FormatInt(dem.ID, 10)+"/actions",
+		map[string]any{"acao": "integrar"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, quero 409 modo_invalido (corpo=%q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAtualizarBranchLimpo(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	branch := "praxis/d13-up"
+	// repo com main; cria a branch, adiciona um worktree, depois a main avança.
+	dir := t.TempDir()
+	gitTeste(t, dir, "init", "-q", "-b", "main")
+	gitTeste(t, dir, "config", "user.email", "t@praxis.local")
+	gitTeste(t, dir, "config", "user.name", "Praxis Teste")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("v0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, dir, "add", "-A")
+	gitTeste(t, dir, "commit", "-q", "-m", "inicial")
+	wt := filepath.Join(t.TempDir(), "wt13")
+	gitTeste(t, dir, "worktree", "add", "-q", "-b", branch, wt, "main")
+	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, wt, "add", "-A")
+	gitTeste(t, wt, "commit", "-q", "-m", "fase 1")
+	// main avança (arquivo distinto → merge limpo).
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte("na main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, dir, "add", "-A")
+	gitTeste(t, dir, "commit", "-q", "-m", "main avanca")
+
+	proj := criarProjetoEmRepo(t, srv, dir, db.ModoIntegracaoMergeRequest)
+	dem, err := banco.CriarDemanda(context.Background(), db.Demanda{
+		ProjectID: proj, Titulo: "d13", Status: db.StatusDemandaConcluida, Branch: branch, WorktreePath: wt})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/demands/"+strconv.FormatInt(dem.ID, 10)+"/actions",
+		map[string]any{"acao": "atualizar_branch"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	// o arquivo da main veio para o worktree da branch.
+	if _, err := os.Stat(filepath.Join(wt, "c.txt")); err != nil {
+		t.Fatalf("main não foi trazida para a branch: %v", err)
+	}
+}
