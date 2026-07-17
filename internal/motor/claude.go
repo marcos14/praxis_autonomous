@@ -106,6 +106,7 @@ func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	cmd.Stdin = strings.NewReader(op.Prompt)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	prepararProcessoFilho(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -113,6 +114,7 @@ func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("nao consegui executar `claude` (esta no PATH e logado?): %w", err)
 	}
+	defer registrarProcessoFilho(op, cmd)()
 
 	var res *ResultadoRun
 	var textoAcc strings.Builder

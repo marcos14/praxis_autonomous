@@ -82,6 +82,11 @@ type ContextoExec struct {
 	Ctx     context.Context
 	PausaCh <-chan struct{}
 
+	// RegistrarProcesso, quando != nil, registra o PID de cada processo de harness
+	// desta fase (para a recuperacao pos-restart matar orfaos — Fase 2i). Repassado
+	// a OpcoesRun; o Runner a preenche a partir de um *procs.Registro.
+	RegistrarProcesso func(pid int) func()
+
 	// Seams de teste (nil em producao):
 	Selecionar func(nome string) (motor.Motor, error) // default: motor.Selecionar
 	Agora      func() time.Time                       // default: time.Now
@@ -174,6 +179,7 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 			Schema: schema, ProibirCommit: true, SomenteLeitura: somenteLeitura,
 			RotuloLog: fmt.Sprintf("fase-%s-%s", f.Codigo, rotulo),
 			Ctx:       ctx, PausaCh: c.PausaCh,
+			RegistrarProcesso: c.RegistrarProcesso,
 		}
 		res, motorUsado, runErr := c.rodarComFallback(operacao, motorPrimario, op, estadoFallback)
 

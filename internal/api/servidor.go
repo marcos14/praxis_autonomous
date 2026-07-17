@@ -21,6 +21,10 @@ type Opcoes struct {
 	Banco *db.DB
 	// Log é o logger estruturado. Se nil, usa slog.Default().
 	Log *slog.Logger
+	// Exec permite às ações da demanda (pausar/cancelar) interromper o worker em
+	// andamento. Opcional: nil = a ação só transita o status no banco (o scheduler
+	// ainda não está acoplado ao serve — pendência 2g.n1/M3).
+	Exec ControladorExecucao
 }
 
 // Servidor encapsula o roteador e as dependências da API. Construa com Novo e
@@ -29,6 +33,7 @@ type Servidor struct {
 	banco   *db.DB
 	log     *slog.Logger
 	handler http.Handler
+	exec    ControladorExecucao
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -43,7 +48,7 @@ func Novo(opts Opcoes) *Servidor {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Servidor{banco: opts.Banco, log: logger, intervaloPollLog: intervaloPollLogPadrao}
+	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intervaloPollLog: intervaloPollLogPadrao}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)

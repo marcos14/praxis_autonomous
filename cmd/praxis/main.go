@@ -17,10 +17,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/api"
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/gitops"
+	"github.com/marcos14/praxis-autonomous/internal/procs"
+	"github.com/marcos14/praxis-autonomous/internal/scheduler"
 )
 
 // versao é a versão do binário. Substituível em build via -ldflags.
@@ -108,8 +112,37 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}()
 	logger.Info("banco aberto", "caminho", banco.Caminho)
 
+	// Recuperação pós-restart (Fase 2i): antes de servir, faz o prune dos
+	// worktrees, mata processos de harness órfãos de uma queda anterior e
+	// re-enfileira as demandas presas em `executando`. Best-effort: uma falha aqui
+	// não impede o serviço de subir.
+	recuperarPosRestart(ctx, banco, logger)
+
 	srv := api.Novo(api.Opcoes{Banco: banco, Log: logger})
 	return servirHTTP(ctx, *addr, srv.Handler(), out, logger)
+}
+
+// recuperarPosRestart executa a recuperação de boot da Fase 2i (prune de
+// worktrees, morte de processos órfãos e refila das demandas `executando`). É
+// best-effort: qualquer falha vira log e o serviço sobe mesmo assim.
+func recuperarPosRestart(ctx context.Context, banco *db.DB, logger *slog.Logger) {
+	home, err := db.PraxisHome()
+	if err != nil {
+		logger.Warn("recuperação pós-restart: resolver PRAXIS_HOME", "erro", err)
+		return
+	}
+	registro, err := procs.NovoRegistro(filepath.Join(home, "pids"))
+	if err != nil {
+		logger.Warn("recuperação pós-restart: registro de PIDs", "erro", err)
+		registro = nil
+	}
+	rec, err := scheduler.RecuperarPosRestart(ctx, banco, gitops.Novo(), registro, func(msg string) { logger.Info(msg) })
+	if err != nil {
+		logger.Warn("recuperação pós-restart", "erro", err)
+		return
+	}
+	logger.Info("recuperação pós-restart concluída",
+		"projetos", rec.ProjetosPreparados, "orfaos", rec.OrfaosMortos, "demandas_refiladas", rec.DemandasRefiladas)
 }
 
 // servirHTTP abre o listener em addr e delega a servirListener. Separar a

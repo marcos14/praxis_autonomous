@@ -11,6 +11,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
+	"github.com/marcos14/praxis-autonomous/internal/procs"
 )
 
 // maxSlugDemanda limita o tamanho do slug derivado do titulo da demanda, para que
@@ -37,6 +38,10 @@ type Runner struct {
 	// Prompt carrega o template de um prompt por nome (executor.md/corretor.md/
 	// revisor.md). Repassado ao ContextoExec.
 	Prompt func(nome string) (string, error)
+
+	// Procs registra os PIDs dos processos de harness vivos, para a recuperacao
+	// pos-restart (Fase 2i) matar os orfaos no boot. nil = sem registro (testes).
+	Procs *procs.Registro
 
 	// Seams de teste (nil em producao):
 	Selecionar func(nome string) (motor.Motor, error) // default: motor.Selecionar
@@ -171,6 +176,9 @@ func (r *Runner) RodarFase(ctx context.Context, dem db.Demanda, fase db.Fase, cf
 		PausaCh:    pausaCh,
 		Selecionar: r.Selecionar,
 		Agora:      r.Agora,
+	}
+	if r.Procs != nil {
+		c.RegistrarProcesso = r.Procs.Registrar
 	}
 	res, err := c.ExecutarFase()
 	if err != nil || !res.CommitFeito {

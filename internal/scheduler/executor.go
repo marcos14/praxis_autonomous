@@ -56,9 +56,18 @@ func (e *ExecutorDemanda) Executar(ctx context.Context, item Item, conta string)
 	if err != nil {
 		return Desfecho{}, fmt.Errorf("obter demanda %d: %w", item.DemandaID, err)
 	}
-	// respeita estados terminais/humanos: nada a conduzir automaticamente.
-	if terminalOuHumano(dem.Status) {
+	// Corrida com a acao pausar/cancelar (Fase 2i): o status pode ter mudado entre
+	// a Fonte listar a demanda e este Executar rodar. Estados TERMINAIS
+	// (concluida/cancelada/falhou/integrada) saem da fila de vez (Concluido:true).
+	// Estados PAUSAVEIS/humanos (pausada/aguardando_*/conflito) NAO sao concluidos
+	// — apenas liberam o worker: nao sao reagendaveis pela Fonte agora, mas voltam
+	// a ser candidatos assim que a acao `retomar` os devolver a `pronta` (nao os
+	// marcamos como concluidos, senao a retomada nunca redespacharia).
+	if terminal(dem.Status) {
 		return Desfecho{Concluido: true}, nil
+	}
+	if pausadoOuHumano(dem.Status) {
+		return Desfecho{Concluido: false}, nil
 	}
 
 	// prepara branch/worktree dedicados (idempotente entre fases da demanda).
@@ -187,12 +196,23 @@ func depsSatisfeitas(deps []string, concluidas map[string]bool) bool {
 	return true
 }
 
-// terminalOuHumano informa se o status da demanda não deve ser conduzido pelo
-// executor (já terminou ou está esperando um humano/pausada).
-func terminalOuHumano(status string) bool {
+// terminal informa se o status da demanda é definitivo: nunca mais volta à fila.
+func terminal(status string) bool {
 	switch status {
-	case db.StatusDemandaConcluida, db.StatusDemandaIntegrada, db.StatusDemandaCancelada,
-		db.StatusDemandaFalhou, db.StatusDemandaPausada, db.StatusDemandaConflito,
+	case db.StatusDemandaConcluida, db.StatusDemandaIntegrada,
+		db.StatusDemandaCancelada, db.StatusDemandaFalhou:
+		return true
+	}
+	return false
+}
+
+// pausadoOuHumano informa se a demanda não é conduzível automaticamente agora,
+// mas PODE voltar à fila depois (pausada, aguardando humano/aprovação, conflito).
+// Diferente de terminal: não deve ser marcada como concluída, para a ação
+// `retomar` conseguir redespachá-la.
+func pausadoOuHumano(status string) bool {
+	switch status {
+	case db.StatusDemandaPausada, db.StatusDemandaConflito,
 		db.StatusDemandaAguardandoRespostas, db.StatusDemandaAguardandoAprovacao:
 		return true
 	}

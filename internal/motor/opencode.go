@@ -76,6 +76,7 @@ func (motorOpencode) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	cmd.Env = append(cmd.Environ(), "OPENCODE_PERMISSION="+permissoesOpencode(op))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	prepararProcessoFilho(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -83,6 +84,7 @@ func (motorOpencode) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("nao consegui executar `opencode` (esta no PATH e logado?): %w", err)
 	}
+	defer registrarProcessoFilho(op, cmd)()
 
 	var ultimoTexto, subtipo, detalheLimite string
 	var tokIn, tokOut, numTurns int

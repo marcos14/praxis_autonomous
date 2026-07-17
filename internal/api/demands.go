@@ -46,6 +46,7 @@ func (s *Servidor) registrarRotasDemandas(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/demands/{id}", s.handleObterDemanda)
 	mux.HandleFunc("GET /api/v1/demands/{id}/events", s.handleEventosDemanda)
 	mux.HandleFunc("GET /api/v1/demands/{id}/logs", s.handleLogsDemanda)
+	mux.HandleFunc("POST /api/v1/demands/{id}/actions", s.handleAcaoDemanda)
 }
 
 // handleCriarDemanda cria uma demanda com fases manuais sob um projeto. A demanda

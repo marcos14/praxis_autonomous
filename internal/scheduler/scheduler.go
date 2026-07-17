@@ -77,13 +77,14 @@ type Scheduler struct {
 	wg      sync.WaitGroup
 
 	mu           sync.Mutex
-	ativos       int                 // total de workers em execucao (worker pool)
-	porProjeto   map[int64]int       // projeto → workers ativos
-	rodando      map[int64]bool      // demandas em execucao agora
-	concluidas   map[int64]bool      // demandas ja finalizadas (nao reagendar)
-	contaDe      map[int64]string    // afinidade: demanda → conta fixa
-	contaOcupada map[string]bool     // conta → em uso por um worker
-	naoAntesDe   map[int64]time.Time // demanda → nao redespachar antes deste horario
+	ativos       int                          // total de workers em execucao (worker pool)
+	porProjeto   map[int64]int                // projeto → workers ativos
+	rodando      map[int64]bool               // demandas em execucao agora
+	concluidas   map[int64]bool               // demandas ja finalizadas (nao reagendar)
+	contaDe      map[int64]string             // afinidade: demanda → conta fixa
+	contaOcupada map[string]bool              // conta → em uso por um worker
+	naoAntesDe   map[int64]time.Time          // demanda → nao redespachar antes deste horario
+	cancelar     map[int64]context.CancelFunc // demanda em execucao → cancela o ctx do worker (pausar/cancelar)
 }
 
 // Novo cria um Scheduler a partir das Opcoes, aplicando os defaults.
@@ -106,6 +107,7 @@ func Novo(o Opcoes) *Scheduler {
 		contaDe:       map[int64]string{},
 		contaOcupada:  map[string]bool{},
 		naoAntesDe:    map[int64]time.Time{},
+		cancelar:      map[int64]context.CancelFunc{},
 	}
 	if s.maxGlobal <= 0 {
 		s.maxGlobal = MaxGlobalDefault
@@ -190,18 +192,104 @@ func (s *Scheduler) tentarDespachar(ctx context.Context, it Item) bool {
 		s.mu.Unlock()
 		return false
 	}
-	// reserva os slots
+	// reserva os slots e cria o ctx cancelavel do worker (pausar/cancelar a
+	// demanda cancela este ctx via Interromper — o pipeline trata como pausa).
+	ctxDem, cancel := context.WithCancel(ctx)
 	s.rodando[it.DemandaID] = true
 	s.ativos++
 	s.porProjeto[it.ProjectID]++
 	delete(s.naoAntesDe, it.DemandaID)
+	s.cancelar[it.DemandaID] = cancel
 	s.mu.Unlock()
 
-	s.marcarStatus(ctx, it.DemandaID, db.StatusDemandaExecutando)
+	// A Fonte devolve um instantaneo; entre listar e despachar, a acao pausar/
+	// cancelar (Fase 2i) pode ter mudado o status. Reconfirma que a demanda ainda
+	// e agendavel antes de marca-la executando e gastar um worker — senao devolve
+	// os recursos e NAO despacha (evita "ressuscitar" uma demanda pausada).
+	if !s.confirmarEMarcarExecutando(ctx, it.DemandaID) {
+		s.mu.Lock()
+		s.liberarRecursos(it, conta)
+		s.mu.Unlock()
+		return false
+	}
 
 	s.wg.Add(1)
-	go s.trabalhar(ctx, it, conta)
+	go s.trabalhar(ctx, ctxDem, it, conta)
 	return true
+}
+
+// confirmarEMarcarExecutando reconfirma no banco que a demanda ainda esta num
+// status agendavel (a acao pausar/cancelar pode te-lo mudado desde a Fonte
+// listar) e, se estiver, a marca `executando`. Devolve false quando a demanda
+// nao e mais agendavel — o dispatch deve ser abortado. Sem Store (testes puros),
+// devolve true sem tocar no banco.
+func (s *Scheduler) confirmarEMarcarExecutando(ctx context.Context, demandaID int64) bool {
+	if s.store == nil {
+		return true
+	}
+	dem, err := s.store.ObterDemanda(ctx, demandaID)
+	if err != nil {
+		s.logf("scheduler: reconfirmar demanda " + strconv.FormatInt(demandaID, 10) + ": " + err.Error())
+		return false
+	}
+	if !statusAgendavel(dem.Status) {
+		return false
+	}
+	if dem.Status == db.StatusDemandaExecutando {
+		return true
+	}
+	dem.Status = db.StatusDemandaExecutando
+	if _, err := s.store.AtualizarDemanda(ctx, dem); err != nil {
+		s.logf("scheduler: marcar executando a demanda " + strconv.FormatInt(demandaID, 10) + ": " + err.Error())
+	}
+	return true
+}
+
+// statusAgendavel informa se o status esta entre os StatusAgendaveis.
+func statusAgendavel(status string) bool {
+	for _, s := range StatusAgendaveis {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
+
+// liberarRecursos devolve os slots (global/projeto/conta), a marca de rodando e
+// cancela o ctx do worker. Chamada sob s.mu, tanto no fim normal (trabalhar)
+// quanto ao abortar um dispatch reconfirmado como nao-agendavel.
+func (s *Scheduler) liberarRecursos(it Item, conta string) {
+	delete(s.rodando, it.DemandaID)
+	if cancel, ok := s.cancelar[it.DemandaID]; ok {
+		cancel()
+		delete(s.cancelar, it.DemandaID)
+	}
+	s.ativos--
+	if s.porProjeto[it.ProjectID] > 0 {
+		s.porProjeto[it.ProjectID]--
+		if s.porProjeto[it.ProjectID] == 0 {
+			delete(s.porProjeto, it.ProjectID)
+		}
+	}
+	if conta != "" {
+		delete(s.contaOcupada, conta)
+	}
+}
+
+// Interromper cancela o ctx do worker de uma demanda em execucao, abortando o
+// run do harness em andamento (o pipeline detecta o ctx cancelado e trata como
+// pausa). Usado pela acao `cancelar` (interrupcao imediata). Devolve true se a
+// demanda estava rodando; false caso contrario (nada a interromper). O status da
+// demanda no banco e responsabilidade de quem chama (a API ja carimbou
+// cancelada/pausada antes de chamar).
+func (s *Scheduler) Interromper(demandaID int64) bool {
+	s.mu.Lock()
+	cancel, ok := s.cancelar[demandaID]
+	s.mu.Unlock()
+	if ok {
+		cancel()
+	}
+	return ok
 }
 
 // reservarConta aplica a afinidade conta↔demanda (chamada sob s.mu):
@@ -235,23 +323,17 @@ func (s *Scheduler) reservarConta(demandaID int64) (string, bool) {
 // trabalhar roda o Executor e, ao terminar, libera os recursos e decide o
 // reagendamento. Um erro de infraestrutura vira backoff; Concluido tira a demanda
 // da fila; RetomarEm no futuro segura o proximo despacho (franquia).
-func (s *Scheduler) trabalhar(ctx context.Context, it Item, conta string) {
+// trabalhar roda o Executor com ctxDem (o ctx cancelavel do worker, abortado por
+// Interromper) e faz o bookkeeping com ctxPai (o ctx do scheduler) — este ultimo
+// para as escritas de status pos-execucao NAO usarem o ctxDem, que ja foi
+// cancelado ao liberar os recursos do worker.
+func (s *Scheduler) trabalhar(ctxPai, ctxDem context.Context, it Item, conta string) {
 	defer s.wg.Done()
 
-	des, err := s.exec.Executar(ctx, it, conta)
+	des, err := s.exec.Executar(ctxDem, it, conta)
 
 	s.mu.Lock()
-	delete(s.rodando, it.DemandaID)
-	s.ativos--
-	if s.porProjeto[it.ProjectID] > 0 {
-		s.porProjeto[it.ProjectID]--
-		if s.porProjeto[it.ProjectID] == 0 {
-			delete(s.porProjeto, it.ProjectID)
-		}
-	}
-	if conta != "" {
-		delete(s.contaOcupada, conta)
-	}
+	s.liberarRecursos(it, conta)
 
 	if err != nil {
 		// erro de infraestrutura: nao conclui, reagenda com backoff.
@@ -278,7 +360,7 @@ func (s *Scheduler) trabalhar(ctx context.Context, it Item, conta string) {
 	}
 	if franquia {
 		// contrato da Fase 2b: demanda em aguardando_franquia ate RetomarEm.
-		s.marcarStatus(ctx, it.DemandaID, db.StatusDemandaAguardandoFranquia)
+		s.marcarStatus(ctxPai, it.DemandaID, db.StatusDemandaAguardandoFranquia)
 	}
 
 	s.sinalizar()

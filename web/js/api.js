@@ -72,6 +72,8 @@ export const api = {
   },
   obterDemanda: (id) => req("GET", `/api/v1/demands/${id}`),
   eventosDemanda: (id) => req("GET", `/api/v1/demands/${id}/events`),
+  // ações de controle de execução (Fase 2i): pausar | retomar | cancelar.
+  acaoDemanda: (id, acao) => req("POST", `/api/v1/demands/${id}/actions`, { acao }),
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).
   urlLogsDemanda: (id) => `/api/v1/demands/${id}/logs`,
 

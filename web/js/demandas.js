@@ -161,6 +161,7 @@ async function abrirCard(id) {
         pillStatus(dados.status),
         el("span", { class: "pill", text: dinheiro(dados.custo_usd) + (dados.budget_usd ? " de " + dinheiro(dados.budget_usd) : "") }),
         dados.erro ? el("span", { class: "pill", style: "color:var(--critical)", text: "erro" }) : null,
+        ...botoesAcao(dados, overlay),
       ),
     ),
     tabs,
@@ -168,6 +169,42 @@ async function abrirCard(id) {
   );
   overlay.append(modal);
   document.body.append(overlay);
+}
+
+// ---------- ações de controle (Fase 2i) ----------
+
+// AGENDAVEIS / TERMINAIS espelham a máquina de estados do backend para decidir
+// quais botões de ação mostrar.
+const AGENDAVEIS = ["pronta", "executando", "aguardando_franquia"];
+const RETOMAVEIS = ["pausada", "aguardando_franquia"];
+const TERMINAIS = ["concluida", "integrada", "cancelada", "falhou"];
+
+// botoesAcao devolve os botões pausar/retomar/cancelar aplicáveis ao status atual.
+function botoesAcao(dados, overlay) {
+  const botoes = [];
+  const add = (acao, rotulo, classe) =>
+    botoes.push(el("button", { class: "btn sm " + classe, text: rotulo,
+      onclick: () => executarAcao(dados.id, acao, overlay) }));
+
+  if (AGENDAVEIS.includes(dados.status)) add("pausar", "Pausar", "ghost");
+  if (RETOMAVEIS.includes(dados.status)) add("retomar", "Retomar", "good");
+  if (!TERMINAIS.includes(dados.status)) add("cancelar", "Cancelar", "danger");
+  return botoes;
+}
+
+// executarAcao dispara a ação na API e recarrega o card (e a lista de fundo) para
+// refletir o novo status. Um erro (ex.: 409 transição inválida) vira banner.
+async function executarAcao(id, acao, overlay) {
+  try {
+    await api.acaoDemanda(id, acao);
+  } catch (e) {
+    bannerErro(`Falha ao ${acao}: ${e.message}`);
+    return;
+  }
+  bannerErro("");
+  fecharCard(overlay);
+  await recarregarLista();
+  await abrirCard(id);
 }
 
 // ---------- aba Fases ----------

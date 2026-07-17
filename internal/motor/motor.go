@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/marcos14/praxis-autonomous/internal/procs"
 )
 
 // OpcoesRun descreve uma execucao headless de um motor de codigo, sempre em
@@ -36,6 +38,12 @@ type OpcoesRun struct {
 	Ctx             context.Context
 	PausaCh         <-chan struct{}
 	OnEspera        func(detalhe string)
+
+	// RegistrarProcesso, quando != nil, e chamado logo apos o processo do harness
+	// iniciar (com o PID) e devolve uma funcao de desregistro chamada quando o
+	// processo termina. Alimenta o registro de PIDs da recuperacao pos-restart
+	// (Fase 2i), que mata as arvores de processos orfaos no boot.
+	RegistrarProcesso func(pid int) func()
 }
 
 // ResultadoRun e a saida normalizada de qualquer motor.
@@ -167,6 +175,31 @@ func abrirLog(dirLogs, rotulo, ext string) (*os.File, string, error) {
 		return nil, "", err
 	}
 	return f, p, nil
+}
+
+// prepararProcessoFilho configura o cmd para que o cancelamento do ctx (pausa/
+// cancelamento da demanda — Fase 2i) mate TODA a arvore do processo do harness,
+// nao so o filho direto. Chamar ANTES de cmd.Start. Sem isso, exec.CommandContext
+// so mata o filho direto, deixando netos (ferramentas invocadas pelo harness)
+// orfaos — o que impede o `git worktree remove` no Windows.
+func prepararProcessoFilho(cmd *exec.Cmd) {
+	procs.ConfigurarGrupoProcesso(cmd)
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return procs.MatarArvore(cmd.Process.Pid)
+	}
+}
+
+// registrarProcessoFilho registra o PID do processo ja iniciado no sink de op (se
+// houver) e devolve a funcao de desregistro (para `defer`). No-op quando op nao
+// traz RegistrarProcesso ou o processo ainda nao iniciou.
+func registrarProcessoFilho(op OpcoesRun, cmd *exec.Cmd) func() {
+	if op.RegistrarProcesso == nil || cmd.Process == nil {
+		return func() {}
+	}
+	return op.RegistrarProcesso(cmd.Process.Pid)
 }
 
 func contextoTimeout(pai context.Context, min int) (context.Context, context.CancelFunc, time.Duration) {
