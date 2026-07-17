@@ -116,15 +116,34 @@ async function recarregarLista() {
 
 // ---------- card (modal) ----------
 
-let sseAtual = null; // EventSource em uso pelo card aberto (fechado ao sair)
+let sseAtual = null;       // EventSource do log ao vivo (aba Log), reiniciado a cada render
+let sseCardEventos = null; // EventSource global que dispara o refresh do card aberto
+let cardAberto = null;     // { id, overlay, assinatura } do card atualmente aberto
 
 function fecharCard(overlay) {
   if (sseAtual) { sseAtual.close(); sseAtual = null; }
+  if (sseCardEventos) { sseCardEventos.close(); sseCardEventos = null; }
+  if (cardAberto && cardAberto.overlay === overlay) cardAberto = null;
   overlay.remove();
 }
 
+// chaveAba normaliza o rótulo de uma aba para uma chave estável (sem a contagem
+// entre parênteses: "Perguntas (3)" → "Perguntas"), usada para preservar a aba
+// ativa quando o card é re-renderizado ao vivo.
+function chaveAba(nome) { return nome.replace(/\s*\(.*\)\s*$/, "").trim(); }
+
+// assinaturaCard resume o estado VISÍVEL do card; quando muda, o card é
+// re-renderizado ao vivo (status, branch, custo, nº de perguntas e as fases).
+function assinaturaCard(dados, perguntas) {
+  const fases = (dados.fases || [])
+    .map((f) => `${f.codigo}:${f.status}:${f.custo_usd}:${f.tentativas}`).join("|");
+  return [dados.status, dados.branch || "", dados.custo_usd, dados.erro || "",
+    (perguntas || []).length, fases].join("~");
+}
+
 // abrirCard abre o modal da demanda. Exportado para a tela "Nova demanda" abrir o
-// card da demanda recém-criada.
+// card da demanda recém-criada. O conteúdo se ATUALIZA SOZINHO enquanto aberto
+// (SSE global de eventos): não é preciso fechar e reabrir para ver o progresso.
 export async function abrirCard(id) {
   let dados;
   try {
@@ -133,10 +152,21 @@ export async function abrirCard(id) {
     bannerErro("Falha ao abrir a demanda: " + e.message);
     return;
   }
-  const proj = projetos.find((p) => p.id === dados.project_id);
-
   const overlay = el("div", { class: "overlay open" });
   overlay.addEventListener("click", (ev) => { if (ev.target === overlay) fecharCard(overlay); });
+  document.body.append(overlay);
+  cardAberto = { id, overlay, assinatura: "" };
+  await renderConteudoCard(overlay, id, dados, null, null);
+  assinarEventosCard(id, overlay);
+}
+
+// renderConteudoCard (re)constrói o conteúdo do modal DENTRO do overlay, sem
+// destruir o backdrop (evita flicker no refresh ao vivo). abaPreferida (chave de
+// aba) mantém a aba ativa entre atualizações; nula = escolha padrão pelo status.
+// perguntasPre evita uma segunda busca quando o chamador já as carregou.
+async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre) {
+  if (sseAtual) { sseAtual.close(); sseAtual = null; } // reinicia o log no rebuild
+  const proj = projetos.find((p) => p.id === dados.project_id);
 
   const corpoChat = el("div", { class: "tab-body", id: "tb-chat" });
   const corpoFases = el("div", { class: "tab-body", id: "tb-fases" });
@@ -147,12 +177,9 @@ export async function abrirCard(id) {
   renderFases(corpoFases, dados, overlay);
 
   // Aba Perguntas (Fase 3b): só aparece quando o analista já gerou perguntas.
-  // Quando presente, é a primeira aba (o card avisa "é a sua vez").
-  let perguntas = [];
-  try {
-    perguntas = (await api.listarPerguntas(id)) || [];
-  } catch {
-    perguntas = [];
+  let perguntas = perguntasPre;
+  if (perguntas == null) {
+    try { perguntas = (await api.listarPerguntas(id)) || []; } catch { perguntas = []; }
   }
   const temPerguntas = perguntas.length > 0;
 
@@ -173,16 +200,19 @@ export async function abrirCard(id) {
   abas.push(["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)]);
   abas.push(["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)]);
 
-  // Aba ativa por padrão: quando a demanda aguarda aprovação, é a sua vez de
-  // revisar o plano → abre em Plano & Fases; conflito/concluída → Integração;
-  // senão, a primeira aba (Perguntas se houver, senão Chat).
-  let idxAtiva = 0;
-  if (dados.status === "aguardando_aprovacao") {
-    const i = abas.findIndex(([nome]) => nome === "Plano & Fases");
-    if (i >= 0) idxAtiva = i;
-  } else if (temIntegracao && (dados.status === "conflito" || dados.status === "concluida")) {
-    const i = abas.findIndex(([nome]) => nome === "Integração");
-    if (i >= 0) idxAtiva = i;
+  // Aba ativa: preserva a preferida (refresh ao vivo); senão escolhe pelo status
+  // (aguardando_aprovacao → Plano & Fases; conflito/concluída → Integração).
+  let idxAtiva = -1;
+  if (abaPreferida) idxAtiva = abas.findIndex(([nome]) => chaveAba(nome) === abaPreferida);
+  if (idxAtiva < 0) {
+    idxAtiva = 0;
+    if (dados.status === "aguardando_aprovacao") {
+      const i = abas.findIndex(([nome]) => nome === "Plano & Fases");
+      if (i >= 0) idxAtiva = i;
+    } else if (temIntegracao && (dados.status === "conflito" || dados.status === "concluida")) {
+      const i = abas.findIndex(([nome]) => nome === "Integração");
+      if (i >= 0) idxAtiva = i;
+    }
   }
   abas[idxAtiva][1].classList.add("active");
   if (abas[idxAtiva][2]) abas[idxAtiva][2]();
@@ -196,6 +226,7 @@ export async function abrirCard(id) {
       corpo.classList.add("active");
       if (ativar) ativar();
     } });
+    btn.dataset.aba = chaveAba(nome);
     tabs.append(btn);
   });
 
@@ -218,12 +249,58 @@ export async function abrirCard(id) {
     tabs,
     corpoPerg, corpoChat, corpoFases, corpoIntegr, corpoLog, corpoEventos,
   );
-  overlay.append(modal);
-  document.body.append(overlay);
 
+  overlay.querySelector(".modal")?.remove(); // troca o conteúdo mantendo o backdrop
+  overlay.append(modal);
+  if (cardAberto && cardAberto.overlay === overlay) {
+    cardAberto.assinatura = assinaturaCard(dados, perguntas);
+  }
   // Badge de sobreposição (Fase 5c): busca best-effort; se houver, insere um
   // aviso com as demandas que tocam os mesmos arquivos.
   mostrarSobreposicao(modal, id);
+}
+
+// assinarEventosCard escuta o SSE global e agenda a atualização do card quando um
+// evento da PRÓPRIA demanda chega (debounce). Fechado em fecharCard.
+function assinarEventosCard(id, overlay) {
+  if (sseCardEventos) { sseCardEventos.close(); sseCardEventos = null; }
+  const es = new EventSource(api.urlEventos());
+  sseCardEventos = es;
+  let timer = null;
+  es.addEventListener("evento", (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+    if (Number(ev.demand_id) !== Number(id)) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => atualizarCardSeMudou(id, overlay), 350);
+  });
+  es.onerror = () => { /* o navegador reconecta sozinho */ };
+}
+
+// atualizarCardSeMudou re-busca a demanda e re-renderiza o card se o estado
+// visível mudou — preservando a aba ativa. Não mexe no DOM enquanto o usuário
+// digita num campo do card (reagenda, para não perder o texto).
+async function atualizarCardSeMudou(id, overlay) {
+  if (!cardAberto || cardAberto.overlay !== overlay || !overlay.isConnected) return;
+  if (estaEditando(overlay)) {
+    setTimeout(() => atualizarCardSeMudou(id, overlay), 1500);
+    return;
+  }
+  let dados;
+  try { dados = await api.obterDemanda(id); } catch { return; }
+  let perguntas = [];
+  try { perguntas = (await api.listarPerguntas(id)) || []; } catch { perguntas = []; }
+  if (!cardAberto || cardAberto.overlay !== overlay) return;
+  if (assinaturaCard(dados, perguntas) === cardAberto.assinatura) return;
+  const abaAtiva = overlay.querySelector(".tab.active")?.dataset.aba || null;
+  await renderConteudoCard(overlay, id, dados, abaAtiva, perguntas);
+}
+
+// estaEditando informa se o foco está num campo de texto dentro do card (para não
+// re-renderizar por baixo do usuário enquanto ele digita).
+function estaEditando(overlay) {
+  const ae = document.activeElement;
+  return !!ae && overlay.contains(ae) && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA");
 }
 
 // mostrarSobreposicao consulta as sobreposições da demanda e, se houver, injeta
