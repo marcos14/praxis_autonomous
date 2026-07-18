@@ -14,9 +14,10 @@ const (
 	PermDemandasResponder = "demandas.responder" // chat, responder perguntas, editar fases, aprovar/rejeitar plano
 	PermDemandasOperar    = "demandas.operar"    // pausar/retomar/cancelar; reordenar prioridade
 	PermIntegracaoGerir   = "integracao.gerir"   // publicar_branch, integrar, atualizar_branch (worktree/merge)
-	PermProjetosGerir     = "projetos.gerir"     // criar/editar projetos + config de projeto
+	PermProjetosGerir     = "projetos.gerir"     // criar/editar projetos + config de projeto + grupos/overview
 	PermConfigGerir       = "config.gerir"       // motores/contas e config global (configurações avançadas)
 	PermUsuariosGerir     = "usuarios.gerir"     // usuários, papéis e tokens de API
+	PermConsultasUsar     = "consultas.usar"     // abrir consultas e conversar com o consultor (produto/suporte)
 	PermCuringa           = "*"                  // todas (só o papel de sistema admin)
 )
 
@@ -36,9 +37,10 @@ var CatalogoPermissoes = []Permissao{
 	{PermDemandasResponder, "Responder demandas", "Conversar no chat, responder perguntas, editar fases e aprovar/rejeitar o plano."},
 	{PermDemandasOperar, "Operar demandas", "Pausar, retomar, cancelar e reordenar a prioridade."},
 	{PermIntegracaoGerir, "Integração", "Publicar branch, integrar (merge) e atualizar a branch / worktree."},
-	{PermProjetosGerir, "Projetos", "Cadastrar e editar projetos e suas configurações."},
+	{PermProjetosGerir, "Projetos", "Cadastrar e editar projetos, grupos de repositórios e overviews."},
 	{PermConfigGerir, "Configurações avançadas", "Gerir motores, contas e a configuração global."},
 	{PermUsuariosGerir, "Usuários e acessos", "Gerir usuários, papéis e tokens de API."},
+	{PermConsultasUsar, "Consultar o código", "Conversar com o consultor sobre o comportamento do sistema (sem acesso ao código-fonte)."},
 }
 
 // permissoesAtribuiveis é o conjunto (para validação) das chaves do catálogo.

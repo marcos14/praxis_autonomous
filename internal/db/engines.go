@@ -26,16 +26,20 @@ var ErrOrdemInvalida = errors.New("ordem inválida: informe exatamente os ids de
 // refletem o modelo de dados do plano (snake_case) e são a forma serializada
 // pela API. Prioridade é a ordem de fallback (menor = tentado antes).
 type Motor struct {
-	ID            int64           `json:"id"`
-	Nome          string          `json:"nome"`
-	Prioridade    int             `json:"prioridade"`
-	Ativo         bool            `json:"ativo"`
-	ModeloExec    string          `json:"modelo_exec"`
-	ModeloAnalise string          `json:"modelo_analise"`
-	BudgetFaseUSD float64         `json:"budget_fase_usd"`
-	TimeoutMin    int             `json:"timeout_min"`
-	Params        json.RawMessage `json:"params"`
-	Contas        []Conta         `json:"contas"`
+	ID            int64  `json:"id"`
+	Nome          string `json:"nome"`
+	Prioridade    int    `json:"prioridade"`
+	Ativo         bool   `json:"ativo"`
+	ModeloExec    string `json:"modelo_exec"`
+	ModeloAnalise string `json:"modelo_analise"`
+	// ModeloConsulta é o modelo da feature de consultas (chat de produto/
+	// suporte); o rigor pode ser menor que o de análise/execução. Vazio → as
+	// consultas caem no ModeloAnalise.
+	ModeloConsulta string          `json:"modelo_consulta"`
+	BudgetFaseUSD  float64         `json:"budget_fase_usd"`
+	TimeoutMin     int             `json:"timeout_min"`
+	Params         json.RawMessage `json:"params"`
+	Contas         []Conta         `json:"contas"`
 }
 
 // Conta é uma linha da tabela engine_accounts (uma conta do motor, com seu
@@ -50,7 +54,7 @@ type Conta struct {
 
 // colunasMotor lista as colunas de engines na ordem esperada por scanMotor.
 const colunasMotor = `id, nome, prioridade, ativo, modelo_exec, modelo_analise,
-	budget_fase_usd, timeout_min, params`
+	modelo_consulta, budget_fase_usd, timeout_min, params`
 
 // colunasConta lista as colunas de engine_accounts na ordem esperada por
 // scanConta.
@@ -65,7 +69,7 @@ func scanMotor(sc interface{ Scan(...any) error }) (Motor, error) {
 		params string
 	)
 	if err := sc.Scan(&m.ID, &m.Nome, &m.Prioridade, &ativo, &m.ModeloExec,
-		&m.ModeloAnalise, &m.BudgetFaseUSD, &m.TimeoutMin, &params); err != nil {
+		&m.ModeloAnalise, &m.ModeloConsulta, &m.BudgetFaseUSD, &m.TimeoutMin, &params); err != nil {
 		return Motor{}, err
 	}
 	m.Ativo = ativo != 0
@@ -109,11 +113,12 @@ func (d *DB) CriarMotor(ctx context.Context, m Motor) (Motor, error) {
 	params := normalizarParams(string(m.Params))
 	row := d.Escritor.QueryRowContext(ctx, `
 		INSERT INTO engines
-			(nome, prioridade, ativo, modelo_exec, modelo_analise, budget_fase_usd, timeout_min, params)
-		VALUES (?,?,?,?,?,?,?,?)
+			(nome, prioridade, ativo, modelo_exec, modelo_analise, modelo_consulta,
+			 budget_fase_usd, timeout_min, params)
+		VALUES (?,?,?,?,?,?,?,?,?)
 		RETURNING id`,
 		m.Nome, m.Prioridade, booleanParaInt(m.Ativo), m.ModeloExec, m.ModeloAnalise,
-		m.BudgetFaseUSD, m.TimeoutMin, string(params),
+		m.ModeloConsulta, m.BudgetFaseUSD, m.TimeoutMin, string(params),
 	)
 	if err := row.Scan(&m.ID); err != nil {
 		return Motor{}, traduzirErroMotor(err)
@@ -200,10 +205,10 @@ func (d *DB) AtualizarMotor(ctx context.Context, m Motor) (Motor, error) {
 	params := normalizarParams(string(m.Params))
 	res, err := d.Escritor.ExecContext(ctx, `
 		UPDATE engines SET
-			nome = ?, ativo = ?, modelo_exec = ?, modelo_analise = ?,
+			nome = ?, ativo = ?, modelo_exec = ?, modelo_analise = ?, modelo_consulta = ?,
 			budget_fase_usd = ?, timeout_min = ?, params = ?
 		WHERE id = ?`,
-		m.Nome, booleanParaInt(m.Ativo), m.ModeloExec, m.ModeloAnalise,
+		m.Nome, booleanParaInt(m.Ativo), m.ModeloExec, m.ModeloAnalise, m.ModeloConsulta,
 		m.BudgetFaseUSD, m.TimeoutMin, string(params), m.ID,
 	)
 	if err != nil {

@@ -3,6 +3,7 @@ package intake
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -103,5 +104,91 @@ func TestServicoDispararPlanejamentoEmBackground(t *testing.T) {
 	fases, _ := d.ListarFases(ctx, dem.ID)
 	if len(fases) != 1 {
 		t.Fatalf("len fases = %d, quero 1", len(fases))
+	}
+}
+
+// TestServicoAtualizaRepoAntesDaAnalise garante que o serviço posiciona o repo
+// do projeto na branch principal (pull) ANTES de o analista ler o código — no
+// servidor, o clone pode estar defasado ou em outra branch.
+func TestServicoAtualizaRepoAntesDaAnalise(t *testing.T) {
+	d := abrirDB(t)
+	ctx := context.Background()
+	dem := demandaComPRD(t, d, "Permitir split de recebimento entre filiais.")
+	proj, err := d.ObterProjeto(ctx, dem.ProjectID)
+	if err != nil {
+		t.Fatalf("obter projeto: %v", err)
+	}
+
+	saida := `{"resumo":"ok","perguntas":[]}`
+	var ordem []string
+	var chamada string
+	svc := NovoServico(OpcoesServico{
+		Store: d,
+		Ctx:   ctx,
+		Selecionar: seletorStub(stubMotor{nome: "claude", caps: motor.Capacidades{SchemaNativo: true},
+			fn: func(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+				ordem = append(ordem, "motor")
+				return &motor.ResultadoRun{Estruturado: json.RawMessage(saida)}, nil
+			}}),
+		AtualizarRepo: func(pasta, branch string) (string, error) {
+			ordem = append(ordem, "pull")
+			chamada = pasta + "@" + branch
+			return "", nil
+		},
+	})
+
+	if err := svc.Analisar(ctx, dem.ID); err != nil {
+		t.Fatalf("Analisar: %v", err)
+	}
+	if chamada != proj.Pasta+"@"+proj.BranchPrincipal {
+		t.Fatalf("atualizarRepo = %q, quero %q", chamada, proj.Pasta+"@"+proj.BranchPrincipal)
+	}
+	if len(ordem) != 2 || ordem[0] != "pull" || ordem[1] != "motor" {
+		t.Fatalf("ordem = %v, quero o pull ANTES do motor", ordem)
+	}
+}
+
+// TestServicoAvisoDeRepoViraEvento garante que um repo que não pôde ser
+// atualizado gera um evento visível da demanda (e a análise segue mesmo assim).
+func TestServicoAvisoDeRepoViraEvento(t *testing.T) {
+	d := abrirDB(t)
+	ctx := context.Background()
+	dem := demandaComPRD(t, d, "PRD qualquer.")
+
+	saida := `{"resumo":"ok","perguntas":[]}`
+	svc := NovoServico(OpcoesServico{
+		Store: d,
+		Ctx:   ctx,
+		Selecionar: seletorStub(stubMotor{nome: "claude", caps: motor.Capacidades{SchemaNativo: true},
+			fn: func(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+				return &motor.ResultadoRun{Estruturado: json.RawMessage(saida)}, nil
+			}}),
+		AtualizarRepo: func(pasta, branch string) (string, error) {
+			return "a branch local divergiu de origin/main; a análise usará o estado local", nil
+		},
+	})
+
+	if err := svc.Analisar(ctx, dem.ID); err != nil {
+		t.Fatalf("Analisar: %v", err)
+	}
+	// A análise concluiu mesmo com o aviso…
+	got, _ := d.ObterDemanda(ctx, dem.ID)
+	if got.Status != db.StatusDemandaAguardandoRespostas {
+		t.Fatalf("status = %q, quero aguardando_respostas", got.Status)
+	}
+	// …e o aviso virou evento da demanda.
+	eventos, err := d.EventosApos(ctx, 0, 100)
+	if err != nil {
+		t.Fatalf("EventosApos: %v", err)
+	}
+	temAviso := false
+	for _, ev := range eventos {
+		if ev.Tipo == "aviso" && strings.Contains(ev.Detalhe, "divergiu") &&
+			ev.DemandID != nil && *ev.DemandID == dem.ID {
+			temAviso = true
+		}
+	}
+	if !temAviso {
+		t.Fatalf("aviso do repo não virou evento da demanda: %+v", eventos)
 	}
 }

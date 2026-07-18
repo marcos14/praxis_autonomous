@@ -36,12 +36,66 @@ type reqProjeto struct {
 	Ativo           *bool    `json:"ativo"`
 }
 
-// registrarRotasProjetos registra as rotas de CRUD de projetos no mux.
+// registrarRotasProjetos registra as rotas de CRUD de projetos no mux, mais as
+// rotas do overview do repositório (feature de consultas — mutações caem em
+// projetos.gerir pelo case "projects" do permissaoMutacao).
 func (s *Servidor) registrarRotasProjetos(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/projects", s.handleCriarProjeto)
 	mux.HandleFunc("GET /api/v1/projects", s.handleListarProjetos)
 	mux.HandleFunc("GET /api/v1/projects/{id}", s.handleObterProjeto)
 	mux.HandleFunc("PUT /api/v1/projects/{id}", s.handleAtualizarProjeto)
+	mux.HandleFunc("PUT /api/v1/projects/{id}/overview", s.handleSalvarOverview)
+	mux.HandleFunc("POST /api/v1/projects/{id}/overview/gerar", s.handleGerarOverview)
+}
+
+// reqOverview é o corpo de PUT /projects/{id}/overview (edição manual).
+type reqOverview struct {
+	OverviewMD string `json:"overview_md"`
+}
+
+// handleSalvarOverview grava o overview editado manualmente.
+func (s *Servidor) handleSalvarOverview(w http.ResponseWriter, r *http.Request) {
+	id, ok := lerIDProjeto(w, r)
+	if !ok {
+		return
+	}
+	var req reqOverview
+	if !decodificarCorpo(w, r, &req) {
+		return
+	}
+	if err := s.banco.AtualizarOverview(r.Context(), id, strings.TrimSpace(req.OverviewMD)); err != nil {
+		s.responderErroProjeto(w, err)
+		return
+	}
+	p, err := s.banco.ObterProjeto(r.Context(), id)
+	if err != nil {
+		s.responderErroProjeto(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, p)
+}
+
+// handleGerarOverview dispara a geração do overview pelo harness (read-only) em
+// background e devolve 202. O evento overview_gerado no SSE global avisa a UI.
+func (s *Servidor) handleGerarOverview(w http.ResponseWriter, r *http.Request) {
+	id, ok := lerIDProjeto(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
+		s.responderErroProjeto(w, err)
+		return
+	}
+	if s.consultor == nil {
+		responderErro(w, http.StatusServiceUnavailable, "indisponivel",
+			"o serviço de consultas não está ativo neste servidor")
+		return
+	}
+	s.consultor.DispararOverview(id)
+	responderJSON(w, http.StatusAccepted, map[string]string{
+		"status": "gerando",
+		"detalhe": "o overview está sendo gerado em background; acompanhe pelo evento overview_gerado",
+	})
 }
 
 // decodificarCorpo lê e valida o JSON do corpo, recusando campos desconhecidos e

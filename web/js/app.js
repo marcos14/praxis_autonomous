@@ -8,13 +8,16 @@
 
 import { montarDemandas } from "./demandas.js";
 import { montarNovaDemanda } from "./nova.js";
+import { montarConsultas, desmontarConsultas } from "./consultas.js";
 import { montarProjetos } from "./projetos.js";
+import { montarGrupos } from "./grupos.js";
 import { montarMotores } from "./motores.js";
 import { montarConfig } from "./config.js";
 import { montarKanban, desmontarKanban } from "./kanban.js";
 import { montarHome, desmontarHome } from "./home.js";
 import { montarManual } from "./manual.js";
-import { montarUsuarios } from "./usuarios.js";
+import { montarUsuarios, montarPapeis } from "./usuarios.js";
+import { montarGruposUsuarios } from "./gusuarios.js";
 import { bannerErro, el, limpar } from "./ui.js";
 import * as auth from "./auth.js";
 
@@ -25,10 +28,14 @@ const views = {
   kanban: montarKanban,
   demandas: montarDemandas,
   nova: montarNovaDemanda,
+  consultas: montarConsultas,
   projetos: montarProjetos,
+  grupos: montarGrupos,
   motores: montarMotores,
   config: montarConfig,
   usuarios: montarUsuarios,
+  papeis: montarPapeis,
+  gusuarios: montarGruposUsuarios,
   manual: montarManual,
 };
 
@@ -37,6 +44,7 @@ const views = {
 const desmontar = {
   kanban: desmontarKanban,
   home: desmontarHome,
+  consultas: desmontarConsultas,
 };
 
 // permView mapeia a view à permissão exigida para acessá-la (ausente = livre a
@@ -44,10 +52,14 @@ const desmontar = {
 // navegação direta por hash.
 const permView = {
   nova: "demandas.criar",
+  consultas: "consultas.usar",
   projetos: "projetos.gerir",
+  grupos: "projetos.gerir",
   motores: "config.gerir",
   config: "config.gerir",
   usuarios: "usuarios.gerir",
+  papeis: "usuarios.gerir",
+  gusuarios: "usuarios.gerir",
 };
 
 const nomesValidos = new Set(Object.keys(views));

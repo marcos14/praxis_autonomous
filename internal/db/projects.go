@@ -38,12 +38,16 @@ type Projeto struct {
 	AddDirs         []string `json:"add_dirs"`
 	Ativo           bool     `json:"ativo"`
 	CriadoEm        string   `json:"criado_em"`
+	// Overview de negócio do repositório (markdown, sem código) — contexto
+	// injetado no consultor. Gravado por AtualizarOverview (não pelo CRUD comum).
+	OverviewMD string `json:"overview_md"`
+	OverviewEm string `json:"overview_em"`
 }
 
 // colunasProjeto é a lista de colunas lidas nas consultas, na ordem esperada por
 // scanProjeto.
 const colunasProjeto = `id, nome, slug, pasta, branch_principal, modo_integracao,
-	url_plataforma, add_dirs, ativo, criado_em`
+	url_plataforma, add_dirs, ativo, criado_em, overview_md, overview_em`
 
 // scanProjeto lê uma linha de projects (na ordem de colunasProjeto) para Projeto,
 // desserializando o add_dirs (JSON) e o ativo (0/1).
@@ -54,7 +58,8 @@ func scanProjeto(sc interface{ Scan(...any) error }) (Projeto, error) {
 		ativo   int
 	)
 	if err := sc.Scan(&p.ID, &p.Nome, &p.Slug, &p.Pasta, &p.BranchPrincipal,
-		&p.ModoIntegracao, &p.URLPlataforma, &addDirs, &ativo, &p.CriadoEm); err != nil {
+		&p.ModoIntegracao, &p.URLPlataforma, &addDirs, &ativo, &p.CriadoEm,
+		&p.OverviewMD, &p.OverviewEm); err != nil {
 		return Projeto{}, err
 	}
 	p.Ativo = ativo != 0
@@ -154,6 +159,28 @@ func (d *DB) AtualizarProjeto(ctx context.Context, p Projeto) (Projeto, error) {
 		return Projeto{}, ErrNaoEncontrado
 	}
 	return d.ObterProjeto(ctx, p.ID)
+}
+
+// AtualizarOverview grava o overview do projeto (markdown já sanitizado pelo
+// chamador) e carimba overview_em. Função dedicada — fora do AtualizarProjeto —
+// para a geração em background não competir com edições do cadastro. Projeto
+// inexistente vira ErrNaoEncontrado.
+func (d *DB) AtualizarOverview(ctx context.Context, projectID int64, md string) error {
+	res, err := d.Escritor.ExecContext(ctx, `
+		UPDATE projects SET
+			overview_md = ?, overview_em = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		WHERE id = ?`, md, projectID)
+	if err != nil {
+		return fmt.Errorf("atualizar overview do projeto %d: %w", projectID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("atualizar overview do projeto %d: %w", projectID, err)
+	}
+	if n == 0 {
+		return ErrNaoEncontrado
+	}
+	return nil
 }
 
 // traduzirErroProjeto converte violações conhecidas em erros sentinela do pacote.

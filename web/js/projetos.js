@@ -136,9 +136,67 @@ function renderEdicao(p) {
 
   if (!criando) {
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
+    painel.append(el("h3", {}, "Overview do repositório ", el("small", {}, "contexto das consultas")));
+    renderOverview(painel, p);
+
+    painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
     painel.append(el("h3", {}, "Parâmetros ", el("small", {}, "override do global")));
     renderOverride(painel, p);
   }
+}
+
+// renderOverview desenha a edição do overview do repositório: texto de negócio
+// (sem código) que orienta o consultor da feature de Consultas. Pode ser escrito
+// à mão ou gerado pelo harness em background.
+function renderOverview(painel, p) {
+  const txt = el("textarea", {
+    rows: "10",
+    placeholder: "Objetivo do sistema, domínio, principais módulos, fluxos de negócio… (markdown, sem código)",
+  }, p.overview_md || "");
+  const info = el("div", { class: "hint", text: p.overview_em
+    ? "Última atualização: " + p.overview_em
+    : "Ainda sem overview — as consultas deste projeto terão menos contexto." });
+
+  const btnSalvar = el("button", { class: "btn", text: "Salvar overview" });
+  btnSalvar.onclick = async () => {
+    btnSalvar.disabled = true;
+    try {
+      await api.salvarOverview(p.id, txt.value);
+      toast("Overview salvo.", "ok");
+    } catch (e) {
+      bannerErro("Falha ao salvar overview: " + e.message);
+    } finally {
+      btnSalvar.disabled = false;
+    }
+  };
+
+  const btnGerar = el("button", { class: "btn ghost", text: "Gerar com o Praxis" });
+  btnGerar.onclick = async () => {
+    btnGerar.disabled = true;
+    try {
+      await api.gerarOverview(p.id);
+      toast("Gerando overview em background — leva alguns minutos. Use \"Recarregar\" para ver o resultado.", "ok");
+    } catch (e) {
+      bannerErro("Falha ao disparar a geração: " + e.message);
+    } finally {
+      btnGerar.disabled = false;
+    }
+  };
+
+  const btnRecarregar = el("button", { class: "btn ghost", text: "Recarregar" });
+  btnRecarregar.onclick = async () => {
+    try {
+      const atual = await api.obterProjeto(p.id);
+      renderEdicao(atual);
+    } catch (e) {
+      bannerErro("Falha ao recarregar: " + e.message);
+    }
+  };
+
+  painel.append(el("div", { class: "form" },
+    el("div", {}, txt, info),
+    el("div", { class: "acoes" }, btnSalvar, btnGerar, btnRecarregar),
+  ));
 }
 
 async function salvarCore(p, core, btn) {

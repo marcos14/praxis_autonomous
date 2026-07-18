@@ -15,14 +15,15 @@ import (
 // no update) de um valor explícito (inclusive zero/false). A prioridade só é
 // aplicada na criação; no update a ordem de fallback é gerenciada por /ordem.
 type reqMotor struct {
-	Nome          string          `json:"nome"`
-	Prioridade    *int            `json:"prioridade"`
-	Ativo         *bool           `json:"ativo"`
-	ModeloExec    string          `json:"modelo_exec"`
-	ModeloAnalise string          `json:"modelo_analise"`
-	BudgetFaseUSD *float64        `json:"budget_fase_usd"`
-	TimeoutMin    *int            `json:"timeout_min"`
-	Params        json.RawMessage `json:"params"`
+	Nome           string          `json:"nome"`
+	Prioridade     *int            `json:"prioridade"`
+	Ativo          *bool           `json:"ativo"`
+	ModeloExec     string          `json:"modelo_exec"`
+	ModeloAnalise  string          `json:"modelo_analise"`
+	ModeloConsulta string          `json:"modelo_consulta"`
+	BudgetFaseUSD  *float64        `json:"budget_fase_usd"`
+	TimeoutMin     *int            `json:"timeout_min"`
+	Params         json.RawMessage `json:"params"`
 }
 
 // reqOrdem é o corpo de PUT /engines/ordem: a nova ordem de fallback (posição 0 =
@@ -276,6 +277,9 @@ func montarMotor(req reqMotor, base db.Motor, criando bool) (db.Motor, string) {
 	}
 	if s := strings.TrimSpace(req.ModeloAnalise); s != "" {
 		m.ModeloAnalise = s
+	}
+	if s := strings.TrimSpace(req.ModeloConsulta); s != "" {
+		m.ModeloConsulta = s
 	}
 
 	if req.BudgetFaseUSD != nil {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/api"
+	"github.com/marcos14/praxis-autonomous/internal/consultor"
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
@@ -146,8 +147,13 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// (plano + fases) em background. Roda com o ctx de vida do serviço (cancelado
 	// no shutdown); Aguardar drena as análises/planejamentos em voo antes de fechar
 	// o banco.
-	intakeSvc := novoIntake(ctx, banco, logger)
+	intakeSvc := novoIntake(ctx, banco, git, logger)
 	defer intakeSvc.Aguardar()
+
+	// Consultas: dispara o consultor (chat de análise para produto/suporte) e a
+	// geração de overview de projeto em background — mesma vida do intake.
+	consultorSvc := novoConsultor(ctx, banco, git, logger)
+	defer consultorSvc.Aguardar()
 
 	// Scheduler (fecha 2g.n1): executa as demandas em background — a demanda
 	// aprovada "anda sozinha" (executor→gates→corretor→revisor→commit por fase).
@@ -163,7 +169,8 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// logs/eventos, em background ligado ao ctx de vida do serviço.
 	iniciarManutencao(ctx, banco, logger)
 
-	opts := api.Opcoes{Banco: banco, Log: logger, Git: git, Intake: intakeSvc, Planejamento: intakeSvc}
+	opts := api.Opcoes{Banco: banco, Log: logger, Git: git, Intake: intakeSvc,
+		Planejamento: intakeSvc, Consultas: consultorSvc}
 	if sched != nil {
 		opts.Exec = sched
 	}
@@ -192,7 +199,7 @@ func registroPIDs(logger *slog.Logger) *procs.Registro {
 // PRAXIS_HOME/logs e o ctx de vida do serviço. Falha ao resolver PRAXIS_HOME não
 // impede subir: o intake grava os .jsonl no diretório de trabalho (o analista
 // ainda funciona).
-func novoIntake(ctx context.Context, banco *db.DB, logger *slog.Logger) *intake.Servico {
+func novoIntake(ctx context.Context, banco *db.DB, git *gitops.Ops, logger *slog.Logger) *intake.Servico {
 	dirLogs := ""
 	if home, err := db.PraxisHome(); err == nil {
 		dirLogs = filepath.Join(home, "logs")
@@ -204,6 +211,26 @@ func novoIntake(ctx context.Context, banco *db.DB, logger *slog.Logger) *intake.
 		DirLogs: dirLogs,
 		Ctx:     ctx,
 		Log:     func(msg string) { logger.Info(msg) },
+		Git:     git,
+	})
+}
+
+// novoConsultor monta o serviço de consultas (chat de análise de código para
+// produto/suporte) com a mesma pasta de logs e ctx de vida do intake. O Ops de
+// git é o mesmo do scheduler — o mutex por projeto serializa pull e worktree.
+func novoConsultor(ctx context.Context, banco *db.DB, git *gitops.Ops, logger *slog.Logger) *consultor.Servico {
+	dirLogs := ""
+	if home, err := db.PraxisHome(); err == nil {
+		dirLogs = filepath.Join(home, "logs")
+	} else {
+		logger.Warn("consultor: resolver PRAXIS_HOME para logs", "erro", err)
+	}
+	return consultor.NovoServico(consultor.OpcoesServico{
+		Store:   banco,
+		DirLogs: dirLogs,
+		Ctx:     ctx,
+		Log:     func(msg string) { logger.Info(msg) },
+		Git:     git,
 	})
 }
 

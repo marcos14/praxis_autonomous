@@ -38,9 +38,20 @@ type Opcoes struct {
 	// rejeitado com comentário (Fase 3c). Opcional: nil = a demanda fica em
 	// `planejando` até ser planejada (mecanismo antes do wiring).
 	Planejamento Planejador
+	// Consultas dispara o consultor (chat de análise para produto/suporte) e a
+	// geração de overview de projeto em background. Opcional: nil = criar
+	// consulta/gerar overview não dispara nada (mecanismo antes do wiring).
+	Consultas ConsultorSvc
 	// Git executa as operações de integração (merge-preview, push, merge --no-ff,
 	// remoção de worktree) das Fases 4c/4d/4e. Se nil, o Novo usa gitops.Novo().
 	Git *gitops.Ops
+}
+
+// ConsultorSvc dispara turnos de consulta e gerações de overview em background
+// (feature de consultas). É um seam: em produção o *consultor.Servico o satisfaz.
+type ConsultorSvc interface {
+	DispararResposta(consultaID int64)
+	DispararOverview(projectID int64)
 }
 
 // Analisador dispara a análise readonly de uma demanda em background (Fase 3b). É
@@ -67,6 +78,7 @@ type Servidor struct {
 	exec         ControladorExecucao
 	intake       Analisador
 	planejamento Planejador
+	consultor    ConsultorSvc
 	git          *gitops.Ops
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
@@ -110,12 +122,15 @@ func Novo(opts Opcoes) *Servidor {
 		gitOps = gitops.Novo()
 	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
-		planejamento: opts.Planejamento, git: gitOps, intervaloPollLog: intervaloPollLogPadrao,
+		planejamento: opts.Planejamento, consultor: opts.Consultas, git: gitOps,
+		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.registrarRotasProjetos(mux)
+	s.registrarRotasGrupos(mux)
+	s.registrarRotasConsultas(mux)
 	s.registrarRotasDemandas(mux)
 	s.registrarRotasBoard(mux)
 	s.registrarRotasEventos(mux)
@@ -126,6 +141,7 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasTokens(mux)
 	s.registrarRotasAuth(mux)
 	s.registrarRotasUsuarios(mux)
+	s.registrarRotasGruposUsuarios(mux)
 	s.registrarRotasManual(mux)
 	s.registrarRotasOverlap(mux)
 	s.registrarRotasWeb(mux)

@@ -260,6 +260,9 @@ table.plain tr:last-child td { border-bottom: none; }
 .chat .msg.agent { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); }
 .chat .msg.agent .who { color: var(--violet); }
 .chat .msg.sys { align-self: center; max-width: 100%; background: none; color: var(--muted); font-size: 11.5px; padding: 2px 8px; }
+/* Na tela de Consultas o chat é o conteúdo principal — ganha mais altura que o
+   chat compacto do card da demanda. */
+#painel-consulta .chat { max-height: 60vh; min-height: 240px; }
 .chat-input { display: flex; gap: 8px; margin-top: 12px; }
 .chat-input input {
   flex: 1; background: var(--surface-2); border: 1px solid var(--border);

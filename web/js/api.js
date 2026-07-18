@@ -71,6 +71,35 @@ export const api = {
   obterProjeto: (id) => req("GET", `/api/v1/projects/${id}`),
   criarProjeto: (p) => req("POST", "/api/v1/projects", p),
   atualizarProjeto: (id, p) => req("PUT", `/api/v1/projects/${id}`, p),
+  // overview do repositório (feature de consultas): edição manual e geração
+  // pelo harness (202 — acompanhe pelo evento overview_gerado no SSE global).
+  salvarOverview: (id, overviewMd) => req("PUT", `/api/v1/projects/${id}/overview`, { overview_md: overviewMd }),
+  gerarOverview: (id) => req("POST", `/api/v1/projects/${id}/overview/gerar`),
+
+  // grupos de repositórios (feature de consultas): N:N com projetos; o primeiro
+  // project_id é o repositório principal.
+  listarGrupos: () => req("GET", "/api/v1/groups"),
+  obterGrupo: (id) => req("GET", `/api/v1/groups/${id}`),
+  criarGrupo: (g) => req("POST", "/api/v1/groups", g),
+  atualizarGrupo: (id, g) => req("PUT", `/api/v1/groups/${id}`, g),
+  excluirGrupo: (id) => req("DELETE", `/api/v1/groups/${id}`),
+
+  // consultas (chat de análise de código para produto/suporte).
+  listarConsultas: (q = {}) => {
+    const p = new URLSearchParams();
+    if (q.project) p.set("project", q.project);
+    if (q.group) p.set("group", q.group);
+    const qs = p.toString();
+    return req("GET", "/api/v1/consultas" + (qs ? "?" + qs : ""));
+  },
+  obterConsulta: (id) => req("GET", `/api/v1/consultas/${id}`),
+  criarConsulta: (c) => req("POST", "/api/v1/consultas", c),
+  excluirConsulta: (id) => req("DELETE", `/api/v1/consultas/${id}`),
+  listarChatConsulta: (id) => req("GET", `/api/v1/consultas/${id}/chat`),
+  enviarChatConsulta: (id, conteudo) => req("POST", `/api/v1/consultas/${id}/chat`, { conteudo }),
+  // Progresso SANITIZADO do turno (SSE): só resumos ("lendo arquivo…"), nunca o
+  // log cru — o log cru contém código-fonte, que esta feature não expõe.
+  urlProgressoConsulta: (id) => comToken(`/api/v1/consultas/${id}/progresso`),
 
   // motores e contas (Fase 1d)
   listarMotores: () => req("GET", "/api/v1/engines"),
@@ -163,4 +192,11 @@ export const api = {
   criarPapel: (p) => req("POST", "/api/v1/roles", p),
   atualizarPapel: (id, p) => req("PUT", `/api/v1/roles/${id}`, p),
   excluirPapel: (id) => req("DELETE", `/api/v1/roles/${id}`),
+
+  // grupos de usuários (consultas): definem o motor/modelo das consultas dos
+  // membros. Exigem usuarios.gerir.
+  listarGruposUsuarios: () => req("GET", "/api/v1/user-groups"),
+  criarGrupoUsuarios: (g) => req("POST", "/api/v1/user-groups", g),
+  atualizarGrupoUsuarios: (id, g) => req("PUT", `/api/v1/user-groups/${id}`, g),
+  excluirGrupoUsuarios: (id) => req("DELETE", `/api/v1/user-groups/${id}`),
 };

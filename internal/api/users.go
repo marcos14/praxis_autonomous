@@ -35,7 +35,8 @@ type reqUsuario struct {
 	Email  string  `json:"email"`
 	Senha  string  `json:"senha"`
 	Ativo  bool    `json:"ativo"`
-	Papeis []int64 `json:"papeis"` // ids dos papéis
+	Papeis []int64 `json:"papeis"`   // ids dos papéis
+	GrupoID *int64 `json:"grupo_id"` // grupo de usuários (consultas); nil/0 = sem grupo
 }
 
 func (s *Servidor) handleListarUsuarios(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +58,24 @@ func (s *Servidor) handleCriarUsuario(w http.ResponseWriter, r *http.Request) {
 		s.responderErroUsuario(w, err)
 		return
 	}
+	if u, err = s.aplicarGrupoDoUsuario(r, u.ID, req.GrupoID); err != nil {
+		s.responderErroUsuario(w, err)
+		return
+	}
 	responderJSON(w, http.StatusCreated, u)
+}
+
+// aplicarGrupoDoUsuario grava o vínculo do usuário com o grupo de usuários
+// (consultas) e devolve o usuário relido. grupoID nulo ou <= 0 remove o vínculo.
+func (s *Servidor) aplicarGrupoDoUsuario(r *http.Request, userID int64, grupoID *int64) (db.Usuario, error) {
+	alvo := grupoID
+	if alvo != nil && *alvo <= 0 {
+		alvo = nil
+	}
+	if err := s.banco.DefinirGrupoDoUsuario(r.Context(), userID, alvo); err != nil {
+		return db.Usuario{}, err
+	}
+	return s.banco.ObterUsuario(r.Context(), userID)
 }
 
 func (s *Servidor) handleAtualizarUsuario(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +95,10 @@ func (s *Servidor) handleAtualizarUsuario(w http.ResponseWriter, r *http.Request
 	}
 	u, err := s.banco.AtualizarUsuario(r.Context(), id, req.Nome, req.Email, req.Ativo, req.Papeis)
 	if err != nil {
+		s.responderErroUsuario(w, err)
+		return
+	}
+	if u, err = s.aplicarGrupoDoUsuario(r, u.ID, req.GrupoID); err != nil {
 		s.responderErroUsuario(w, err)
 		return
 	}

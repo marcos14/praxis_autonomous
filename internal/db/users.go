@@ -34,6 +34,10 @@ type Usuario struct {
 	CriadoEm     string  `json:"criado_em"`
 	AtualizadoEm string  `json:"atualizado_em"`
 	Papeis       []Papel `json:"papeis"`
+	// Grupo de usuários (feature de consultas): define o motor/modelo das
+	// consultas do usuário. Nulo = sem grupo (motor padrão).
+	GrupoID   *int64 `json:"grupo_id"`
+	GrupoNome string `json:"grupo_nome,omitempty"`
 
 	senhaHash string // interno; não serializa
 }
@@ -108,6 +112,12 @@ func (d *DB) ObterUsuario(ctx context.Context, id int64) (Usuario, error) {
 		return Usuario{}, err
 	}
 	u.Papeis = papeis
+	if g, ok, err := d.GrupoDoUsuario(ctx, id); err != nil {
+		return Usuario{}, err
+	} else if ok {
+		u.GrupoID = &g.ID
+		u.GrupoNome = g.Nome
+	}
 	return u, nil
 }
 
@@ -182,6 +192,12 @@ func (d *DB) ListarUsuarios(ctx context.Context) ([]Usuario, error) {
 			return nil, err
 		}
 		usuarios[i].Papeis = papeis
+		if g, ok, err := d.GrupoDoUsuario(ctx, usuarios[i].ID); err != nil {
+			return nil, err
+		} else if ok {
+			usuarios[i].GrupoID = &g.ID
+			usuarios[i].GrupoNome = g.Nome
+		}
 	}
 	return usuarios, nil
 }

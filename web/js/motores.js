@@ -41,6 +41,7 @@ function linhaMotor(m, i) {
   const det = [
     m.modelo_exec ? `modelo ${m.modelo_exec} (exec)` : "sem modelo de execução",
     m.modelo_analise ? `${m.modelo_analise} (análise)` : null,
+    m.modelo_consulta ? `${m.modelo_consulta} (consultas)` : null,
     m.budget_fase_usd > 0 ? `budget US$ ${m.budget_fase_usd.toFixed(2)}/fase` : "sem budget",
     m.timeout_min > 0 ? `timeout ${m.timeout_min}min` : null,
     `${nContas} ${nContas === 1 ? "conta" : "contas"}`,
@@ -98,6 +99,7 @@ function renderPainel(m) {
   const nome = el("input", { value: m ? m.nome : "", placeholder: "claude / codex / opencode" });
   const modeloExec = el("input", { value: m ? m.modelo_exec : "" });
   const modeloAnalise = el("input", { value: m ? m.modelo_analise : "" });
+  const modeloConsulta = el("input", { value: m ? (m.modelo_consulta || "") : "", placeholder: "vazio = usa o de análise" });
   const budget = el("input", { type: "number", step: "0.5", value: m ? m.budget_fase_usd : 0 });
   const timeout = el("input", { type: "number", value: m ? m.timeout_min : 0 });
   const params = el("textarea", {}, m && m.params ? prettyJSON(m.params) : "{}");
@@ -108,6 +110,8 @@ function renderPainel(m) {
       el("div", {}, el("label", {}, "Modelo para execução"), modeloExec),
       el("div", {}, el("label", {}, "Modelo para análise/planejamento"), modeloAnalise),
     ),
+    el("div", {}, el("label", {}, "Modelo para consultas"), modeloConsulta,
+      el("div", { class: "hint", text: "Usado no chat de Consultas (produto/suporte). O rigor pode ser menor que o de análise/execução — pode ser um modelo mais leve/barato. Grupos de usuários podem sobrescrever." })),
     el("div", { class: "row" },
       el("div", {}, el("label", {}, "Budget por fase (US$)"), budget),
       el("div", {}, el("label", {}, "Timeout por fase (min)"), timeout),
@@ -117,7 +121,7 @@ function renderPainel(m) {
   );
 
   const btn = el("button", { class: "btn", style: "width:fit-content" }, criando ? "Cadastrar" : "Salvar");
-  btn.onclick = () => salvar(m, { nome, modeloExec, modeloAnalise, budget, timeout, params }, btn);
+  btn.onclick = () => salvar(m, { nome, modeloExec, modeloAnalise, modeloConsulta, budget, timeout, params }, btn);
   form.append(btn);
   painel.append(form);
 
@@ -147,6 +151,7 @@ async function salvar(m, campos, btn) {
     nome,
     modelo_exec: campos.modeloExec.value.trim(),
     modelo_analise: campos.modeloAnalise.value.trim(),
+    modelo_consulta: campos.modeloConsulta.value.trim(),
     budget_fase_usd: Number(campos.budget.value) || 0,
     timeout_min: Number(campos.timeout.value) || 0,
     params,

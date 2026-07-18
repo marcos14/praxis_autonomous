@@ -1,6 +1,8 @@
-// Tela "Usuários e acessos" (RBAC). Gerencia usuários (com papéis vinculados) e
-// papéis (com permissões do catálogo). Só é acessível a quem tem usuarios.gerir —
-// o menu já esconde para os demais e o servidor barra por permissão.
+// Telas "Usuários" e "Papéis" (RBAC). Usuários gerencia as pessoas (com papéis
+// vinculados); Papéis gerencia os conjuntos de permissões do catálogo. São duas
+// views separadas que compartilham este módulo. Só acessíveis a quem tem
+// usuarios.gerir — o menu já esconde para os demais e o servidor barra por
+// permissão.
 
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro } from "./ui.js";
@@ -10,23 +12,39 @@ import { usuarioAtual } from "./auth.js";
 let papeis = [];
 let permissoes = [];
 let usuarios = [];
+let gruposUsuarios = [];
 
+// montarUsuarios monta a view Usuários. Papéis e grupos de usuários também são
+// carregados aqui porque o form de usuário oferece os vínculos.
 export async function montarUsuarios() {
   try {
-    [permissoes, papeis, usuarios] = await Promise.all([
-      api.listarPermissoes(),
+    [papeis, usuarios, gruposUsuarios] = await Promise.all([
       api.listarPapeis(),
       api.listarUsuarios(),
+      api.listarGruposUsuarios().catch(() => []),
     ]);
   } catch (e) {
-    bannerErro("Falha ao carregar usuários/papéis: " + e.message);
+    bannerErro("Falha ao carregar usuários: " + e.message);
     return;
   }
   bannerErro("");
   renderListaUsuarios();
-  renderListaPapeis();
-
   document.getElementById("btn-novo-usuario").onclick = () => abrirUsuario(null);
+}
+
+// montarPapeis monta a view Papéis (lista + catálogo de permissões).
+export async function montarPapeis() {
+  try {
+    [permissoes, papeis] = await Promise.all([
+      api.listarPermissoes(),
+      api.listarPapeis(),
+    ]);
+  } catch (e) {
+    bannerErro("Falha ao carregar papéis: " + e.message);
+    return;
+  }
+  bannerErro("");
+  renderListaPapeis();
   document.getElementById("btn-novo-papel").onclick = () => abrirPapel(null);
 }
 
@@ -40,11 +58,12 @@ function renderListaUsuarios() {
   }
   for (const u of usuarios) {
     const nomesPapeis = (u.papeis || []).map((p) => p.nome).join(", ") || "sem papéis";
+    const resumo = u.grupo_nome ? nomesPapeis + " · grupo " + u.grupo_nome : nomesPapeis;
     lista.append(el("div", { class: "list-item" + (u.ativo ? "" : " usuario-inativo"), onclick: () => abrirUsuario(u) },
       el("div", {},
         el("div", { style: "font-weight:600", text: u.nome }),
         el("div", { class: "path", text: u.email }),
-        el("div", { class: "hint", text: nomesPapeis }),
+        el("div", { class: "hint", text: resumo }),
       ),
       u.ativo ? null : el("span", { class: "pill", text: "inativo" }),
     ));
@@ -77,11 +96,21 @@ function abrirUsuario(u) {
   };
   repintarChips();
 
+  // Grupo de usuários (consultas): define o motor/modelo das consultas do
+  // usuário. Opcional — sem grupo, vale o padrão dos motores.
+  const selGrupo = el("select", {},
+    el("option", { value: "" }, "sem grupo (padrão)"),
+    ...gruposUsuarios.map((g) =>
+      el("option", { value: g.id, selected: !novo && u.grupo_id === g.id }, g.nome)),
+  );
+
   const form = el("div", { class: "form" },
     rotulado("Nome", inpNome),
     rotulado("E-mail (login)", inpEmail),
     rotulado(novo ? "Senha" : "Nova senha", inpSenha),
     el("div", {}, el("label", { text: "Papéis" }), chips),
+    el("div", {}, el("label", { text: "Grupo de usuários (consultas)" }), selGrupo,
+      el("div", { class: "hint", text: "Define o motor/modelo das Consultas deste usuário. Gerencie os grupos na tela Grupos de usuários." })),
     el("label", { class: "cfg-herda" }, chkAtivo, "Usuário ativo"),
   );
 
@@ -90,6 +119,7 @@ function abrirUsuario(u) {
   btnSalvar.onclick = () => salvarUsuario(u, {
     nome: inpNome.value.trim(), email: inpEmail.value.trim(), senha: inpSenha.value,
     ativo: chkAtivo.checked, papeis: [...selecionados],
+    grupo_id: selGrupo.value ? Number(selGrupo.value) : null,
   }, btnSalvar);
   acoes.append(btnSalvar);
   if (!novo && !souEu) {
@@ -107,10 +137,10 @@ async function salvarUsuario(u, dados, btn) {
   btn.disabled = true;
   try {
     if (u) {
-      await api.atualizarUsuario(u.id, { nome: dados.nome, email: dados.email, ativo: dados.ativo, papeis: dados.papeis });
+      await api.atualizarUsuario(u.id, { nome: dados.nome, email: dados.email, ativo: dados.ativo, papeis: dados.papeis, grupo_id: dados.grupo_id });
       if (dados.senha) await api.resetarSenha(u.id, dados.senha);
     } else {
-      await api.criarUsuario({ nome: dados.nome, email: dados.email, senha: dados.senha, ativo: dados.ativo, papeis: dados.papeis });
+      await api.criarUsuario({ nome: dados.nome, email: dados.email, senha: dados.senha, ativo: dados.ativo, papeis: dados.papeis, grupo_id: dados.grupo_id });
     }
     toast("Usuário salvo.", "ok");
     await montarUsuarios();
@@ -205,7 +235,7 @@ async function salvarPapel(p, dados, btn) {
     if (p) await api.atualizarPapel(p.id, dados);
     else await api.criarPapel(dados);
     toast("Papel salvo.", "ok");
-    await montarUsuarios();
+    await montarPapeis();
   } catch (e) {
     bannerErro("Falha ao salvar papel: " + e.message);
     toast("Falha ao salvar.", "err");
@@ -219,7 +249,7 @@ async function excluirPapel(p) {
   try {
     await api.excluirPapel(p.id);
     toast("Papel excluído.", "ok");
-    await montarUsuarios();
+    await montarPapeis();
     limpar(document.getElementById("painel-papel")).append(
       el("p", { class: "sub", style: "margin:0", text: "Selecione um papel à esquerda ou crie um novo." }));
   } catch (e) {

@@ -49,6 +49,16 @@ var migracoes = []migracao{
 		nome:   "usuários, papéis customizáveis e segredo do JWT (users, roles, role_permissions, user_roles, auth_config)",
 		sql:    schemaAuth,
 	},
+	{
+		versao: 7,
+		nome:   "consultas de código e grupos de projetos (project_groups, consultas, consulta_messages, consulta_runs, overview)",
+		sql:    schemaConsultas,
+	},
+	{
+		versao: 8,
+		nome:   "modelo próprio para consultas e grupos de usuários (engines.modelo_consulta, user_groups, user_group_members)",
+		sql:    schemaGruposUsuarios,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -388,6 +398,107 @@ CREATE TABLE auth_config (
 INSERT INTO roles (nome, descricao, sistema) VALUES ('admin', 'Acesso total ao Praxis', 1);
 INSERT INTO role_permissions (role_id, permissao)
     SELECT id, '*' FROM roles WHERE nome = 'admin';
+`
+
+// schemaConsultas é a migração 7: a feature de consulta/análise de código para
+// times de produto e suporte. Um projeto ganha um overview de negócio (markdown,
+// gerado pelo harness ou editado à mão) injetado como contexto do consultor;
+// project_groups agrupa repositórios de uma mesma solução (N:N — um projeto pode
+// estar em vários grupos; ordem=0 é o repo principal, cwd do harness); consultas
+// é a conversa (vinculada a UM projeto OU UM grupo, nunca ambos), com mensagens
+// e execuções próprias — runs exige demand_id, e o domínio fica separado do
+// intake de demandas de propósito. Convenções das migrações anteriores: datas
+// ISO-8601 UTC, JSON como TEXT com default válido, FKs com ON DELETE CASCADE.
+const schemaConsultas = `
+ALTER TABLE projects ADD COLUMN overview_md TEXT NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN overview_em TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE project_groups (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome      TEXT    NOT NULL,
+    slug      TEXT    NOT NULL UNIQUE,
+    descricao TEXT    NOT NULL DEFAULT '',   -- descrição de negócio da solução (entra no prompt)
+    ativo     INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0,1)),
+    criado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE project_group_members (
+    group_id   INTEGER NOT NULL REFERENCES project_groups(id) ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects(id)       ON DELETE CASCADE,
+    ordem      INTEGER NOT NULL DEFAULT 0,   -- ordem=0 é o repo principal (cwd do harness)
+    PRIMARY KEY (group_id, project_id)
+);
+CREATE INDEX ix_pgm_project ON project_group_members (project_id);
+
+CREATE TABLE consultas (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id    INTEGER REFERENCES projects(id)       ON DELETE CASCADE,
+    group_id      INTEGER REFERENCES project_groups(id) ON DELETE CASCADE,
+    titulo        TEXT    NOT NULL DEFAULT '',
+    status        TEXT    NOT NULL DEFAULT 'ociosa',    -- ociosa|pensando|falhou (validado na app)
+    custo_usd     REAL    NOT NULL DEFAULT 0,           -- acumulado dos turnos
+    criado_por    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    erro          TEXT    NOT NULL DEFAULT '',
+    criado_em     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    atualizado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    CHECK ((project_id IS NOT NULL AND group_id IS NULL) OR
+           (project_id IS NULL     AND group_id IS NOT NULL))
+);
+CREATE INDEX ix_consultas_project ON consultas (project_id);
+CREATE INDEX ix_consultas_group   ON consultas (group_id);
+
+CREATE TABLE consulta_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    consulta_id INTEGER NOT NULL REFERENCES consultas(id) ON DELETE CASCADE,
+    papel       TEXT    NOT NULL CHECK (papel IN ('user','consultor','sistema')),
+    conteudo    TEXT    NOT NULL DEFAULT '',
+    meta        TEXT    NOT NULL DEFAULT '{}',   -- JSON: tipo da fala, custo, motor, redigido…
+    criado_em   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX ix_consulta_messages_consulta ON consulta_messages (consulta_id);
+
+CREATE TABLE consulta_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    consulta_id  INTEGER REFERENCES consultas(id) ON DELETE CASCADE,  -- NULL na geração de overview
+    project_id   INTEGER REFERENCES projects(id)  ON DELETE CASCADE,  -- preenchido na geração de overview
+    operacao     TEXT    NOT NULL,                -- consultor|overview
+    engine       TEXT    NOT NULL DEFAULT '',
+    modelo       TEXT    NOT NULL DEFAULT '',
+    custo_usd    REAL    NOT NULL DEFAULT 0,
+    tokens_in    INTEGER NOT NULL DEFAULT 0,
+    tokens_out   INTEGER NOT NULL DEFAULT 0,
+    is_error     INTEGER NOT NULL DEFAULT 0 CHECK (is_error IN (0,1)),
+    log_ref      TEXT    NOT NULL DEFAULT '',
+    iniciado_em  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    terminado_em TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX ix_consulta_runs_consulta ON consulta_runs (consulta_id);
+`
+
+// schemaGruposUsuarios é a migração 8: o modelo dedicado às consultas no motor
+// (engines.modelo_consulta — o rigor pode ser menor que o de análise/execução,
+// pois a consulta só explica comportamento, não produz código de produção) e os
+// grupos de usuários (user_groups): cada grupo pode fixar o motor e o modelo
+// que as consultas dos seus membros usam. Um usuário pertence a NO MÁXIMO um
+// grupo (user_id é PK em user_group_members). engine_id com ON DELETE SET NULL:
+// remover um motor não remove o grupo — ele volta ao motor padrão.
+const schemaGruposUsuarios = `
+ALTER TABLE engines ADD COLUMN modelo_consulta TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE user_groups (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome      TEXT    NOT NULL UNIQUE,
+    descricao TEXT    NOT NULL DEFAULT '',
+    engine_id INTEGER REFERENCES engines(id) ON DELETE SET NULL,  -- motor das consultas do grupo (NULL = padrão)
+    modelo    TEXT    NOT NULL DEFAULT '',                        -- modelo das consultas ('' = modelo_consulta do motor)
+    criado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE user_group_members (
+    user_id  INTEGER PRIMARY KEY REFERENCES users(id)       ON DELETE CASCADE,
+    group_id INTEGER NOT NULL    REFERENCES user_groups(id) ON DELETE CASCADE
+);
+CREATE INDEX ix_ugm_group ON user_group_members (group_id);
 `
 
 // schemaTokens é a migração 5: os tokens de API do sistema de chamados (Fase

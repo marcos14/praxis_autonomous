@@ -20,6 +20,11 @@ const (
 	PromptExecutor = "executor"
 	PromptCorretor = "corretor"
 	PromptRevisor  = "revisor"
+	// Prompts da feature de consultas (pacote consultor): o consultor de
+	// produto/suporte e o gerador de overview do repositório. Moram aqui para
+	// reusar o mecanismo embutido + override no banco.
+	PromptConsultor = "consultor"
+	PromptOverview  = "overview"
 )
 
 // ProvedorPrompt devolve um provedor de prompts para o pipeline (Runner.Prompt):

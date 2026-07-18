@@ -229,10 +229,10 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 	resto := strings.TrimPrefix(caminho, "/api/v1/")
 	seg := strings.Split(resto, "/")
 
-	// Gestão de acessos (usuários, papéis, tokens, catálogo de permissões):
-	// leitura e escrita exigem usuarios.gerir.
+	// Gestão de acessos (usuários, papéis, grupos de usuários, tokens, catálogo
+	// de permissões): leitura e escrita exigem usuarios.gerir.
 	switch seg[0] {
-	case "users", "roles", "tokens", "permissions":
+	case "users", "roles", "user-groups", "tokens", "permissions":
 		return false, db.PermUsuariosGerir
 	}
 
@@ -276,6 +276,13 @@ func permissaoMutacao(seg []string, resto string) string {
 		return db.PermConfigGerir
 	case "engines":
 		return db.PermConfigGerir
+	case "groups":
+		// Grupos de repositórios (feature de consultas): gestão junto de projetos.
+		return db.PermProjetosGerir
+	case "consultas":
+		// Criar consulta, conversar e excluir a própria consulta (o handler de
+		// DELETE ainda checa criador-ou-admin).
+		return db.PermConsultasUsar
 	}
 	return db.PermCuringa
 }

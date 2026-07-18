@@ -16,10 +16,14 @@
     <button class="nav-item" data-view="kanban"><span class="ico">▤</span> Kanban</button>
     <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
     <button class="nav-item" data-view="nova" data-perm="demandas.criar"><span class="ico">＋</span> Nova demanda</button>
+    <button class="nav-item" data-view="consultas" data-perm="consultas.usar"><span class="ico">✆</span> Consultas</button>
     <button class="nav-item" data-view="projetos" data-perm="projetos.gerir"><span class="ico">🗀</span> Projetos</button>
+    <button class="nav-item" data-view="grupos" data-perm="projetos.gerir"><span class="ico">🗂</span> Grupos</button>
     <button class="nav-item" data-view="motores" data-perm="config.gerir"><span class="ico">⚙</span> Motores</button>
     <button class="nav-item" data-view="config" data-perm="config.gerir"><span class="ico">⚒</span> Configurações</button>
     <button class="nav-item" data-view="usuarios" data-perm="usuarios.gerir"><span class="ico">👤</span> Usuários</button>
+    <button class="nav-item" data-view="papeis" data-perm="usuarios.gerir"><span class="ico">🔑</span> Papéis</button>
+    <button class="nav-item" data-view="gusuarios" data-perm="usuarios.gerir"><span class="ico">👥</span> Grupos de usuários</button>
     <button class="nav-item" data-view="manual"><span class="ico">✎</span> Manual</button>
     <div class="nav-user" id="nav-user" hidden></div>
     <div class="nav-foot" id="nav-foot">carregando…</div>
@@ -65,6 +69,21 @@
       <div class="panel" style="max-width:760px" id="painel-nova"></div>
     </section>
 
+    <!-- ======================= CONSULTAS ======================= -->
+    <section class="view" id="view-consultas">
+      <h1 class="page">Consultas</h1>
+      <p class="sub">Pergunte como o sistema se comporta — para elaborar PRDs, entender rotinas ou montar a estratégia de um cliente. O consultor analisa o código e responde em linguagem de negócio, sem expor código-fonte.</p>
+      <div class="two-col">
+        <div>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-nova-consulta">+ Nova consulta</button>
+          <div id="lista-consultas"></div>
+        </div>
+        <div class="panel" id="painel-consulta">
+          <p class="sub" style="margin:0">Selecione uma consulta à esquerda ou inicie uma nova.</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ======================= PROJETOS ======================= -->
     <section class="view" id="view-projetos">
       <h1 class="page">Projetos</h1>
@@ -76,6 +95,21 @@
         </div>
         <div class="panel" id="painel-projeto">
           <p class="sub" style="margin:0">Selecione um projeto à esquerda ou cadastre um novo.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= GRUPOS DE REPOSITÓRIOS ======================= -->
+    <section class="view" id="view-grupos">
+      <h1 class="page">Grupos de repositórios</h1>
+      <p class="sub">Agrupe os repositórios de uma mesma solução (ex.: "Vulcano Chat"). Nas consultas, o primeiro projeto do grupo é o repositório principal e os demais entram como contexto extra. Um projeto pode participar de vários grupos.</p>
+      <div class="two-col">
+        <div>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-grupo">+ Novo grupo</button>
+          <div id="lista-grupos"></div>
+        </div>
+        <div class="panel" id="painel-grupo">
+          <p class="sub" style="margin:0">Selecione um grupo à esquerda ou crie um novo.</p>
         </div>
       </div>
     </section>
@@ -114,8 +148,12 @@
           <p class="sub" style="margin:0">Selecione um usuário à esquerda ou cadastre um novo.</p>
         </div>
       </div>
-      <h2 class="page" style="font-size:18px;margin-top:28px">Papéis</h2>
-      <p class="sub">Um papel é um conjunto de permissões. Vincule papéis aos usuários acima.</p>
+    </section>
+
+    <!-- ======================= PAPÉIS ======================= -->
+    <section class="view" id="view-papeis">
+      <h1 class="page">Papéis</h1>
+      <p class="sub">Um papel é um conjunto de permissões do catálogo. Vincule papéis aos usuários na tela Usuários.</p>
       <div class="two-col">
         <div>
           <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-papel">+ Novo papel</button>
@@ -123,6 +161,21 @@
         </div>
         <div class="panel" id="painel-papel">
           <p class="sub" style="margin:0">Selecione um papel à esquerda ou crie um novo.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= GRUPOS DE USUÁRIOS ======================= -->
+    <section class="view" id="view-gusuarios">
+      <h1 class="page">Grupos de usuários</h1>
+      <p class="sub">Cada grupo define o motor e o modelo usados nas <b>Consultas</b> dos seus membros — dá para dar um modelo mais leve/barato a produto e suporte, já que a consulta só explica comportamento (não produz código de produção). Vincule usuários ao grupo na tela Usuários.</p>
+      <div class="two-col">
+        <div>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-gusuario">+ Novo grupo</button>
+          <div id="lista-gusuarios"></div>
+        </div>
+        <div class="panel" id="painel-gusuario">
+          <p class="sub" style="margin:0">Selecione um grupo à esquerda ou crie um novo.</p>
         </div>
       </div>
     </section>

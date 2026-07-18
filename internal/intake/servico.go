@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
 )
 
@@ -29,6 +30,11 @@ type Servico struct {
 	// Seams de teste (nil em produção):
 	selecionar func(nome string) (motor.Motor, error)
 	agora      func() time.Time
+	// atualizarRepo posiciona o repo do projeto na branch principal e faz o
+	// pull antes da análise/planejamento (default:
+	// gitops.PosicionarBranchPrincipal). O serviço roda num servidor — sem isso
+	// o analista leria um clone defasado ou em outra branch.
+	atualizarRepo func(pasta, branch string) (string, error)
 }
 
 // OpcoesServico configura o Servico. Store e Ctx são obrigatórios.
@@ -37,10 +43,14 @@ type OpcoesServico struct {
 	DirLogs string          // pasta dos .jsonl (PRAXIS_HOME/logs)
 	Ctx     context.Context // ctx de vida do serviço (cancelado no shutdown)
 	Log     func(string)
+	// Git é o Ops compartilhado (mutex por projeto — passe o MESMO do
+	// scheduler). Nil = cria um próprio.
+	Git *gitops.Ops
 
 	// Seams de teste:
-	Selecionar func(nome string) (motor.Motor, error)
-	Agora      func() time.Time
+	Selecionar    func(nome string) (motor.Motor, error)
+	Agora         func() time.Time
+	AtualizarRepo func(pasta, branch string) (string, error)
 }
 
 // NovoServico monta o Servico aplicando defaults nos seams.
@@ -53,13 +63,22 @@ func NovoServico(o OpcoesServico) *Servico {
 	if logf == nil {
 		logf = func(string) {}
 	}
+	atualizar := o.AtualizarRepo
+	if atualizar == nil {
+		g := o.Git
+		if g == nil {
+			g = gitops.Novo()
+		}
+		atualizar = g.PosicionarBranchPrincipal
+	}
 	return &Servico{
-		store:      o.Store,
-		dirLogs:    o.DirLogs,
-		ctx:        ctx,
-		logf:       logf,
-		selecionar: o.Selecionar,
-		agora:      o.Agora,
+		store:         o.Store,
+		dirLogs:       o.DirLogs,
+		ctx:           ctx,
+		logf:          logf,
+		selecionar:    o.Selecionar,
+		agora:         o.Agora,
+		atualizarRepo: atualizar,
 	}
 }
 
@@ -114,6 +133,7 @@ func (s *Servico) montarPlanejador(ctx context.Context, demandaID int64) (*Plane
 	if err != nil {
 		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
 	}
+	s.prepararRepo(ctx, dem, proj)
 	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotor(ctx)
 
 	return &Planejador{
@@ -152,6 +172,7 @@ func (s *Servico) montarAnalista(ctx context.Context, demandaID int64) (*Analist
 	if err != nil {
 		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
 	}
+	s.prepararRepo(ctx, dem, proj)
 	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotor(ctx)
 
 	return &Analista{
@@ -168,6 +189,29 @@ func (s *Servico) montarAnalista(ctx context.Context, demandaID int64) (*Analist
 		Selecionar: s.selecionar,
 		Agora:      s.agora,
 	}, nil
+}
+
+// prepararRepo posiciona o repo do projeto na branch principal e o atualiza
+// antes de o analista/planejador lerem o código (o serviço roda num servidor —
+// o clone pode estar defasado ou em outra branch). Nunca bloqueia a demanda:
+// problemas viram evento (a UI mostra na aba Eventos) e log, e a análise segue
+// com o estado disponível.
+func (s *Servico) prepararRepo(ctx context.Context, dem db.Demanda, proj db.Projeto) {
+	aviso, err := s.atualizarRepo(proj.Pasta, proj.BranchPrincipal)
+	if err != nil {
+		s.logf(fmt.Sprintf("intake: atualizar repo do projeto %q: %v", proj.Nome, err))
+		return
+	}
+	if aviso == "" {
+		return
+	}
+	s.logf(fmt.Sprintf("intake: repo do projeto %q: %s", proj.Nome, aviso))
+	pid, did := proj.ID, dem.ID
+	_, _ = s.store.RegistrarEvento(ctx, db.Evento{
+		ProjectID: &pid, DemandID: &did, Tipo: "aviso",
+		Titulo:  "Praxis: repositório não pôde ser totalmente atualizado",
+		Detalhe: aviso,
+	})
 }
 
 // resolverMotor escolhe o motor de ANÁLISE: o primeiro motor ativo por
