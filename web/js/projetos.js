@@ -136,6 +136,10 @@ function renderEdicao(p) {
 
   if (!criando) {
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
+    painel.append(el("h3", {}, "Acesso ", el("small", {}, "quem enxerga este projeto")));
+    renderAcesso(painel, p);
+
+    painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
     painel.append(el("h3", {}, "Overview do repositório ", el("small", {}, "contexto das consultas")));
     renderOverview(painel, p);
 
@@ -143,6 +147,76 @@ function renderEdicao(p) {
     painel.append(el("h3", {}, "Parâmetros ", el("small", {}, "override do global")));
     renderOverride(painel, p);
   }
+}
+
+// renderAcesso desenha a ACL de visibilidade do projeto: chips de grupos de
+// usuários e de usuários liberados. Nada selecionado = projeto aberto a todos os
+// usuários autenticados; com seleção, só os liberados (além de administradores e
+// de quem gerencia projetos) enxergam o projeto, suas demandas e consultas.
+async function renderAcesso(painel, p) {
+  let acesso;
+  try {
+    acesso = await api.obterAcessoProjeto(p.id);
+  } catch (e) {
+    painel.append(el("p", { class: "sub", text: "Falha ao carregar o acesso: " + e.message }));
+    return;
+  }
+
+  const gruposSel = new Set((acesso.grupos || []).map((g) => g.id));
+  const usuariosSel = new Set((acesso.usuarios || []).map((u) => u.id));
+  const dispGrupos = (acesso.disponiveis && acesso.disponiveis.grupos) || [];
+  const dispUsuarios = (acesso.disponiveis && acesso.disponiveis.usuarios) || [];
+
+  const status = el("div", { class: "hint" });
+  const repintarStatus = () => {
+    status.textContent = gruposSel.size + usuariosSel.size === 0
+      ? "Sem restrição: todos os usuários autenticados enxergam este projeto."
+      : "Restrito: só os grupos/usuários selecionados (e administradores ou quem gerencia projetos) enxergam este projeto, suas demandas e consultas.";
+  };
+
+  // chips toggle (mesmo padrão dos papéis em Usuários).
+  const chipsDe = (itens, selecionados) => {
+    const box = el("div", { class: "papel-chips" });
+    const repintar = () => {
+      limpar(box);
+      if (itens.length === 0) {
+        box.append(el("span", { class: "sub", text: "nenhum cadastrado" }));
+        return;
+      }
+      for (const it of itens) {
+        const on = selecionados.has(it.id);
+        box.append(el("span", { class: "papel-chip" + (on ? " on" : ""), text: it.nome,
+          onclick: () => { on ? selecionados.delete(it.id) : selecionados.add(it.id); repintar(); repintarStatus(); } }));
+      }
+    };
+    repintar();
+    return box;
+  };
+
+  repintarStatus();
+
+  const btnSalvar = el("button", { class: "btn", text: "Salvar acesso" });
+  btnSalvar.onclick = async () => {
+    btnSalvar.disabled = true;
+    try {
+      const salvo = await api.definirAcessoProjeto(p.id, {
+        grupos: [...gruposSel], usuarios: [...usuariosSel],
+      });
+      toast(salvo.restrito ? "Acesso restrito salvo." : "Acesso liberado para todos.", "ok");
+    } catch (e) {
+      bannerErro("Falha ao salvar o acesso: " + e.message);
+      toast("Falha ao salvar.", "err");
+    } finally {
+      btnSalvar.disabled = false;
+    }
+  };
+
+  painel.append(el("div", { class: "form" },
+    el("div", {}, el("label", {}, "Grupos de usuários"), chipsDe(dispGrupos, gruposSel)),
+    el("div", {}, el("label", {}, "Usuários ", el("span", { class: "opt" }, "(acesso individual)")), chipsDe(dispUsuarios, usuariosSel)),
+    status,
+    el("div", { class: "acoes" }, btnSalvar),
+  ));
 }
 
 // renderOverview desenha a edição do overview do repositório: texto de negócio

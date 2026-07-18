@@ -75,6 +75,10 @@ export const api = {
   // pelo harness (202 — acompanhe pelo evento overview_gerado no SSE global).
   salvarOverview: (id, overviewMd) => req("PUT", `/api/v1/projects/${id}/overview`, { overview_md: overviewMd }),
   gerarOverview: (id) => req("POST", `/api/v1/projects/${id}/overview/gerar`),
+  // ACL de visibilidade do projeto: quem (usuários/grupos de usuários) enxerga o
+  // projeto. Listas vazias = aberto a todos. Exige projetos.gerir.
+  obterAcessoProjeto: (id) => req("GET", `/api/v1/projects/${id}/access`),
+  definirAcessoProjeto: (id, acesso) => req("PUT", `/api/v1/projects/${id}/access`, acesso),
 
   // grupos de repositórios (feature de consultas): N:N com projetos; o primeiro
   // project_id é o repositório principal.

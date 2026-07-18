@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/marcos14/praxis-autonomous/internal/auth"
@@ -91,8 +92,74 @@ func (s *Servidor) comAuth(next http.Handler) http.Handler {
 				"você não tem permissão para esta operação (requer '"+permReq+"')")
 			return
 		}
+		// ACL de projetos: barra, por caminho, recursos de projetos que a ACL
+		// esconde deste usuário (projects/{id}…, demands/{id}…, consultas/{id}…,
+		// groups/{id}…). Responde 404 — o cliente não sabe se o recurso existe.
+		visivel, err := s.autorizarVisibilidade(r.Context(), pr, r.URL.Path)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			s.log.Error("checar visibilidade de projeto", "erro", err)
+			responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+			return
+		}
+		if !visivel {
+			responderErro(w, http.StatusNotFound, "nao_encontrado", "recurso não encontrado")
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chaveCtxPrincipal, pr)))
 	})
+}
+
+// filtroVisibilidade devolve o id do usuário quando as leituras dele devem ser
+// restritas pela ACL de projetos (project_access), ou nil para quem enxerga
+// tudo: tokens de API (integrações), modo bootstrap e quem tem projetos.gerir
+// (ou o curinga admin) — quem gerencia projetos gerencia também a própria ACL.
+func filtroVisibilidade(pr *principal) *int64 {
+	if pr == nil || pr.userID <= 0 || pr.tem(db.PermProjetosGerir) {
+		return nil
+	}
+	uid := pr.userID
+	return &uid
+}
+
+// visibilidadeDaRequisicao é o atalho de filtroVisibilidade a partir do
+// principal já resolvido no contexto da requisição.
+func visibilidadeDaRequisicao(r *http.Request) *int64 {
+	return filtroVisibilidade(principalDaRequisicao(r))
+}
+
+// autorizarVisibilidade decide se o principal pode tocar o recurso do caminho
+// segundo a ACL de projetos. Cobre os recursos endereçados por id no caminho:
+// /projects/{id}…, /demands/{id}…, /consultas/{id}… e /groups/{id}… (grupos de
+// repositórios — visíveis só quando TODOS os projetos-membros são visíveis).
+// Ids inválidos e recursos inexistentes passam (o handler responde 400/404);
+// listagens (sem id) são filtradas nos próprios handlers.
+func (s *Servidor) autorizarVisibilidade(ctx context.Context, pr *principal, caminho string) (bool, error) {
+	uid := filtroVisibilidade(pr)
+	if uid == nil || s.banco == nil || !strings.HasPrefix(caminho, "/api/v1/") {
+		return true, nil
+	}
+	seg := strings.Split(strings.TrimPrefix(caminho, "/api/v1/"), "/")
+	if len(seg) < 2 {
+		return true, nil
+	}
+	id, err := strconv.ParseInt(seg[1], 10, 64)
+	if err != nil || id <= 0 {
+		return true, nil // não é um id (ex.: demands/ordem) — o handler decide
+	}
+	switch seg[0] {
+	case "projects":
+		return s.banco.UsuarioVeProjeto(ctx, *uid, id)
+	case "demands":
+		return s.banco.UsuarioVeDemanda(ctx, *uid, id)
+	case "consultas":
+		return s.banco.UsuarioVeConsulta(ctx, *uid, id)
+	case "groups":
+		return s.banco.UsuarioVeGrupoProjetos(ctx, *uid, id)
+	}
+	return true, nil
 }
 
 // resolverPrincipal identifica quem faz a requisição. Devolve errNaoAutorizado
@@ -234,6 +301,13 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 	switch seg[0] {
 	case "users", "roles", "user-groups", "tokens", "permissions":
 		return false, db.PermUsuariosGerir
+	}
+
+	// ACL do projeto (projects/{id}/access): leitura e escrita exigem
+	// projetos.gerir — a leitura expõe usuários/grupos e a escrita muda quem
+	// enxerga o projeto.
+	if seg[0] == "projects" && len(seg) >= 3 && seg[2] == "access" {
+		return false, db.PermProjetosGerir
 	}
 
 	// Leituras (GET/HEAD) das demais rotas: basta autenticação (visualização).

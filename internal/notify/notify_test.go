@@ -100,7 +100,7 @@ func (f *fonteFake) adicionar(e db.Evento) {
 	f.mu.Unlock()
 }
 
-func (f *fonteFake) EventosApos(_ context.Context, aposID int64, _ int) ([]db.Evento, error) {
+func (f *fonteFake) EventosApos(_ context.Context, aposID int64, _ int, _ *int64) ([]db.Evento, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []db.Evento

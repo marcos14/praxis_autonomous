@@ -14,7 +14,7 @@ const intervaloPollPadrao = 2 * time.Second
 // FonteEventos é o mínimo do store que o despachante precisa: tailing dos
 // eventos por id. Satisfeito por *db.DB.
 type FonteEventos interface {
-	EventosApos(ctx context.Context, aposID int64, limite int) ([]db.Evento, error)
+	EventosApos(ctx context.Context, aposID int64, limite int, visiveisPara *int64) ([]db.Evento, error)
 	UltimoEventoID(ctx context.Context) (int64, error)
 }
 
@@ -93,7 +93,7 @@ func (d *Despachante) Rodar(ctx context.Context) {
 // processar lê os eventos após cursor e notifica os que estiverem habilitados;
 // devolve o novo cursor. Config relida a cada ciclo. Best-effort.
 func (d *Despachante) processar(ctx context.Context, cursor int64) int64 {
-	novos, err := d.fonte.EventosApos(ctx, cursor, 0)
+	novos, err := d.fonte.EventosApos(ctx, cursor, 0, nil)
 	if err != nil || len(novos) == 0 {
 		return cursor
 	}

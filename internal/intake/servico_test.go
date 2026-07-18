@@ -177,7 +177,7 @@ func TestServicoAvisoDeRepoViraEvento(t *testing.T) {
 		t.Fatalf("status = %q, quero aguardando_respostas", got.Status)
 	}
 	// …e o aviso virou evento da demanda.
-	eventos, err := d.EventosApos(ctx, 0, 100)
+	eventos, err := d.EventosApos(ctx, 0, 100, nil)
 	if err != nil {
 		t.Fatalf("EventosApos: %v", err)
 	}

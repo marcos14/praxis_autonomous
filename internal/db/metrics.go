@@ -83,13 +83,29 @@ var statusAtivos = []string{
 //   - inicioMes: primeiro dia do mês corrente (gasto do mês, integradas no mês);
 //   - corte7d: hoje menos 7 dias (fases concluídas nos últimos 7 dias);
 //   - corteGrafico: primeiro dia da janela do gráfico de gastos por dia.
-func (d *DB) ResumoHome(ctx context.Context, inicioMes, corte7d, corteGrafico string) (ResumoHome, error) {
+//
+// visiveisPara não-nil restringe todos os agregados às demandas/execuções de
+// projetos visíveis ao usuário pela ACL (project_access); nil = tudo.
+func (d *DB) ResumoHome(ctx context.Context, inicioMes, corte7d, corteGrafico string, visiveisPara *int64) (ResumoHome, error) {
 	var r ResumoHome
+
+	// Condições de acesso reutilizadas: "1=1" quando não há filtro, para as
+	// consultas abaixo poderem concatenar AND sem ramificar.
+	condDemanda, argsDemanda := "1=1", []any{}
+	condRun, argsRun := "1=1", []any{}
+	if visiveisPara != nil {
+		condDemanda = condAcessoProjeto("demands.project_id")
+		argsDemanda = argsAcessoProjeto(*visiveisPara)
+		condRun = `EXISTS (SELECT 1 FROM demands dm WHERE dm.id = runs.demand_id
+			AND ` + condAcessoProjeto("dm.project_id") + `)`
+		argsRun = argsAcessoProjeto(*visiveisPara)
+	}
 
 	// Gasto do mês: soma dos custos das execuções iniciadas no mês.
 	if err := d.Leitor.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(custo_usd),0) FROM runs WHERE substr(iniciado_em,1,10) >= ?`,
-		inicioMes).Scan(&r.GastoMes); err != nil {
+		`SELECT COALESCE(SUM(custo_usd),0) FROM runs
+		 WHERE substr(iniciado_em,1,10) >= ? AND `+condRun,
+		append([]any{inicioMes}, argsRun...)...).Scan(&r.GastoMes); err != nil {
 		return r, fmt.Errorf("resumo home (gasto mês): %w", err)
 	}
 
@@ -100,29 +116,40 @@ func (d *DB) ResumoHome(ctx context.Context, inicioMes, corte7d, corteGrafico st
 		argsAtivos[i] = s
 	}
 	if err := d.Leitor.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM demands WHERE status IN (`+placeholders+`)`, argsAtivos...).
+		`SELECT COUNT(*) FROM demands WHERE status IN (`+placeholders+`) AND `+condDemanda,
+		append(append([]any{}, argsAtivos...), argsDemanda...)...).
 		Scan(&r.DemandasAtivas); err != nil {
 		return r, fmt.Errorf("resumo home (ativas): %w", err)
 	}
 
 	// Fases concluídas nos últimos 7 dias.
+	condFase := "1=1"
+	argsFase := []any{}
+	if visiveisPara != nil {
+		condFase = `EXISTS (SELECT 1 FROM demands dm WHERE dm.id = phases.demand_id
+			AND ` + condAcessoProjeto("dm.project_id") + `)`
+		argsFase = argsAcessoProjeto(*visiveisPara)
+	}
 	if err := d.Leitor.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM phases WHERE status = ? AND substr(concluido_em,1,10) >= ?`,
-		StatusFaseConcluida, corte7d).Scan(&r.FasesConcluidas7d); err != nil {
+		`SELECT COUNT(*) FROM phases
+		 WHERE status = ? AND substr(concluido_em,1,10) >= ? AND `+condFase,
+		append([]any{StatusFaseConcluida, corte7d}, argsFase...)...).Scan(&r.FasesConcluidas7d); err != nil {
 		return r, fmt.Errorf("resumo home (fases 7d): %w", err)
 	}
 
 	// Integradas no mês.
 	if err := d.Leitor.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM demands WHERE status = ? AND substr(atualizado_em,1,10) >= ?`,
-		StatusDemandaIntegrada, inicioMes).Scan(&r.IntegradasMes); err != nil {
+		`SELECT COUNT(*) FROM demands
+		 WHERE status = ? AND substr(atualizado_em,1,10) >= ? AND `+condDemanda,
+		append([]any{StatusDemandaIntegrada, inicioMes}, argsDemanda...)...).Scan(&r.IntegradasMes); err != nil {
 		return r, fmt.Errorf("resumo home (integradas): %w", err)
 	}
 
 	// Aguardando franquia (proxy do tile de franquia enquanto o espelho de
 	// esgotamento por conta não é persistido — ver pendência 1a.n1).
 	if err := d.Leitor.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM demands WHERE status = ?`, StatusDemandaAguardandoFranquia).
+		`SELECT COUNT(*) FROM demands WHERE status = ? AND `+condDemanda,
+		append([]any{StatusDemandaAguardandoFranquia}, argsDemanda...)...).
 		Scan(&r.AguardandoFranquia); err != nil {
 		return r, fmt.Errorf("resumo home (franquia): %w", err)
 	}
@@ -130,8 +157,8 @@ func (d *DB) ResumoHome(ctx context.Context, inicioMes, corte7d, corteGrafico st
 	// Gráfico: gastos por dia na janela.
 	rows, err := d.Leitor.QueryContext(ctx,
 		`SELECT substr(iniciado_em,1,10) AS dia, SUM(custo_usd)
-		 FROM runs WHERE substr(iniciado_em,1,10) >= ?
-		 GROUP BY dia ORDER BY dia`, corteGrafico)
+		 FROM runs WHERE substr(iniciado_em,1,10) >= ? AND `+condRun+`
+		 GROUP BY dia ORDER BY dia`, append([]any{corteGrafico}, argsRun...)...)
 	if err != nil {
 		return r, fmt.Errorf("resumo home (gráfico): %w", err)
 	}
@@ -154,7 +181,9 @@ func (d *DB) ResumoHome(ctx context.Context, inicioMes, corte7d, corteGrafico st
 		`SELECT project_id,
 		        SUM(CASE WHEN status IN (`+placeholders+`) THEN 1 ELSE 0 END) AS ativas,
 		        SUM(custo_usd) AS custo
-		 FROM demands GROUP BY project_id ORDER BY custo DESC`, argsAtivos...)
+		 FROM demands WHERE `+condDemanda+`
+		 GROUP BY project_id ORDER BY custo DESC`,
+		append(append([]any{}, argsAtivos...), argsDemanda...)...)
 	if err != nil {
 		return r, fmt.Errorf("resumo home (por projeto): %w", err)
 	}
@@ -176,18 +205,22 @@ func (d *DB) ResumoHome(ctx context.Context, inicioMes, corte7d, corteGrafico st
 // ListarDemandasPorStatus devolve as demandas cujo status está na lista, na
 // ordem de ListarDemandas (prioridade, id decrescente). Alimenta a lista
 // "Precisa de você" da Home (aguardando_respostas/aguardando_aprovacao/conflito).
-// Slice não-nil.
-func (d *DB) ListarDemandasPorStatus(ctx context.Context, statuses []string) ([]Demanda, error) {
+// visiveisPara não-nil restringe às demandas de projetos visíveis ao usuário
+// pela ACL (nil = tudo — chamadores internos como scheduler/overlap). Slice
+// não-nil.
+func (d *DB) ListarDemandasPorStatus(ctx context.Context, statuses []string, visiveisPara *int64) ([]Demanda, error) {
 	if len(statuses) == 0 {
 		return []Demanda{}, nil
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(statuses)), ",")
+	cond := []string{"status IN (" + placeholders + ")"}
 	args := make([]any, len(statuses))
 	for i, s := range statuses {
 		args[i] = s
 	}
+	cond, args = anexarCondAcesso(cond, args, "demands.project_id", visiveisPara)
 	rows, err := d.Leitor.QueryContext(ctx,
-		`SELECT `+colunasDemanda+` FROM demands WHERE status IN (`+placeholders+`)
+		`SELECT `+colunasDemanda+` FROM demands WHERE `+strings.Join(cond, " AND ")+`
 		 ORDER BY prioridade, id DESC`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listar demandas por status: %w", err)

@@ -60,6 +60,27 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 		responderErro(w, http.StatusBadRequest, "invalido", "mensagem é obrigatória")
 		return
 	}
+	// ACL de projetos: um usuário restrito não abre consulta sobre projeto (ou
+	// grupo de repositórios) que a ACL esconde dele. 404 — sem revelar existência.
+	if uid := visibilidadeDaRequisicao(r); uid != nil {
+		var (
+			ve  bool
+			err error
+		)
+		if req.ProjectID > 0 {
+			ve, err = s.banco.UsuarioVeProjeto(r.Context(), *uid, req.ProjectID)
+		} else {
+			ve, err = s.banco.UsuarioVeGrupoProjetos(r.Context(), *uid, req.GroupID)
+		}
+		if err != nil {
+			s.responderErroConsulta(w, err)
+			return
+		}
+		if !ve {
+			responderErro(w, http.StatusNotFound, "nao_encontrado", "projeto ou grupo não encontrado")
+			return
+		}
+	}
 
 	cons := db.Consulta{Titulo: strings.TrimSpace(req.Titulo), Status: db.StatusConsultaPensando}
 	if req.ProjectID > 0 {
@@ -87,7 +108,8 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 	responderJSON(w, http.StatusCreated, criada)
 }
 
-// handleListarConsultas lista as consultas (filtros ?project= e ?group=).
+// handleListarConsultas lista as consultas (filtros ?project= e ?group=). Para
+// usuários restritos pela ACL, só as consultas de projetos/grupos visíveis.
 func (s *Servidor) handleListarConsultas(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := strconv.ParseInt(r.URL.Query().Get("project"), 10, 64)
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group"), 10, 64)
@@ -96,7 +118,51 @@ func (s *Servidor) handleListarConsultas(w http.ResponseWriter, r *http.Request)
 		s.responderErroConsulta(w, err)
 		return
 	}
+	if uid := visibilidadeDaRequisicao(r); uid != nil {
+		if consultas, err = s.filtrarConsultasVisiveis(r.Context(), *uid, consultas); err != nil {
+			s.responderErroConsulta(w, err)
+			return
+		}
+	}
 	responderJSON(w, http.StatusOK, consultas)
+}
+
+// filtrarConsultasVisiveis descarta as consultas de projetos/grupos que a ACL
+// esconde do usuário, memoizando a decisão por alvo (as consultas se repetem em
+// poucos projetos/grupos).
+func (s *Servidor) filtrarConsultasVisiveis(ctx context.Context, userID int64, consultas []db.Consulta) ([]db.Consulta, error) {
+	memoProj := map[int64]bool{}
+	memoGrupo := map[int64]bool{}
+	visiveis := []db.Consulta{}
+	for _, c := range consultas {
+		ve := true
+		switch {
+		case c.ProjectID != nil:
+			v, ok := memoProj[*c.ProjectID]
+			if !ok {
+				var err error
+				if v, err = s.banco.UsuarioVeProjeto(ctx, userID, *c.ProjectID); err != nil {
+					return nil, err
+				}
+				memoProj[*c.ProjectID] = v
+			}
+			ve = v
+		case c.GroupID != nil:
+			v, ok := memoGrupo[*c.GroupID]
+			if !ok {
+				var err error
+				if v, err = s.banco.UsuarioVeGrupoProjetos(ctx, userID, *c.GroupID); err != nil {
+					return nil, err
+				}
+				memoGrupo[*c.GroupID] = v
+			}
+			ve = v
+		}
+		if ve {
+			visiveis = append(visiveis, c)
+		}
+	}
+	return visiveis, nil
 }
 
 func (s *Servidor) handleObterConsulta(w http.ResponseWriter, r *http.Request) {

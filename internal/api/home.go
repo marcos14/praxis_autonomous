@@ -38,7 +38,8 @@ func (s *Servidor) handleMetricas(w http.ResponseWriter, r *http.Request) {
 
 	const iso = "2006-01-02"
 	resumo, err := s.banco.ResumoHome(r.Context(),
-		inicioMes.Format(iso), corte7d.Format(iso), corteGrafico.Format(iso))
+		inicioMes.Format(iso), corte7d.Format(iso), corteGrafico.Format(iso),
+		visibilidadeDaRequisicao(r))
 	if err != nil {
 		s.log.Error("resumo home", "erro", err)
 		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
@@ -58,7 +59,8 @@ var statusPrecisaDeVoce = []string{
 // handlePendencias devolve as demandas que precisam do usuário (perguntas a
 // responder, plano a aprovar ou conflito a resolver).
 func (s *Servidor) handlePendencias(w http.ResponseWriter, r *http.Request) {
-	demandas, err := s.banco.ListarDemandasPorStatus(r.Context(), statusPrecisaDeVoce)
+	demandas, err := s.banco.ListarDemandasPorStatus(r.Context(), statusPrecisaDeVoce,
+		visibilidadeDaRequisicao(r))
 	if err != nil {
 		s.responderErroDemanda(w, err)
 		return
@@ -79,7 +81,8 @@ func (s *Servidor) handleAtividade(w http.ResponseWriter, r *http.Request) {
 			limite = n
 		}
 	}
-	eventos, err := s.banco.ListarEventos(r.Context(), db.FiltroEventos{Limite: limite})
+	eventos, err := s.banco.ListarEventos(r.Context(), db.FiltroEventos{
+		Limite: limite, VisiveisPara: visibilidadeDaRequisicao(r)})
 	if err != nil {
 		s.log.Error("listar atividade", "erro", err)
 		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")

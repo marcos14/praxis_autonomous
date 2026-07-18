@@ -43,4 +43,5 @@ Nada é forçado: se o repositório tiver mudanças locais, estiver em outra bra
 - A resposta **nunca inclui código-fonte**: um pós-filtro no servidor remove qualquer trecho técnico que escape (aparece como "trecho técnico removido pela política de segurança"). Respostas técnicas demais são recusadas por inteiro.
 - Pedidos de **burlar/contornar** validações ou explorar falhas são recusados. Explicar como uma validação funciona é permitido; ensinar a contorná-la, não.
 - O acesso é controlado pela permissão `consultas.usar` — dá para criar um papel "Suporte"/"Produto" só com ela, sem nenhum acesso a demandas ou configurações.
+- As consultas respeitam o **acesso a projetos**: um projeto restrito (seção Acesso do projeto) não aparece para quem não foi liberado — nem na criação da consulta, nem no histórico; um grupo de repositórios com um projeto restrito some por inteiro. Ver a seção "Usuários, papéis e acesso a projetos".
 - Nota técnica: o harness roda em modo somente leitura no repositório (sem editar, commitar ou push); comandos de leitura do repositório continuam disponíveis a ele — o mesmo modelo de confiança do analista de demandas.

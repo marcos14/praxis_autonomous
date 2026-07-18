@@ -58,8 +58,8 @@ func (s *Servidor) conjuntoArquivosDemanda(ctx context.Context, dem db.Demanda, 
 // cada uma e as interseções par a par. Devolve demandID → lista de sobreposições.
 // A comparação é feita apenas ENTRE demandas do MESMO projeto (branches de
 // projetos distintos não colidem).
-func (s *Servidor) mapaSobreposicoes(ctx context.Context) (map[int64][]Sobreposicao, error) {
-	demandas, err := s.banco.ListarDemandasPorStatus(ctx, statusOverlap)
+func (s *Servidor) mapaSobreposicoes(ctx context.Context, visiveisPara *int64) (map[int64][]Sobreposicao, error) {
+	demandas, err := s.banco.ListarDemandasPorStatus(ctx, statusOverlap, visiveisPara)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func intersecao(a, b map[string]bool) []string {
 // handleOverlaps devolve o mapa demandID → sobreposições (para os badges do
 // kanban). Demandas sem sobreposição não aparecem no mapa.
 func (s *Servidor) handleOverlaps(w http.ResponseWriter, r *http.Request) {
-	mapa, err := s.mapaSobreposicoes(r.Context())
+	mapa, err := s.mapaSobreposicoes(r.Context(), visibilidadeDaRequisicao(r))
 	if err != nil {
 		s.responderErroDemanda(w, err)
 		return
@@ -167,7 +167,9 @@ func (s *Servidor) sobreposicoesDe(ctx context.Context, dem db.Demanda) ([]Sobre
 		return []Sobreposicao{}, nil
 	}
 
-	outras, err := s.banco.ListarDemandasPorStatus(ctx, statusOverlap)
+	// Sem filtro de ACL: a comparação é sempre entre demandas do MESMO projeto
+	// da demanda base — que já passou pelo gate de visibilidade do middleware.
+	outras, err := s.banco.ListarDemandasPorStatus(ctx, statusOverlap, nil)
 	if err != nil {
 		return nil, err
 	}

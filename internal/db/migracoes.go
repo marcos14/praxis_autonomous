@@ -59,6 +59,11 @@ var migracoes = []migracao{
 		nome:   "modelo próprio para consultas e grupos de usuários (engines.modelo_consulta, user_groups, user_group_members)",
 		sql:    schemaGruposUsuarios,
 	},
+	{
+		versao: 9,
+		nome:   "acesso a projetos por usuário e grupo de usuários (project_access)",
+		sql:    schemaAcessoProjetos,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -499,6 +504,31 @@ CREATE TABLE user_group_members (
     group_id INTEGER NOT NULL    REFERENCES user_groups(id) ON DELETE CASCADE
 );
 CREATE INDEX ix_ugm_group ON user_group_members (group_id);
+`
+
+// schemaAcessoProjetos é a migração 9: a ACL de visibilidade de projetos.
+// Cada linha de project_access LIBERA o projeto para um usuário OU para um grupo
+// de usuários (exclusivo, como em consultas.project_id/group_id). A semântica é
+// resolvida na aplicação: projeto SEM nenhuma linha é aberto a todos os usuários
+// autenticados (retrocompatível com bancos existentes); projeto com ≥1 linha só
+// aparece para os usuários liberados — diretamente ou via grupo — além de quem
+// tem projetos.gerir/admin e dos tokens de API (integrações).
+//
+// ON DELETE CASCADE: remover usuário/grupo/projeto limpa os vínculos. Atenção à
+// consequência documentada: se os cascades zerarem a ACL de um projeto restrito,
+// ele volta a ser aberto a todos.
+const schemaAcessoProjetos = `
+CREATE TABLE project_access (
+    project_id INTEGER NOT NULL REFERENCES projects(id)    ON DELETE CASCADE,
+    user_id    INTEGER          REFERENCES users(id)       ON DELETE CASCADE,
+    group_id   INTEGER          REFERENCES user_groups(id) ON DELETE CASCADE,
+    CHECK ((user_id IS NOT NULL AND group_id IS NULL) OR
+           (user_id IS NULL     AND group_id IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX ux_project_access_user  ON project_access (project_id, user_id)  WHERE user_id  IS NOT NULL;
+CREATE UNIQUE INDEX ux_project_access_group ON project_access (project_id, group_id) WHERE group_id IS NOT NULL;
+CREATE INDEX ix_project_access_project ON project_access (project_id);
 `
 
 // schemaTokens é a migração 5: os tokens de API do sistema de chamados (Fase

@@ -46,6 +46,89 @@ func (s *Servidor) registrarRotasProjetos(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/projects/{id}", s.handleAtualizarProjeto)
 	mux.HandleFunc("PUT /api/v1/projects/{id}/overview", s.handleSalvarOverview)
 	mux.HandleFunc("POST /api/v1/projects/{id}/overview/gerar", s.handleGerarOverview)
+	// ACL de visibilidade do projeto (quem enxerga o projeto — usuários/grupos).
+	// Leitura e escrita exigem projetos.gerir (ver requisitoRota).
+	mux.HandleFunc("GET /api/v1/projects/{id}/access", s.handleObterAcesso)
+	mux.HandleFunc("PUT /api/v1/projects/{id}/access", s.handleDefinirAcesso)
+}
+
+// reqAcesso é o corpo de PUT /projects/{id}/access: as listas COMPLETAS de ids
+// liberados (substituição, não incremento). Ambas vazias = projeto aberto a
+// todos os usuários autenticados.
+type reqAcesso struct {
+	Usuarios []int64 `json:"usuarios"`
+	Grupos   []int64 `json:"grupos"`
+}
+
+// respAcesso devolve a ACL atual mais as opções disponíveis (usuários ativos e
+// grupos de usuários) para a UI montar os seletores — sem exigir usuarios.gerir
+// de quem só gerencia projetos.
+type respAcesso struct {
+	db.AcessoProjeto
+	Disponiveis struct {
+		Usuarios []db.RefAcesso `json:"usuarios"`
+		Grupos   []db.RefAcesso `json:"grupos"`
+	} `json:"disponiveis"`
+}
+
+// handleObterAcesso devolve a ACL do projeto e as opções para os seletores.
+func (s *Servidor) handleObterAcesso(w http.ResponseWriter, r *http.Request) {
+	id, ok := lerIDProjeto(w, r)
+	if !ok {
+		return
+	}
+	resp, err := s.montarRespAcesso(r, id)
+	if err != nil {
+		s.responderErroProjeto(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, resp)
+}
+
+// handleDefinirAcesso substitui a ACL do projeto pelas listas do corpo e devolve
+// a ACL resultante (mesmo formato do GET).
+func (s *Servidor) handleDefinirAcesso(w http.ResponseWriter, r *http.Request) {
+	id, ok := lerIDProjeto(w, r)
+	if !ok {
+		return
+	}
+	var req reqAcesso
+	if !decodificarCorpo(w, r, &req) {
+		return
+	}
+	if err := s.banco.DefinirAcessoProjeto(r.Context(), id, req.Usuarios, req.Grupos); err != nil {
+		if errors.Is(err, db.ErrNaoEncontrado) {
+			responderErro(w, http.StatusNotFound, "nao_encontrado",
+				"projeto, usuário ou grupo não encontrado")
+			return
+		}
+		s.responderErroProjeto(w, err)
+		return
+	}
+	resp, err := s.montarRespAcesso(r, id)
+	if err != nil {
+		s.responderErroProjeto(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, resp)
+}
+
+// montarRespAcesso monta a resposta dos endpoints de ACL: a ACL persistida do
+// projeto mais as opções de usuários/grupos para os seletores da UI.
+func (s *Servidor) montarRespAcesso(r *http.Request, projectID int64) (respAcesso, error) {
+	var resp respAcesso
+	acesso, err := s.banco.ObterAcessoProjeto(r.Context(), projectID)
+	if err != nil {
+		return resp, err
+	}
+	resp.AcessoProjeto = acesso
+	if resp.Disponiveis.Usuarios, err = s.banco.ListarRefsUsuarios(r.Context()); err != nil {
+		return resp, err
+	}
+	if resp.Disponiveis.Grupos, err = s.banco.ListarRefsGruposUsuarios(r.Context()); err != nil {
+		return resp, err
+	}
+	return resp, nil
 }
 
 // reqOverview é o corpo de PUT /projects/{id}/overview (edição manual).
@@ -134,9 +217,19 @@ func (s *Servidor) handleCriarProjeto(w http.ResponseWriter, r *http.Request) {
 	responderJSON(w, http.StatusCreated, criado)
 }
 
-// handleListarProjetos devolve todos os projetos ordenados por nome.
+// handleListarProjetos devolve os projetos ordenados por nome — todos para quem
+// enxerga tudo (projetos.gerir/admin, tokens), só os visíveis pela ACL para os
+// demais usuários.
 func (s *Servidor) handleListarProjetos(w http.ResponseWriter, r *http.Request) {
-	projetos, err := s.banco.ListarProjetos(r.Context())
+	var (
+		projetos []db.Projeto
+		err      error
+	)
+	if uid := visibilidadeDaRequisicao(r); uid != nil {
+		projetos, err = s.banco.ListarProjetosVisiveis(r.Context(), *uid)
+	} else {
+		projetos, err = s.banco.ListarProjetos(r.Context())
+	}
 	if err != nil {
 		s.responderErroProjeto(w, err)
 		return

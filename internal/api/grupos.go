@@ -56,6 +56,22 @@ func (s *Servidor) handleListarGrupos(w http.ResponseWriter, r *http.Request) {
 		s.responderErroGrupo(w, err)
 		return
 	}
+	// ACL de projetos: um grupo de repositórios só aparece para o usuário
+	// restrito quando TODOS os projetos-membros são visíveis (fail-closed).
+	if uid := visibilidadeDaRequisicao(r); uid != nil {
+		visiveis := grupos[:0]
+		for _, g := range grupos {
+			ve, err := s.banco.UsuarioVeGrupoProjetos(r.Context(), *uid, g.ID)
+			if err != nil {
+				s.responderErroGrupo(w, err)
+				return
+			}
+			if ve {
+				visiveis = append(visiveis, g)
+			}
+		}
+		grupos = visiveis
+	}
 	responderJSON(w, http.StatusOK, grupos)
 }
 

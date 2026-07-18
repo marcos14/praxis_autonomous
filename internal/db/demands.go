@@ -59,6 +59,9 @@ type Demanda struct {
 type FiltroDemandas struct {
 	ProjectID *int64 // filtra por projeto quando não-nil
 	Status    string // filtra por status quando não-vazio
+	// VisiveisPara restringe às demandas de projetos visíveis ao usuário pela
+	// ACL (project_access) quando não-nil. nil = sem filtro (quem enxerga tudo).
+	VisiveisPara *int64
 }
 
 // colunasDemanda lista as colunas de demands na ordem esperada por scanDemanda.
@@ -183,6 +186,9 @@ func (d *DB) ListarDemandas(ctx context.Context, f FiltroDemandas) ([]Demanda, e
 		cond = append(cond, "status = ?")
 		args = append(args, f.Status)
 	}
+	// Coluna qualificada (demands.project_id): dentro do EXISTS da condição de
+	// acesso, "project_id" sem qualificação resolveria para project_access.
+	cond, args = anexarCondAcesso(cond, args, "demands.project_id", f.VisiveisPara)
 	if len(cond) > 0 {
 		sqlStr += " WHERE " + strings.Join(cond, " AND ")
 	}
@@ -237,6 +243,7 @@ func (d *DB) ListarDemandasResumo(ctx context.Context, f FiltroDemandas) ([]Dema
 		cond = append(cond, "d.status = ?")
 		args = append(args, f.Status)
 	}
+	cond, args = anexarCondAcesso(cond, args, "d.project_id", f.VisiveisPara)
 	if len(cond) > 0 {
 		sqlStr += " WHERE " + strings.Join(cond, " AND ")
 	}

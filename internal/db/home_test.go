@@ -51,7 +51,7 @@ func TestResumoHomeAgregados(t *testing.T) {
 		t.Fatalf("criar d4: %v", err)
 	}
 
-	r, err := d.ResumoHome(ctx, "2000-01-01", "2000-01-01", "2000-01-01")
+	r, err := d.ResumoHome(ctx, "2000-01-01", "2000-01-01", "2000-01-01", nil)
 	if err != nil {
 		t.Fatalf("ResumoHome: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestListarDemandasPorStatus(t *testing.T) {
 	mk(StatusDemandaExecutando) // não deve entrar
 
 	pend, err := d.ListarDemandasPorStatus(ctx, []string{
-		StatusDemandaAguardandoRespostas, StatusDemandaAguardandoAprovacao, StatusDemandaConflito})
+		StatusDemandaAguardandoRespostas, StatusDemandaAguardandoAprovacao, StatusDemandaConflito}, nil)
 	if err != nil {
 		t.Fatalf("ListarDemandasPorStatus: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestListarDemandasPorStatus(t *testing.T) {
 		t.Fatalf("pendências = %d, quero 3", len(pend))
 	}
 
-	vazio, err := d.ListarDemandasPorStatus(ctx, nil)
+	vazio, err := d.ListarDemandasPorStatus(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("lista vazia: %v", err)
 	}

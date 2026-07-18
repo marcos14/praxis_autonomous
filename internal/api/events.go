@@ -65,13 +65,13 @@ func (s *Servidor) handleEventosGlobais(w http.ResponseWriter, r *http.Request) 
 	fmt.Fprint(w, ": conectado\n\n")
 	flusher.Flush()
 
-	s.transmitirEventos(r.Context(), w, flusher, cursor)
+	s.transmitirEventos(r.Context(), w, flusher, cursor, visibilidadeDaRequisicao(r))
 }
 
 // transmitirEventos é o laço do SSE global: a cada ciclo lê os eventos com id >
 // cursor e os emite, avançando o cursor. Emite um heartbeat quando fica muito
 // tempo sem novidade. Retorna quando o contexto é cancelado.
-func (s *Servidor) transmitirEventos(ctx context.Context, w io.Writer, flusher http.Flusher, cursor int64) {
+func (s *Servidor) transmitirEventos(ctx context.Context, w io.Writer, flusher http.Flusher, cursor int64, visiveisPara *int64) {
 	intervalo := s.intervaloPollEventos
 	if intervalo <= 0 {
 		intervalo = intervaloPollEventosPadrao
@@ -81,7 +81,7 @@ func (s *Servidor) transmitirEventos(ctx context.Context, w io.Writer, flusher h
 
 	ultimoTrafego := time.Now()
 	for {
-		novos, err := s.banco.EventosApos(ctx, cursor, 0)
+		novos, err := s.banco.EventosApos(ctx, cursor, 0, visiveisPara)
 		if err == nil && len(novos) > 0 {
 			for _, ev := range novos {
 				enviarEventoSSE(w, "evento", serializarEvento(ev))

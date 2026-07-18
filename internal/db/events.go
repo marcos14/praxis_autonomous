@@ -26,6 +26,9 @@ type FiltroEventos struct {
 	ProjectID *int64 // filtra por projeto quando não-nil
 	DemandID  *int64 // filtra por demanda quando não-nil
 	Limite    int    // máximo de linhas (mais recentes primeiro); <= 0 = sem limite
+	// VisiveisPara restringe aos eventos de projetos visíveis ao usuário pela
+	// ACL quando não-nil (eventos sem projeto — globais — sempre passam).
+	VisiveisPara *int64
 }
 
 // colunasEvento lista as colunas de events na ordem esperada por scanEvento.
@@ -67,14 +70,23 @@ func (d *DB) RegistrarEvento(ctx context.Context, e Evento) (Evento, error) {
 // EventosApos devolve os eventos com id > aposID em ordem CRESCENTE (id
 // crescente), para o tailing incremental do SSE global (Fase 4a). limite <= 0
 // aplica um teto de segurança (evita despejar um backlog enorme num cliente que
-// acabou de conectar com aposID=0). Slice não-nil.
-func (d *DB) EventosApos(ctx context.Context, aposID int64, limite int) ([]Evento, error) {
+// acabou de conectar com aposID=0). visiveisPara não-nil restringe aos eventos
+// de projetos visíveis ao usuário pela ACL (eventos sem projeto sempre passam).
+// Slice não-nil.
+func (d *DB) EventosApos(ctx context.Context, aposID int64, limite int, visiveisPara *int64) ([]Evento, error) {
 	if limite <= 0 {
 		limite = 500
 	}
+	cond := []string{"id > ?"}
+	args := []any{aposID}
+	if visiveisPara != nil {
+		cond = append(cond, "(project_id IS NULL OR "+condAcessoProjeto("events.project_id")+")")
+		args = append(args, argsAcessoProjeto(*visiveisPara)...)
+	}
+	args = append(args, limite)
 	rows, err := d.Leitor.QueryContext(ctx,
-		`SELECT `+colunasEvento+` FROM events WHERE id > ? ORDER BY id ASC LIMIT ?`,
-		aposID, limite)
+		`SELECT `+colunasEvento+` FROM events WHERE `+strings.Join(cond, " AND ")+
+			` ORDER BY id ASC LIMIT ?`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("eventos após %d: %w", aposID, err)
 	}
@@ -132,6 +144,10 @@ func (d *DB) ListarEventos(ctx context.Context, f FiltroEventos) ([]Evento, erro
 	if f.DemandID != nil {
 		cond = append(cond, "demand_id = ?")
 		args = append(args, *f.DemandID)
+	}
+	if f.VisiveisPara != nil {
+		cond = append(cond, "(project_id IS NULL OR "+condAcessoProjeto("events.project_id")+")")
+		args = append(args, argsAcessoProjeto(*f.VisiveisPara)...)
 	}
 	if len(cond) > 0 {
 		sqlStr += " WHERE " + strings.Join(cond, " AND ")
