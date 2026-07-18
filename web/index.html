@@ -13,18 +13,37 @@
   <nav class="sidebar">
     <div class="logo">Praxis <span>Autonomous</span><small>orquestrador de desenvolvimento</small></div>
     <button class="nav-item" data-view="home"><span class="ico">◎</span> Home</button>
-    <button class="nav-item" data-view="kanban"><span class="ico">▤</span> Kanban</button>
-    <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
-    <button class="nav-item" data-view="nova" data-perm="demandas.criar"><span class="ico">＋</span> Nova demanda</button>
-    <button class="nav-item" data-view="consultas" data-perm="consultas.usar"><span class="ico">✆</span> Consultas</button>
-    <button class="nav-item" data-view="projetos" data-perm="projetos.gerir"><span class="ico">🗀</span> Projetos</button>
-    <button class="nav-item" data-view="grupos" data-perm="projetos.gerir"><span class="ico">🗂</span> Grupos</button>
-    <button class="nav-item" data-view="motores" data-perm="config.gerir"><span class="ico">⚙</span> Motores</button>
-    <button class="nav-item" data-view="config" data-perm="config.gerir"><span class="ico">⚒</span> Configurações</button>
-    <button class="nav-item" data-view="usuarios" data-perm="usuarios.gerir"><span class="ico">👤</span> Usuários</button>
-    <button class="nav-item" data-view="papeis" data-perm="usuarios.gerir"><span class="ico">🔑</span> Papéis</button>
-    <button class="nav-item" data-view="gusuarios" data-perm="usuarios.gerir"><span class="ico">👥</span> Grupos de usuários</button>
-    <button class="nav-item" data-view="manual"><span class="ico">✎</span> Manual</button>
+
+    <!-- Grupos de menu: o app.js esconde o grupo inteiro quando nenhum item
+         fica visível para as permissões do usuário. -->
+    <div class="nav-group">
+      <div class="nav-group-title">Trabalho</div>
+      <button class="nav-item" data-view="kanban"><span class="ico">▤</span> Kanban</button>
+      <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
+      <button class="nav-item" data-view="nova" data-perm="demandas.criar"><span class="ico">＋</span> Nova demanda</button>
+      <button class="nav-item" data-view="consultas" data-perm="consultas.usar"><span class="ico">✆</span> Consultas</button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-title">Projetos</div>
+      <button class="nav-item" data-view="projetos" data-perm="projetos.gerir"><span class="ico">🗀</span> Projetos</button>
+      <button class="nav-item" data-view="grupos" data-perm="projetos.gerir"><span class="ico">🗂</span> Grupos de repositórios</button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-title">Acessos</div>
+      <button class="nav-item" data-view="usuarios" data-perm="usuarios.gerir"><span class="ico">👤</span> Usuários</button>
+      <button class="nav-item" data-view="papeis" data-perm="usuarios.gerir"><span class="ico">🔑</span> Papéis</button>
+      <button class="nav-item" data-view="gusuarios" data-perm="usuarios.gerir"><span class="ico">👥</span> Grupos de usuários</button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-title">Sistema</div>
+      <button class="nav-item" data-view="motores" data-perm="config.gerir"><span class="ico">⚙</span> Motores</button>
+      <button class="nav-item" data-view="config" data-perm="config.gerir"><span class="ico">⚒</span> Configurações</button>
+    </div>
+
+    <button class="nav-item nav-manual" data-view="manual"><span class="ico">✎</span> Manual</button>
     <div class="nav-user" id="nav-user" hidden></div>
     <div class="nav-foot" id="nav-foot">carregando…</div>
   </nav>

@@ -119,6 +119,10 @@ function aplicarPermissoes() {
   document.querySelectorAll(".nav-item[data-perm]").forEach((n) => {
     n.hidden = !auth.temPermissao(n.dataset.perm);
   });
+  // Um grupo de menu sem nenhum item visível some por inteiro (título incluso).
+  document.querySelectorAll(".nav-group").forEach((g) => {
+    g.hidden = !g.querySelector(".nav-item:not([hidden])");
+  });
   const u = auth.usuarioAtual();
   const box = document.getElementById("nav-user");
   if (box && u) {
