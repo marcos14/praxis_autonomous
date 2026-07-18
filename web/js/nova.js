@@ -26,12 +26,16 @@ export async function montarNovaDemanda() {
   const selProj = el("select", {},
     ...projetos.map((p) => el("option", { value: String(p.id), text: p.nome })));
   const inpTitulo = el("input", { type: "text", placeholder: "Opcional — se vazio, usamos a primeira linha do PRD" });
+  const inpBranch = el("input", { type: "text", placeholder: "Opcional — ex.: painel-home (vira praxis/painel-home)" });
   const txtPRD = el("textarea", { placeholder: "Cole aqui o PRD ou descreva o chamado…", rows: "10" });
   const btn = el("button", { class: "btn", text: "Criar demanda" });
 
   const form = el("div", { class: "form" },
     el("div", {}, el("label", { text: "Projeto" }), selProj),
     el("div", {}, el("label", { text: "Título" }), inpTitulo),
+    el("div", {}, el("label", { text: "Branch" }), inpBranch,
+      el("p", { class: "sub", style: "margin:4px 0 0",
+        text: "Em branco, geramos praxis/d<id>-<título>. O prefixo praxis/ é sempre adicionado." })),
     el("div", {}, el("label", { text: "PRD / descrição do chamado" }), txtPRD),
     el("div", { class: "acoes" }, btn),
   );
@@ -47,12 +51,14 @@ export async function montarNovaDemanda() {
     try {
       const d = await api.criarDemandaChat(selProj.value, {
         titulo: inpTitulo.value.trim(),
+        branch: inpBranch.value.trim(),
         prd,
       });
       bannerErro("");
       toast("Demanda #" + d.id + " criada.", "ok");
       // limpa o formulário e abre o card da demanda recém-criada.
       inpTitulo.value = "";
+      inpBranch.value = "";
       txtPRD.value = "";
       location.hash = "demandas";
       await abrirCard(d.id);

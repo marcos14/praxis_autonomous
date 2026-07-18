@@ -7,7 +7,12 @@ import (
 	"strings"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/gitops"
 )
+
+// msgBranchInvalida é a mensagem de erro (400) quando o nome de branch informado
+// na criação da demanda não é uma ref git válida.
+const msgBranchInvalida = "nome de branch inválido: use apenas letras, números e - _ . / (o prefixo praxis/ é adicionado automaticamente)"
 
 // reqFaseNova é uma fase informada na criação de uma demanda manual (sem intake)
 // ou na edição do plano na aba Plano & Fases (Fase 3c).
@@ -28,14 +33,18 @@ type reqFaseNova struct {
 //   - com PRD e sem fases: intake por chat da Fase 3a — a demanda nasce como
 //     conversa (status recebida), com o PRD colado como a primeira mensagem.
 type reqDemanda struct {
-	Titulo     string        `json:"titulo"`
-	Origem     string        `json:"origem"`
-	OrigemRef  string        `json:"origem_ref"`
-	Prioridade int           `json:"prioridade"`
-	BudgetUSD  float64       `json:"budget_usd"`
-	PlanoMD    string        `json:"plano_md"`
-	PRD        string        `json:"prd"`
-	Fases      []reqFaseNova `json:"fases"`
+	Titulo     string  `json:"titulo"`
+	Origem     string  `json:"origem"`
+	OrigemRef  string  `json:"origem_ref"`
+	Prioridade int     `json:"prioridade"`
+	BudgetUSD  float64 `json:"budget_usd"`
+	PlanoMD    string  `json:"plano_md"`
+	PRD        string  `json:"prd"`
+	// Branch e o nome de branch escolhido pelo dev (opcional). Vazio → o pipeline
+	// gera praxis/d<id>-<slug> na preparacao. O prefixo praxis/ e sempre garantido
+	// (gitops.NormalizarBranch), pois push/worktree so operam nesse prefixo.
+	Branch string        `json:"branch"`
+	Fases  []reqFaseNova `json:"fases"`
 }
 
 // respDemanda serializa a demanda criada junto de suas fases.
@@ -128,6 +137,12 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 		titulo = tituloDePRD(prd)
 	}
 
+	branch, err := gitops.NormalizarBranch(req.Branch)
+	if err != nil {
+		responderErro(w, http.StatusBadRequest, "invalido", msgBranchInvalida)
+		return
+	}
+
 	dem := db.Demanda{
 		ProjectID:  projectID,
 		Titulo:     titulo,
@@ -137,6 +152,7 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 		Prioridade: req.Prioridade,
 		PlanoMD:    req.PlanoMD,
 		BudgetUSD:  req.BudgetUSD,
+		Branch:     branch,
 	}
 	criada, _, err := s.banco.CriarDemandaComChat(r.Context(), dem, db.MensagemChat{
 		Papel:    db.PapelUser,
@@ -287,6 +303,11 @@ func montarDemanda(projectID int64, req reqDemanda) (db.Demanda, []db.Fase, stri
 		return db.Demanda{}, nil, msg
 	}
 
+	branch, err := gitops.NormalizarBranch(req.Branch)
+	if err != nil {
+		return db.Demanda{}, nil, msgBranchInvalida
+	}
+
 	dem := db.Demanda{
 		ProjectID:  projectID,
 		Titulo:     titulo,
@@ -296,6 +317,7 @@ func montarDemanda(projectID int64, req reqDemanda) (db.Demanda, []db.Fase, stri
 		Prioridade: req.Prioridade,
 		PlanoMD:    req.PlanoMD,
 		BudgetUSD:  req.BudgetUSD,
+		Branch:     branch,
 	}
 	return dem, fases, ""
 }

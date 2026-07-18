@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -18,6 +19,37 @@ const PrefixoBranch = "praxis/"
 // ErrBranchNaoPraxis sinaliza que uma operacao restrita (push, worktree add) foi
 // pedida para uma branch fora do prefixo praxis/.
 var ErrBranchNaoPraxis = errors.New("gitops: operacao permitida apenas em branches praxis/*")
+
+// ErrBranchInvalida sinaliza que o nome de branch informado pelo usuario, apos
+// retirar o prefixo praxis/, nao e um sufixo de ref git valido.
+var ErrBranchInvalida = errors.New("gitops: nome de branch invalido")
+
+// reSufixoBranch valida o sufixo de uma branch praxis/<sufixo>: comeca por
+// letra/digito e segue com letras, digitos, ponto, hifen, sublinhado ou barra.
+var reSufixoBranch = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+// NomeBranch valida e normaliza o nome de branch ESCOLHIDO pelo usuario na
+// criacao da demanda, garantindo o prefixo praxis/ (push e worktree add so operam
+// nesse prefixo — ver validarBranchPraxis). Regras:
+//   - entrada vazia devolve "" (o pipeline cai no nome automatico
+//     praxis/d<id>-<slug>);
+//   - um praxis/ ja digitado nao e duplicado;
+//   - o sufixo precisa ser uma ref git valida: sem espacos, sem ".." nem "//",
+//     sem terminar em ponto — caso contrario devolve ErrBranchInvalida.
+func NormalizarBranch(entrada string) (string, error) {
+	s := strings.TrimSpace(entrada)
+	if s == "" {
+		return "", nil
+	}
+	s = strings.TrimPrefix(s, PrefixoBranch)
+	s = strings.Trim(s, "/")
+	if s == "" || !reSufixoBranch.MatchString(s) ||
+		strings.Contains(s, "..") || strings.Contains(s, "//") ||
+		strings.HasSuffix(s, ".") {
+		return "", ErrBranchInvalida
+	}
+	return PrefixoBranch + s, nil
+}
 
 // Ops encapsula as operacoes git com serializacao por repositorio: um mutex por
 // projeto garante que operacoes que mudam refs/worktrees do mesmo repo nunca

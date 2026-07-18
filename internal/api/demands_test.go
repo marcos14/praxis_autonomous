@@ -262,3 +262,26 @@ func TestCriarDemandaDependenciaInexistente(t *testing.T) {
 		t.Fatalf("status = %d, quero 400 (corpo=%q)", rec.Code, rec.Body.String())
 	}
 }
+
+func TestCriarDemandaChatComBranch(t *testing.T) {
+	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
+	proj := criarProjetoTeste(t, srv)
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/projects/"+strconv.FormatInt(proj, 10)+"/demands",
+		map[string]any{"prd": "Criar um painel na home", "branch": "painel-home"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, quero 201 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	if b := decodDemanda(t, rec).Branch; b != "praxis/painel-home" {
+		t.Fatalf("branch = %q, quero praxis/painel-home", b)
+	}
+}
+
+func TestCriarDemandaChatBranchInvalida(t *testing.T) {
+	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
+	proj := criarProjetoTeste(t, srv)
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/projects/"+strconv.FormatInt(proj, 10)+"/demands",
+		map[string]any{"prd": "x", "branch": "com espaco"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quero 400 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+}

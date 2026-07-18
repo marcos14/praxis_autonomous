@@ -448,3 +448,43 @@ func TestDiffNames(t *testing.T) {
 		t.Fatalf("DiffNames = %v, quero conter novo.txt e a.txt", nomes)
 	}
 }
+
+func TestNormalizarBranch(t *testing.T) {
+	casos := []struct {
+		nome    string
+		entrada string
+		quer    string
+		erro    bool
+	}{
+		{"vazio cai no automatico", "", "", false},
+		{"so espacos cai no automatico", "   ", "", false},
+		{"sufixo simples ganha prefixo", "painel-home", "praxis/painel-home", false},
+		{"apara espacos das pontas", "  feat_x  ", "praxis/feat_x", false},
+		{"prefixo ja digitado nao duplica", "praxis/feat-x", "praxis/feat-x", false},
+		{"hierarquia com barra e mantida", "marco/painel", "praxis/marco/painel", false},
+		{"barras nas pontas sao aparadas", "/feat/", "praxis/feat", false},
+		{"espaco no meio e invalido", "feat x", "", true},
+		{"duplo ponto e invalido", "feat..x", "", true},
+		{"barra dupla e invalida", "a//b", "", true},
+		{"termina em ponto e invalido", "feat.", "", true},
+		{"so o prefixo e invalido", "praxis/", "", true},
+		{"caractere proibido e invalido", "feat~x", "", true},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			got, err := NormalizarBranch(c.entrada)
+			if c.erro {
+				if err == nil {
+					t.Fatalf("NormalizarBranch(%q) = %q, quero erro", c.entrada, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizarBranch(%q) erro inesperado: %v", c.entrada, err)
+			}
+			if got != c.quer {
+				t.Fatalf("NormalizarBranch(%q) = %q, quero %q", c.entrada, got, c.quer)
+			}
+		})
+	}
+}

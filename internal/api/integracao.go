@@ -23,6 +23,7 @@ func (s *Servidor) registrarRotasIntegracao(mux *http.ServeMux) {
 type respMergePreview struct {
 	Branch               string              `json:"branch"`
 	Base                 string              `json:"base"`
+	WorktreePath         string              `json:"worktree_path"` // caminho da worktree no servidor ("" após integrar)
 	ModoIntegracao       string              `json:"modo_integracao"`
 	URLMR                string              `json:"url_mr"`
 	CommitsNaoPublicados int                 `json:"commits_nao_publicados"`
@@ -30,8 +31,8 @@ type respMergePreview struct {
 	Limpo                bool                `json:"limpo"`
 	Conflitos            []string            `json:"conflitos"`
 	Aviso                string              `json:"aviso,omitempty"`
-	Status               string              `json:"status"`        // status atual da demanda (pode ter mudado na reconciliação)
-	JaIntegrada          bool                `json:"ja_integrada"`  // true = branch já mesclada na main
+	Status               string              `json:"status"`       // status atual da demanda (pode ter mudado na reconciliação)
+	JaIntegrada          bool                `json:"ja_integrada"` // true = branch já mesclada na main
 }
 
 // handleMergePreview devolve o preview de integração da demanda com a main:
@@ -65,6 +66,7 @@ func (s *Servidor) handleMergePreview(w http.ResponseWriter, r *http.Request) {
 	resp := respMergePreview{
 		Branch:         dem.Branch,
 		Base:           base,
+		WorktreePath:   strings.TrimSpace(dem.WorktreePath),
 		ModoIntegracao: proj.ModoIntegracao,
 		Status:         dem.Status,
 		JaIntegrada:    dem.Status == db.StatusDemandaIntegrada,

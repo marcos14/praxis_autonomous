@@ -3,7 +3,7 @@
 // arrastar, filtros ricos) — isso é o M4; aqui é a porta de entrada para o card.
 
 import { api } from "./api.js";
-import { el, limpar, bannerErro } from "./ui.js";
+import { el, limpar, bannerErro, toast } from "./ui.js";
 
 let projetos = [];
 let filtro = { project: "", status: "" };
@@ -192,8 +192,11 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
   }
   abas.push(["Chat / PRD", corpoChat, () => ativarChat(corpoChat, id)]);
   abas.push(["Plano & Fases", corpoFases, null]);
-  // Aba Integração (Fases 4c/4d): só quando a demanda já tem branch.
-  const temIntegracao = !!dados.branch;
+  // Aba Integração (Fases 4c/4d): só quando a branch já foi criada de fato — ou
+  // seja, quando existe a worktree (preenchida na preparação) ou a demanda já foi
+  // integrada. Não basta ter `branch`: o dev pode ter nomeado a branch na criação
+  // antes de a execução criá-la no git.
+  const temIntegracao = !!dados.worktree_path || dados.status === "integrada";
   if (temIntegracao) {
     abas.push(["Integração", corpoIntegr, () => ativarIntegracao(corpoIntegr, id, overlay)]);
   }
@@ -527,6 +530,15 @@ async function ativarIntegracao(cont, id, overlay) {
     el("div", {},
       el("div", { class: "integr-branch", text: mp.branch }),
       el("div", { class: "sub", style: "margin:2px 0 0", text: `alvo: ${mp.base} · modo: ${mp.modo_integracao}` }),
+      mp.worktree_path ? el("div", { class: "sub wt-linha", style: "margin:6px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+        el("span", { text: "worktree (servidor):" }),
+        el("code", { class: "wt-path", text: mp.worktree_path }),
+        el("button", { class: "btn sm ghost", text: "copiar",
+          onclick: async () => {
+            try { await navigator.clipboard.writeText(mp.worktree_path); toast("Caminho copiado.", "ok"); }
+            catch { toast("Não foi possível copiar.", "err"); }
+          } }),
+      ) : null,
     ),
   ));
 
