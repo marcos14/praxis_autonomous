@@ -2,6 +2,8 @@
 // decodificado ou lança um ErroAPI com o código/mensagem padronizados do
 // backend (envelope {erro:{codigo,mensagem}}).
 
+import { tokenAtual, logout } from "./auth.js";
+
 // ErroAPI carrega o status HTTP e o código estável do backend, além da
 // mensagem legível. As telas usam .mensagem para exibir e .codigo/.status para
 // decidir tratamento (ex.: 409 slug_duplicado).
@@ -16,8 +18,12 @@ export class ErroAPI extends Error {
 
 // req executa uma requisição JSON e trata o envelope de erro padronizado.
 // Devolve o corpo decodificado (ou null em 204). Lança ErroAPI em status >= 400.
+// Anexa o JWT da sessão (Authorization: Bearer) quando há token; em 401 (sessão
+// expirada/inválida) derruba a sessão para a shell exibir o login.
 async function req(metodo, caminho, corpo) {
   const opts = { method: metodo, headers: {} };
+  const tok = tokenAtual();
+  if (tok) opts.headers["Authorization"] = "Bearer " + tok;
   if (corpo !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(corpo);
@@ -27,6 +33,10 @@ async function req(metodo, caminho, corpo) {
     resp = await fetch(caminho, opts);
   } catch (e) {
     throw new ErroAPI(0, "rede", "falha de rede: " + e.message);
+  }
+  if (resp.status === 401) {
+    logout();
+    throw new ErroAPI(401, "nao_autenticado", "sessão expirada: faça login novamente");
   }
   if (resp.status === 204) return null;
   const texto = await resp.text();
@@ -43,6 +53,16 @@ async function req(metodo, caminho, corpo) {
     throw new ErroAPI(resp.status, e && e.codigo, (e && e.mensagem) || `erro ${resp.status}`);
   }
   return dados;
+}
+
+// comToken anexa o JWT da sessão como query param a uma URL de stream (SSE). O
+// EventSource não permite enviar o header Authorization, então as rotas de SSE
+// recebem o token por `?token=` (o backend aceita essa forma só para autenticar;
+// o token não é registrado nos logs de acesso, que gravam apenas o caminho).
+function comToken(url) {
+  const t = tokenAtual();
+  if (!t) return url;
+  return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(t);
 }
 
 export const api = {
@@ -89,11 +109,15 @@ export const api = {
   acaoDemanda: (id, acao) => req("POST", `/api/v1/demands/${id}/actions`, { acao }),
   // preview de integração (Fases 4c/4d): commits, conflito com a main e link do MR.
   mergePreview: (id) => req("GET", `/api/v1/demands/${id}/merge-preview`),
+  // diff da demanda: todas as alterações (base...branch) ou só de uma fase (?fase=<codigo>).
+  diffDemanda: (id, fase) =>
+    req("GET", `/api/v1/demands/${id}/diff` + (fase ? "?fase=" + encodeURIComponent(fase) : "")),
   // sobreposição entre demandas (Fase 5c): mapa global (badges) e detalhe por demanda.
   overlaps: () => req("GET", "/api/v1/overlaps"),
   overlapDemanda: (id) => req("GET", `/api/v1/demands/${id}/overlap`),
-  // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource).
-  urlLogsDemanda: (id) => `/api/v1/demands/${id}/logs`,
+  // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource),
+  // com o token da sessão embutido (EventSource não envia headers).
+  urlLogsDemanda: (id) => comToken(`/api/v1/demands/${id}/logs`),
 
   // kanban (Fase 4a): board = demandas enriquecidas (progresso + motor); ordem =
   // reordenar prioridade (arraste); urlEventos = SSE global de eventos.
@@ -105,7 +129,7 @@ export const api = {
     return req("GET", "/api/v1/board" + (qs ? "?" + qs : ""));
   },
   reordenarDemandas: (ids) => req("PUT", "/api/v1/demands/ordem", { ids }),
-  urlEventos: () => "/api/v1/events",
+  urlEventos: () => comToken("/api/v1/events"),
 
   // Home (Fase 4b): métricas agregadas, "Precisa de você" e atividade recente.
   metricas: (periodo) => req("GET", "/api/v1/metrics" + (periodo ? "?periodo=" + encodeURIComponent(periodo) : "")),
@@ -127,4 +151,16 @@ export const api = {
   obterConfigProjeto: (id) => req("GET", `/api/v1/projects/${id}/config`),
   definirConfigProjeto: (id, entradas) => req("PUT", `/api/v1/projects/${id}/config`, entradas),
   configEfetiva: (id) => req("GET", `/api/v1/projects/${id}/config/efetiva`),
+
+  // usuários, papéis e catálogo de permissões (RBAC). Exigem usuarios.gerir.
+  listarPermissoes: () => req("GET", "/api/v1/permissions"),
+  listarUsuarios: () => req("GET", "/api/v1/users"),
+  criarUsuario: (u) => req("POST", "/api/v1/users", u),
+  atualizarUsuario: (id, u) => req("PUT", `/api/v1/users/${id}`, u),
+  resetarSenha: (id, nova) => req("PUT", `/api/v1/users/${id}/senha`, { nova }),
+  excluirUsuario: (id) => req("DELETE", `/api/v1/users/${id}`),
+  listarPapeis: () => req("GET", "/api/v1/roles"),
+  criarPapel: (p) => req("POST", "/api/v1/roles", p),
+  atualizarPapel: (id, p) => req("PUT", `/api/v1/roles/${id}`, p),
+  excluirPapel: (id) => req("DELETE", `/api/v1/roles/${id}`),
 };

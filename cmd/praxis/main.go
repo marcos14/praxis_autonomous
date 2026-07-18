@@ -63,7 +63,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	fs.Usage = func() {
 		fmt.Fprintln(errOut, "uso: praxis [-version] <subcomando> [flags]")
 		fmt.Fprintln(errOut, "subcomandos:")
-		fmt.Fprintln(errOut, "  serve   sobe o serviço (HTTP + scheduler)")
+		fmt.Fprintln(errOut, "  serve    sobe o serviço (HTTP + scheduler)")
+		fmt.Fprintln(errOut, "  usuario  administra usuários pela CLI (add|reset-senha|list)")
 		fmt.Fprintln(errOut)
 		fs.PrintDefaults()
 	}
@@ -90,6 +91,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return service(rest[1:], out, errOut)
 	case "import":
 		return importarCmd(ctx, rest[1:], out, errOut)
+	case "usuario":
+		return usuarioCmd(ctx, rest[1:], out, errOut)
 	default:
 		return fmt.Errorf("subcomando desconhecido: %q", rest[0])
 	}
@@ -119,6 +122,14 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 		}
 	}()
 	logger.Info("banco aberto", "caminho", banco.Caminho)
+
+	// Garante que o segredo de assinatura do JWT exista já no boot (gerado e
+	// persistido na primeira vez), evitando latência/erro na primeira autenticação.
+	// Best-effort: uma falha aqui não impede subir (o segredo é resolvido de novo
+	// preguiçosamente no middleware).
+	if _, err := banco.ObterOuGerarJWTSecret(ctx); err != nil {
+		logger.Warn("preparar segredo do jwt", "erro", err)
+	}
 
 	// Dependências compartilhadas do ciclo de execução: operações git (mutex por
 	// projeto) e o registro de PIDs dos harnesses (para matar órfãos no boot).

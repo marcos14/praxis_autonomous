@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -72,6 +75,26 @@ type Servidor struct {
 	// intervaloPollEventos é a cadência de releitura da tabela events no SSE
 	// global (Fase 4a). Definido no Novo; os testes ajustam para acelerar.
 	intervaloPollEventos time.Duration
+
+	// Segredo de assinatura do JWT, resolvido do banco (auth_config) uma única vez
+	// e memorizado. jwtOnce garante a resolução preguiçosa e thread-safe.
+	jwtOnce   sync.Once
+	jwtSecret []byte
+	jwtErr    error
+}
+
+// segredoJWT devolve o segredo de assinatura do JWT, resolvendo-o do banco na
+// primeira chamada (e memorizando). Sem banco, devolve erro — mas nesse caso o
+// middleware nunca chega aqui (trata como bootstrap local).
+func (s *Servidor) segredoJWT(ctx context.Context) ([]byte, error) {
+	s.jwtOnce.Do(func() {
+		if s.banco == nil {
+			s.jwtErr = errors.New("sem banco: jwt indisponível")
+			return
+		}
+		s.jwtSecret, s.jwtErr = s.banco.ObterOuGerarJWTSecret(ctx)
+	})
+	return s.jwtSecret, s.jwtErr
 }
 
 // Novo monta o servidor: registra as rotas e encadeia os middlewares base (log
@@ -101,6 +124,8 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasMotores(mux)
 	s.registrarRotasConfig(mux)
 	s.registrarRotasTokens(mux)
+	s.registrarRotasAuth(mux)
+	s.registrarRotasUsuarios(mux)
 	s.registrarRotasManual(mux)
 	s.registrarRotasOverlap(mux)
 	s.registrarRotasWeb(mux)

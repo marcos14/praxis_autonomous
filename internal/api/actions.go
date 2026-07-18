@@ -48,7 +48,23 @@ func (s *Servidor) handleAcaoDemanda(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch strings.TrimSpace(strings.ToLower(req.Acao)) {
+	// A permissão exigida varia com a ação: controle de execução (pausar/retomar/
+	// cancelar) requer demandas.operar; as ações de integração (publicar/integrar/
+	// atualizar branch, que mexem em worktree/merge) requerem integracao.gerir. O
+	// middenware só garantiu que o chamador está autenticado.
+	acao := strings.TrimSpace(strings.ToLower(req.Acao))
+	switch acao {
+	case "pausar", "retomar", "cancelar":
+		if !exigirPermissao(w, r, db.PermDemandasOperar) {
+			return
+		}
+	case "publicar_branch", "integrar", "atualizar_branch":
+		if !exigirPermissao(w, r, db.PermIntegracaoGerir) {
+			return
+		}
+	}
+
+	switch acao {
 	case "pausar":
 		s.aplicarAcao(w, r, dem, acaoPausar)
 	case "retomar":

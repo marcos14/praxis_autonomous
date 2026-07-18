@@ -114,6 +114,61 @@ func TestMergePreviewSemBranch(t *testing.T) {
 	}
 }
 
+func TestDiffDemandaCompletoEPorFase(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	branch := "praxis/d1-diff"
+	repo := repoComBranchDemanda(t, branch)
+	proj := criarProjetoEmRepo(t, srv, repo, db.ModoIntegracaoMergeLocal)
+	dem, err := banco.CriarDemanda(context.Background(), db.Demanda{
+		ProjectID: proj, Titulo: "d1", Status: db.StatusDemandaConcluida, Branch: branch})
+	if err != nil {
+		t.Fatalf("criar demanda: %v", err)
+	}
+	base := "/api/v1/demands/" + strconv.FormatInt(dem.ID, 10) + "/diff"
+
+	// diff completo: menciona o arquivo alterado.
+	rec := fazerReq(t, srv, http.MethodGet, base, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	var d respDiff
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decodificar: %v", err)
+	}
+	if d.Fase != "" || !strings.Contains(d.Diff, "b.txt") {
+		t.Fatalf("diff completo inesperado: fase=%q diff=%q", d.Fase, d.Diff)
+	}
+
+	// diff por fase inexistente: 200 com diff vazio (o repo commitou "fase 1:...",
+	// que não casa com o prefixo "Fase 99:").
+	rec = fazerReq(t, srv, http.MethodGet, base+"?fase=99", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decodificar: %v", err)
+	}
+	if d.Fase != "99" || strings.TrimSpace(d.Diff) != "" {
+		t.Fatalf("diff de fase inexistente devia ser vazio: fase=%q diff=%q", d.Fase, d.Diff)
+	}
+}
+
+func TestDiffDemandaSemBranch(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	proj := criarProjetoTeste(t, srv)
+	dem, err := banco.CriarDemanda(context.Background(), db.Demanda{
+		ProjectID: proj, Titulo: "sem branch", Status: db.StatusDemandaPronta})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+	rec := fazerReq(t, srv, http.MethodGet, "/api/v1/demands/"+strconv.FormatInt(dem.ID, 10)+"/diff", nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, quero 409 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestMontarURLMR(t *testing.T) {
 	gl := montarURLMR(db.Projeto{URLPlataforma: "https://gitlab.com/acme/p", BranchPrincipal: "main"}, "praxis/d2-y", "main")
 	if !strings.Contains(gl, "/-/merge_requests/new") {

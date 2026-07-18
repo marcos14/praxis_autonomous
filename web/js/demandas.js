@@ -173,6 +173,7 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
   const corpoLog = el("div", { class: "tab-body", id: "tb-log" });
   const corpoEventos = el("div", { class: "tab-body", id: "tb-eventos" });
   const corpoIntegr = el("div", { class: "tab-body", id: "tb-integr" });
+  const corpoDiff = el("div", { class: "tab-body", id: "tb-diff" });
 
   renderFases(corpoFases, dados, overlay);
 
@@ -199,6 +200,13 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
   const temIntegracao = !!dados.worktree_path || dados.status === "integrada";
   if (temIntegracao) {
     abas.push(["Integração", corpoIntegr, () => ativarIntegracao(corpoIntegr, id, overlay)]);
+  }
+  // Aba Diff: mostra o que a demanda alterou no git (todas as fases ou uma só).
+  // Só faz sentido enquanto a branch existe no servidor (worktree presente);
+  // após integrar, a branch é removida e o diff não fica mais disponível.
+  const temDiff = !!dados.worktree_path;
+  if (temDiff) {
+    abas.push(["Diff", corpoDiff, () => ativarDiff(corpoDiff, id, dados)]);
   }
   abas.push(["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)]);
   abas.push(["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)]);
@@ -250,7 +258,7 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
       ),
     ),
     tabs,
-    corpoPerg, corpoChat, corpoFases, corpoIntegr, corpoLog, corpoEventos,
+    corpoPerg, corpoChat, corpoFases, corpoIntegr, corpoDiff, corpoLog, corpoEventos,
   );
 
   overlay.querySelector(".modal")?.remove(); // troca o conteúdo mantendo o backdrop
@@ -606,6 +614,75 @@ async function executarAcaoIntegr(id, acao, cont, overlay) {
   await recarregarLista();
   await abrirCard(id);
 }
+
+// ---------- aba Diff ----------
+
+// ativarDiff mostra o diff do git da demanda: por padrão tudo o que a branch
+// alterou (base...branch) e, com o seletor de fase, apenas os commits de uma
+// fase. As fases sem commit (pendentes) devolvem um diff vazio.
+async function ativarDiff(cont, id, dados) {
+  limpar(cont);
+  let faseSel = "";
+
+  const sel = el("select", { class: "diff-fase",
+    onchange: (e) => { faseSel = e.target.value; carregar(); } },
+    el("option", { value: "", text: "Todas as alterações" }));
+  for (const f of dados.fases || []) {
+    sel.append(el("option", { value: f.codigo, text: `Fase ${f.codigo} — ${f.titulo}` }));
+  }
+
+  const corpo = el("div", { class: "diff-view" });
+  cont.append(
+    el("div", { class: "diff-head" },
+      el("span", { class: "sub", text: "Filtrar por fase:" }),
+      sel,
+    ),
+    corpo,
+  );
+
+  async function carregar() {
+    limpar(corpo).append(el("p", { class: "sub", text: "Carregando diff…" }));
+    let resp;
+    try {
+      resp = await api.diffDemanda(id, faseSel);
+    } catch (e) {
+      limpar(corpo).append(el("div", { class: "banner banner-erro", text: "Falha ao carregar o diff: " + e.message }));
+      return;
+    }
+    renderDiffTexto(corpo, resp.diff);
+  }
+
+  await carregar();
+}
+
+// renderDiffTexto renderiza um diff unified do git como um <pre> com as linhas
+// coloridas (adições, remoções, cabeçalhos de arquivo e de trecho @@).
+function renderDiffTexto(corpo, texto) {
+  limpar(corpo);
+  if (!texto || !texto.trim()) {
+    corpo.append(el("p", { class: "vazio", text: "Nenhuma alteração para exibir." }));
+    return;
+  }
+  const pre = el("pre", { class: "diff" });
+  for (const linha of texto.split("\n")) {
+    let cls = "d-ctx";
+    if (linha.startsWith("diff --git") || linha.startsWith("index ") ||
+        linha.startsWith("--- ") || linha.startsWith("+++ ") ||
+        linha.startsWith("new file") || linha.startsWith("deleted file") ||
+        linha.startsWith("rename ") || linha.startsWith("similarity ")) {
+      cls = "d-meta";
+    } else if (linha.startsWith("@@")) {
+      cls = "d-hunk";
+    } else if (linha.startsWith("+")) {
+      cls = "d-add";
+    } else if (linha.startsWith("-")) {
+      cls = "d-del";
+    }
+    pre.append(el("span", { class: "d-line " + cls, text: linha + "\n" }));
+  }
+  corpo.append(pre);
+}
+
 
 // ---------- aba Fases ----------
 

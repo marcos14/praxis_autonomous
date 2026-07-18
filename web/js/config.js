@@ -4,6 +4,7 @@
 
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro } from "./ui.js";
+import { temPermissao } from "./auth.js";
 import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
 
 let desconhecidas = {}; // chaves fora da whitelist, preservadas no save
@@ -57,6 +58,14 @@ const PAPEIS_TOKEN = ["leitor", "operador", "admin"];
 async function montarTokens() {
   const painel = document.getElementById("painel-tokens");
   if (!painel) return;
+  // Gestão de tokens de API é parte de "usuários e acessos": só quem tem
+  // usuarios.gerir vê essa seção (o servidor também barra por permissão). Esconde
+  // o painel e seus dois títulos (h2 + p) para os demais.
+  const podeGerir = temPermissao("usuarios.gerir");
+  painel.hidden = !podeGerir;
+  let ant = painel.previousElementSibling, escondidos = 0;
+  while (ant && escondidos < 2) { ant.hidden = !podeGerir; ant = ant.previousElementSibling; escondidos++; }
+  if (!podeGerir) return;
   limpar(painel);
 
   const inpNome = el("input", { type: "text", placeholder: "nome (ex.: sistema de chamados)" });

@@ -44,6 +44,11 @@ var migracoes = []migracao{
 		nome:   "tokens de API com papéis (api_tokens)",
 		sql:    schemaTokens,
 	},
+	{
+		versao: 6,
+		nome:   "usuários, papéis customizáveis e segredo do JWT (users, roles, role_permissions, user_roles, auth_config)",
+		sql:    schemaAuth,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -325,6 +330,64 @@ CREATE TABLE prompts (
     conteudo      TEXT    NOT NULL,
     atualizado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+`
+
+// schemaAuth é a migração 6: usuários com login (users), papéis customizáveis
+// (roles + role_permissions) e o vínculo usuário↔papel (user_roles), mais o
+// segredo de assinatura do JWT (auth_config, linha única). Substitui, na prática,
+// o modelo "loopback = admin": a partir do primeiro usuário criado a API passa a
+// exigir autenticação (o middleware trata zero-usuários como modo bootstrap).
+//
+// Convenções das migrações anteriores: datas ISO-8601 UTC, FKs com ON DELETE
+// CASCADE. senha_hash guarda um hash PBKDF2-HMAC-SHA256 self-describing (nunca a
+// senha em claro). O catálogo de permissões é validado na aplicação (constantes
+// Perm* em permissoes.go), não por CHECK — para não exigir migração a cada
+// capacidade nova. O papel de sistema `admin` já nasce com a permissão curinga
+// `*` e é vinculado ao primeiro usuário no /auth/setup.
+const schemaAuth = `
+CREATE TABLE users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome          TEXT    NOT NULL,
+    email         TEXT    NOT NULL UNIQUE,          -- login (comparado em minúsculas na app)
+    senha_hash    TEXT    NOT NULL,
+    ativo         INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0,1)),
+    criado_em     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    atualizado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE roles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome       TEXT    NOT NULL UNIQUE,
+    descricao  TEXT    NOT NULL DEFAULT '',
+    sistema    INTEGER NOT NULL DEFAULT 0 CHECK (sistema IN (0,1)),  -- papel embutido não removível/renomeável
+    criado_em  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE role_permissions (
+    role_id   INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permissao TEXT    NOT NULL,
+    PRIMARY KEY (role_id, permissao)
+);
+
+CREATE TABLE user_roles (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, role_id)
+);
+
+CREATE INDEX ix_user_roles_user ON user_roles (user_id);
+CREATE INDEX ix_role_permissions_role ON role_permissions (role_id);
+
+CREATE TABLE auth_config (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),   -- linha única (singleton)
+    jwt_secret TEXT    NOT NULL
+);
+
+-- Papel de sistema "admin" com permissão curinga (todas). Vinculado ao 1º usuário
+-- no /auth/setup. É o único papel com sistema=1 nascido aqui.
+INSERT INTO roles (nome, descricao, sistema) VALUES ('admin', 'Acesso total ao Praxis', 1);
+INSERT INTO role_permissions (role_id, permissao)
+    SELECT id, '*' FROM roles WHERE nome = 'admin';
 `
 
 // schemaTokens é a migração 5: os tokens de API do sistema de chamados (Fase

@@ -15,11 +15,13 @@
     <button class="nav-item" data-view="home"><span class="ico">◎</span> Home</button>
     <button class="nav-item" data-view="kanban"><span class="ico">▤</span> Kanban</button>
     <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
-    <button class="nav-item" data-view="nova"><span class="ico">＋</span> Nova demanda</button>
-    <button class="nav-item" data-view="projetos"><span class="ico">🗀</span> Projetos</button>
-    <button class="nav-item" data-view="motores"><span class="ico">⚙</span> Motores</button>
-    <button class="nav-item" data-view="config"><span class="ico">⚒</span> Configurações</button>
+    <button class="nav-item" data-view="nova" data-perm="demandas.criar"><span class="ico">＋</span> Nova demanda</button>
+    <button class="nav-item" data-view="projetos" data-perm="projetos.gerir"><span class="ico">🗀</span> Projetos</button>
+    <button class="nav-item" data-view="motores" data-perm="config.gerir"><span class="ico">⚙</span> Motores</button>
+    <button class="nav-item" data-view="config" data-perm="config.gerir"><span class="ico">⚒</span> Configurações</button>
+    <button class="nav-item" data-view="usuarios" data-perm="usuarios.gerir"><span class="ico">👤</span> Usuários</button>
     <button class="nav-item" data-view="manual"><span class="ico">✎</span> Manual</button>
+    <div class="nav-user" id="nav-user" hidden></div>
     <div class="nav-foot" id="nav-foot">carregando…</div>
   </nav>
 
@@ -99,6 +101,32 @@
       <div class="panel" style="max-width:680px" id="painel-tokens"></div>
     </section>
 
+    <!-- ======================= USUÁRIOS ======================= -->
+    <section class="view" id="view-usuarios">
+      <h1 class="page">Usuários e acessos</h1>
+      <p class="sub">Cadastre quem usa este Praxis e defina o que cada um pode fazer. O acesso básico é sempre visualizar; papéis concedem as demais capacidades.</p>
+      <div class="two-col">
+        <div>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-usuario">+ Novo usuário</button>
+          <div id="lista-usuarios"></div>
+        </div>
+        <div class="panel" id="painel-usuario">
+          <p class="sub" style="margin:0">Selecione um usuário à esquerda ou cadastre um novo.</p>
+        </div>
+      </div>
+      <h2 class="page" style="font-size:18px;margin-top:28px">Papéis</h2>
+      <p class="sub">Um papel é um conjunto de permissões. Vincule papéis aos usuários acima.</p>
+      <div class="two-col">
+        <div>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-papel">+ Novo papel</button>
+          <div id="lista-papeis"></div>
+        </div>
+        <div class="panel" id="painel-papel">
+          <p class="sub" style="margin:0">Selecione um papel à esquerda ou crie um novo.</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ======================= MANUAL ======================= -->
     <section class="view" id="view-manual">
       <h1 class="page">Manual do desenvolvedor</h1>
@@ -109,6 +137,13 @@
       </div>
     </section>
   </main>
+</div>
+
+<!-- ======================= PORTÃO DE AUTENTICAÇÃO ======================= -->
+<!-- Overlay que cobre a app enquanto não há sessão. Preenchido pelo app.js
+     (login ou criação do primeiro admin). -->
+<div class="auth-overlay" id="auth-overlay" hidden>
+  <div class="auth-card" id="auth-card"></div>
 </div>
 
 <script type="module" src="/js/app.js"></script>

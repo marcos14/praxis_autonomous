@@ -14,6 +14,54 @@ import (
 // (Fases 4c/4d): o preview de merge com a main.
 func (s *Servidor) registrarRotasIntegracao(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/demands/{id}/merge-preview", s.handleMergePreview)
+	mux.HandleFunc("GET /api/v1/demands/{id}/diff", s.handleDiffDemanda)
+}
+
+// respDiff descreve o diff da demanda (ou de uma de suas fases): o texto unified
+// do git, a branch/base comparadas e a fase filtrada ("" = todas as alterações).
+type respDiff struct {
+	Branch string `json:"branch"`
+	Base   string `json:"base"`
+	Fase   string `json:"fase"`
+	Diff   string `json:"diff"`
+}
+
+// handleDiffDemanda devolve o diff textual do que a demanda alterou: por padrão
+// tudo o que a branch acrescenta sobre a base (git diff base...branch) e, com o
+// parâmetro ?fase=<codigo>, apenas os commits daquela fase. É só leitura (não
+// toca refs). Demanda sem branch (ainda não executou) → 409.
+func (s *Servidor) handleDiffDemanda(w http.ResponseWriter, r *http.Request) {
+	dem, ok := s.obterDemandaOu404(w, r)
+	if !ok {
+		return
+	}
+	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	if strings.TrimSpace(dem.Branch) == "" {
+		responderErro(w, http.StatusConflict, "sem_branch",
+			"a demanda ainda não tem branch (ainda não começou a executar)")
+		return
+	}
+
+	base := baseDoProjeto(proj)
+	repo := proj.Pasta
+	fase := strings.TrimSpace(r.URL.Query().Get("fase"))
+
+	var diff string
+	if fase != "" {
+		diff, err = gitops.DiffDaFase(repo, base, dem.Branch, fase)
+	} else {
+		diff, err = gitops.DiffCompleto(repo, base, dem.Branch)
+	}
+	if err != nil {
+		responderErro(w, http.StatusBadGateway, "diff_falhou", "não foi possível gerar o diff: "+err.Error())
+		return
+	}
+
+	responderJSON(w, http.StatusOK, respDiff{Branch: dem.Branch, Base: base, Fase: fase, Diff: diff})
 }
 
 // respMergePreview descreve o estado de fechamento de uma demanda: a branch, os

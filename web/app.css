@@ -346,6 +346,19 @@ table.plain tr:last-child td { border-bottom: none; }
 .commit-hash { font-family: Consolas, monospace; color: var(--muted); flex: 0 0 auto; }
 .commit-msg { color: var(--ink-2); }
 
+/* ======================= DIFF DO GIT (aba Diff) ======================= */
+.diff-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.diff-head .sub { margin: 0; }
+.diff-fase { background: var(--surface-2); border: 1px solid var(--border); color: var(--ink); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; }
+.diff-view { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+pre.diff { margin: 0; padding: 10px 0; overflow-x: auto; background: var(--surface); font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; line-height: 1.5; }
+pre.diff .d-line { display: block; padding: 0 12px; white-space: pre; }
+pre.diff .d-ctx { color: var(--ink-2); }
+pre.diff .d-meta { color: var(--muted); font-weight: 600; }
+pre.diff .d-hunk { color: var(--violet); background: rgba(144,133,233,0.08); }
+pre.diff .d-add { color: #7ee787; background: rgba(12,163,12,0.14); }
+pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
+
 /* ======================= TOKENS DE API (Fase 5a) ======================= */
 .token-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .token-form input { flex: 1; min-width: 200px; }
@@ -377,3 +390,49 @@ table.plain tr:last-child td { border-bottom: none; }
 .banner-warn { background: rgba(250,178,25,.10); border: 1px solid rgba(250,178,25,.4); color: #e8c579; }
 .overlap-linha { font-size: 12px; margin-top: 4px; }
 .overlap-arqs { color: var(--muted); font-family: Consolas, monospace; font-size: 11px; }
+
+/* ======================= AUTENTICAÇÃO / RBAC ======================= */
+/* Overlay do portão de login: cobre a app inteira enquanto não há sessão. */
+.auth-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--page); padding: 20px;
+}
+.auth-card {
+  width: 100%; max-width: 380px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 28px;
+}
+.auth-card h2 { font-size: 20px; margin-bottom: 4px; }
+.auth-card .sub { margin-bottom: 20px; }
+.auth-card .form { gap: 12px; }
+.auth-card .btn { width: 100%; justify-content: center; margin-top: 6px; }
+.auth-alt { text-align: center; font-size: 12px; color: var(--muted); margin-top: 14px; }
+.auth-alt a { color: var(--blue); cursor: pointer; }
+
+/* Rodapé do menu com o usuário logado e o botão Sair. */
+.nav-user {
+  margin-top: auto; padding: 10px 12px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.nav-user .quem { font-size: 12px; color: var(--ink-2); overflow: hidden; }
+.nav-user .quem b { display: block; color: var(--ink); font-weight: 600;
+  white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.nav-user .quem span { font-size: 10.5px; color: var(--muted); }
+.nav-user + .nav-foot { margin-top: 0; }
+
+/* Lista de permissões (caixas de seleção) no editor de papel. */
+.perm-lista { display: grid; gap: 8px; margin: 6px 0 14px; }
+.perm-item { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.perm-item:hover { border-color: var(--muted); }
+.perm-item input { margin-top: 2px; }
+.perm-item .rot { color: var(--ink); font-weight: 600; }
+.perm-item .desc { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+/* Chips de papéis do usuário. */
+.papel-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.papel-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+  padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; color: var(--ink-2); }
+.papel-chip.on { background: var(--blue-dim); border-color: var(--blue); color: #fff; }
+.usuario-inativo { opacity: .55; }

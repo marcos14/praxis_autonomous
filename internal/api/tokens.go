@@ -10,7 +10,8 @@ import (
 )
 
 // registrarRotasTokens registra as rotas de gestão de tokens de API (Fase 5a).
-// Exigem papel admin (garantido pelo middleware comAuth via prefixo /tokens).
+// Exigem a permissão usuarios.gerir (garantida pelo middleware comAuth via
+// prefixo /tokens — gestão de acessos).
 func (s *Servidor) registrarRotasTokens(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/tokens", s.handleCriarToken)
 	mux.HandleFunc("GET /api/v1/tokens", s.handleListarTokens)
