@@ -22,6 +22,9 @@
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: var(--page); color: var(--ink); font-size: 14px; }
+/* O atributo hidden precisa vencer classes que definem display (ex.:
+   .auth-overlay e .nav-item usam display:flex, que anularia o hidden). */
+[hidden] { display: none !important; }
 
 /* ---------- layout ---------- */
 .app { display: flex; min-height: 100vh; }
