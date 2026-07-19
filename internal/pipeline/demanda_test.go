@@ -271,3 +271,73 @@ func TestNomeBranchECaminhoWorktree(t *testing.T) {
 		t.Fatalf("slug nao truncado: %q (len %d)", longo, len(longo))
 	}
 }
+
+// TestRodarFaseComitaComAutorDaDemanda cobre o controle de autoria git: o
+// commit da fase sai com AUTOR = usuário que criou a demanda (criado_por), com
+// o sufixo " - Praxis" (config git_sufixo_praxis ligada), e COMMITTER = Praxis
+// — nunca a config user.name/user.email do repo (repoMain configura
+// "Praxis Teste", que não pode aparecer).
+func TestRodarFaseComitaComAutorDaDemanda(t *testing.T) {
+	repo := repoMain(t)
+	r, base, _ := runnerComProjeto(t, repo)
+	ctx := context.Background()
+
+	u, err := r.Store.CriarUsuario(ctx, "Marcos Agnes", "marcos@junsoft.com.br", "senha-bem-longa", nil)
+	if err != nil {
+		t.Fatalf("CriarUsuario: %v", err)
+	}
+	dem, err := r.Store.CriarDemanda(ctx, db.Demanda{
+		ProjectID: base.ProjectID, Titulo: "Com Autor", PlanoMD: "# plano",
+		Status: db.StatusDemandaPronta, CriadoPor: &u.ID,
+	})
+	if err != nil {
+		t.Fatalf("CriarDemanda: %v", err)
+	}
+	// round-trip do criado_por (insert + scan da coluna nova).
+	if relida, err := r.Store.ObterDemanda(ctx, dem.ID); err != nil || relida.CriadoPor == nil || *relida.CriadoPor != u.ID {
+		t.Fatalf("criado_por nao persistiu: %+v (err %v)", relida.CriadoPor, err)
+	}
+	fase, err := r.Store.CriarFase(ctx, db.Fase{DemandID: dem.ID, Codigo: "1", Titulo: "Fase um", Status: db.StatusFasePendente})
+	if err != nil {
+		t.Fatalf("CriarFase: %v", err)
+	}
+
+	dem, err = r.Preparar(ctx, dem)
+	if err != nil {
+		t.Fatalf("Preparar: %v", err)
+	}
+	cfg := configTeste()
+	cfg.GitSufixoPraxis = true
+	res, err := r.RodarFase(ctx, dem, fase, cfg, nil)
+	if err != nil || res.Situacao != SituacaoConcluida || !res.CommitFeito {
+		t.Fatalf("RodarFase: situacao=%q commit=%v err=%v (%s)", res.Situacao, res.CommitFeito, err, res.Erro)
+	}
+
+	ident := gitCmd(t, dem.WorktreePath, "log", "-1", "--pretty=%an|%ae|%cn|%ce")
+	want := "Marcos Agnes - Praxis|marcos@junsoft.com.br|" + gitops.PraxisNome + "|" + gitops.PraxisEmail
+	if got := strings.TrimSpace(ident); got != want {
+		t.Fatalf("ident do commit da fase = %q, esperava %q", got, want)
+	}
+}
+
+// TestRodarFaseSemUsuarioComitaComoPraxis cobre o fallback: demanda sem
+// criado_por (token de API, demanda antiga) comita como o próprio Praxis.
+func TestRodarFaseSemUsuarioComitaComoPraxis(t *testing.T) {
+	repo := repoMain(t)
+	r, dem, fase := runnerComProjeto(t, repo)
+	ctx := context.Background()
+
+	dem, err := r.Preparar(ctx, dem)
+	if err != nil {
+		t.Fatalf("Preparar: %v", err)
+	}
+	res, err := r.RodarFase(ctx, dem, fase, configTeste(), nil)
+	if err != nil || res.Situacao != SituacaoConcluida || !res.CommitFeito {
+		t.Fatalf("RodarFase: situacao=%q commit=%v err=%v (%s)", res.Situacao, res.CommitFeito, err, res.Erro)
+	}
+	ident := gitCmd(t, dem.WorktreePath, "log", "-1", "--pretty=%an|%ae|%cn|%ce")
+	want := gitops.PraxisNome + "|" + gitops.PraxisEmail + "|" + gitops.PraxisNome + "|" + gitops.PraxisEmail
+	if got := strings.TrimSpace(ident); got != want {
+		t.Fatalf("ident do commit sem usuario = %q, esperava %q", got, want)
+	}
+}

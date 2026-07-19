@@ -73,6 +73,10 @@ type ContextoExec struct {
 	Store    *db.DB     // fila/estado no banco (fases, runs, eventos)
 	Git      *gitops.Ops
 	Gates    Gates // nil ate a Fase 2c (etapa de gates tratada como aprovada)
+	// Autor e a identidade git do AUTOR do commit da fase (o usuario que criou
+	// a demanda), resolvida pelo Runner a partir de demands.criado_por. Valor
+	// zero = identidade do proprio Praxis (demanda sem usuario/testes).
+	Autor gitops.Identidade
 
 	// Prompt carrega o template de um prompt por nome (executor.md/corretor.md/
 	// revisor.md). No Praxis atual vinha de arquivo (carregarPrompt); aqui e
@@ -326,7 +330,7 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 		}
 		msg := fmt.Sprintf("Fase %s: %s [praxis]\n\n%s%s\n",
 			f.Codigo, f.Titulo, primeirasLinhas(strings.TrimSpace(resExec.Resultado), 15), trailer)
-		if err := c.Git.Commit(c.Worktree, msg); err != nil {
+		if err := c.Git.Commit(c.Worktree, msg, c.Autor); err != nil {
 			return ResultadoFase{Situacao: SituacaoFalhou, Erro: err.Error(), CustoUSD: custo, MotorExec: motorExecutor}, err
 		}
 		commitFeito = true

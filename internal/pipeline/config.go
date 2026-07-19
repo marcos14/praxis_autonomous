@@ -34,6 +34,11 @@ type Config struct {
 	// compartilhando o semaforo global. Vazio = sem gate deterministico.
 	Gates      []Gate
 	GatesExtra []GateExtra
+	// GitSufixoPraxis acrescenta " - Praxis" ao nome do AUTOR dos commits de
+	// fase (chave git_sufixo_praxis da config efetiva; o resolvedor do
+	// scheduler liga por default e o admin pode desligar). Nao afeta o
+	// committer, que e sempre o Praxis (gitops.Identidade).
+	GitSufixoPraxis bool
 }
 
 // Fallback descreve a ordem de troca de motores quando o motor corrente sinaliza

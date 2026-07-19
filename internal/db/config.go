@@ -122,6 +122,22 @@ func (d *DB) substituirConfig(ctx context.Context, escopo string, projectID *int
 	return nil
 }
 
+// ConfigBool lê uma chave booleana de uma config efetiva. Devolve (valor, true)
+// quando a chave existe e é um bool JSON; (false, false) quando ausente ou de
+// tipo incompatível — o chamador decide o default. Compartilhada pelo scheduler
+// (resolver da pipeline.Config) e pela API (ações que fazem commit/merge).
+func ConfigBool(efetiva map[string]ValorEfetivo, chave string) (bool, bool) {
+	v, ok := efetiva[chave]
+	if !ok {
+		return false, false
+	}
+	var b bool
+	if err := json.Unmarshal(v.Valor, &b); err != nil {
+		return false, false
+	}
+	return b, true
+}
+
 // escanearConfig lê linhas (chave, valor) para um mapa não-nil.
 func escanearConfig(rows interface {
 	Next() bool

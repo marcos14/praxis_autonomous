@@ -176,6 +176,7 @@ func (r *Runner) RodarFase(ctx context.Context, dem db.Demanda, fase db.Fase, cf
 		Git:        r.Git,
 		Gates:      r.resolverGates(cfg, dirLogs),
 		Prompt:     r.Prompt,
+		Autor:      r.autorDemanda(ctx, dem, cfg),
 		Ctx:        ctx,
 		PausaCh:    pausaCh,
 		Selecionar: r.Selecionar,
@@ -199,6 +200,22 @@ func (r *Runner) RodarFase(ctx context.Context, dem db.Demanda, fase db.Fase, cf
 		res.CommitsNaoPublicados = rp.CommitsNaoPublicados
 	}
 	return res, nil
+}
+
+// autorDemanda resolve a identidade git do AUTOR dos commits desta demanda: o
+// usuario que a criou (demands.criado_por), com o sufixo " - Praxis" conforme a
+// config. Sem usuario (demanda antiga, token de API) — ou se o usuario foi
+// removido — o autor e o proprio Praxis. O committer e sempre o Praxis,
+// independente do autor (gitops.Identidade).
+func (r *Runner) autorDemanda(ctx context.Context, dem db.Demanda, cfg Config) gitops.Identidade {
+	if dem.CriadoPor == nil || r.Store == nil {
+		return gitops.IdentidadePraxis()
+	}
+	u, err := r.Store.ObterUsuario(ctx, *dem.CriadoPor)
+	if err != nil {
+		return gitops.IdentidadePraxis()
+	}
+	return gitops.Identidade{Nome: u.Nome, Email: u.Email, Sufixo: cfg.GitSufixoPraxis}
 }
 
 // resolverGates escolhe o runner de gates da fase: o Gates FIXO do Runner (usado

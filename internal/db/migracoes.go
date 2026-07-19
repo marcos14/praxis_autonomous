@@ -64,6 +64,11 @@ var migracoes = []migracao{
 		nome:   "acesso a projetos por usuário e grupo de usuários (project_access)",
 		sql:    schemaAcessoProjetos,
 	},
+	{
+		versao: 10,
+		nome:   "autoria git: usuário criador da demanda (demands.criado_por)",
+		sql:    schemaAutoriaGit,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -544,4 +549,15 @@ CREATE TABLE api_tokens (
     criado_em  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     revogado_em TEXT
 );
+`
+
+// schemaAutoriaGit é a migração 10: o usuário criador da demanda
+// (demands.criado_por), usado como AUTOR dos commits que o orquestrador faz nas
+// fases (o committer é sempre o Praxis — ver gitops.Identidade). Nulo em
+// demandas antigas e nas criadas por token de API/bootstrap: nesses casos o
+// autor do commit cai na identidade do próprio Praxis. Remover o usuário
+// desliga o vínculo (SET NULL) sem apagar a demanda.
+const schemaAutoriaGit = `
+ALTER TABLE demands ADD COLUMN criado_por INTEGER REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX ix_demands_criado_por ON demands (criado_por);
 `

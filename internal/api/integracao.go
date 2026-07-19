@@ -174,6 +174,27 @@ func (s *Servidor) acaoPublicarBranch(w http.ResponseWriter, r *http.Request, de
 	s.responderDemandaComFases(w, r, dem)
 }
 
+// identidadeAutor monta a identidade git do AUTOR para commits disparados por
+// uma ação da API (ex.: o merge da ação integrar): o usuário logado, com o
+// sufixo " - Praxis" conforme a config efetiva do projeto (git_sufixo_praxis,
+// default ligado). Token de API/bootstrap (sem usuário) → o próprio Praxis. O
+// committer é sempre o Praxis (gitops.Identidade).
+func (s *Servidor) identidadeAutor(r *http.Request, projectID int64) gitops.Identidade {
+	pr := principalDaRequisicao(r)
+	if pr.userID <= 0 || strings.TrimSpace(pr.email) == "" {
+		return gitops.IdentidadePraxis()
+	}
+	sufixo := true
+	if s.banco != nil {
+		if efetiva, err := s.banco.ConfigEfetiva(r.Context(), projectID); err == nil {
+			if b, ok := db.ConfigBool(efetiva, "git_sufixo_praxis"); ok {
+				sufixo = b
+			}
+		}
+	}
+	return gitops.Identidade{Nome: pr.nome, Email: pr.email, Sufixo: sufixo}
+}
+
 // baseDoProjeto devolve a branch principal do projeto (default "main").
 func baseDoProjeto(proj db.Projeto) string {
 	if b := strings.TrimSpace(proj.BranchPrincipal); b != "" {
@@ -231,7 +252,7 @@ func (s *Servidor) acaoIntegrar(w http.ResponseWriter, r *http.Request, dem db.D
 	}
 
 	msg := "Merge da demanda #" + strconv.FormatInt(dem.ID, 10) + " (" + dem.Branch + ") na " + base
-	if err := s.git.MergeNoFF(proj.Pasta, base, dem.Branch, msg); err != nil {
+	if err := s.git.MergeNoFF(proj.Pasta, base, dem.Branch, msg, s.identidadeAutor(r, proj.ID)); err != nil {
 		responderErro(w, http.StatusBadGateway, "merge_falhou", "falha ao integrar: "+err.Error())
 		return
 	}

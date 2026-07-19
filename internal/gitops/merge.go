@@ -152,8 +152,11 @@ func CommitsAFrente(repo, base, branch string) ([]CommitInfo, error) {
 // para o modo de integracao merge_local. Faz checkout de base no repo principal
 // e o merge. Serializado pelo mutex do projeto. Em conflito, devolve erro e
 // deixa o repo em estado de merge (o tratamento — status conflito + resolucao —
-// e da Fase 4d); o chamador pode inspecionar com PreviaMerge antes.
-func (o *Ops) MergeNoFF(repo, base, branch, msg string) error {
+// e da Fase 4d); o chamador pode inspecionar com PreviaMerge antes. O commit de
+// merge leva a identidade de autor (o usuario logado que disparou a acao
+// integrar; valor zero = o proprio Praxis), com committer Praxis — como em
+// Commit, nunca a config git da maquina.
+func (o *Ops) MergeNoFF(repo, base, branch, msg string, autor Identidade) error {
 	defer o.trava(repo)()
 	if out, err := git(repo, "checkout", base); err != nil {
 		return fmt.Errorf("checkout de %s: %w — %s", base, err, out)
@@ -162,7 +165,7 @@ func (o *Ops) MergeNoFF(repo, base, branch, msg string) error {
 	if msg != "" {
 		args = append(args, "-m", msg)
 	}
-	if out, err := git(repo, args...); err != nil {
+	if out, err := gitEnv(repo, autor.env(), args...); err != nil {
 		return fmt.Errorf("merge --no-ff de %s em %s: %w — %s", branch, base, err, out)
 	}
 	return nil

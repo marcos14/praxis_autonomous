@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -83,7 +84,17 @@ func (o *Ops) trava(repo string) func() {
 // git executa `git -C dir <args...>` e devolve o stdout; em erro embute o stderr
 // na mensagem, no mesmo estilo do git.go do Praxis atual.
 func git(dir string, args ...string) (string, error) {
+	return gitEnv(dir, nil, args...)
+}
+
+// gitEnv é o git com variáveis extras no ambiente do comando — o caminho dos
+// comandos que criam commit (commit, merge), que recebem a identidade
+// autor/committer por GIT_AUTHOR_*/GIT_COMMITTER_* (ver Identidade.env).
+func gitEnv(dir string, extra []string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	if len(extra) > 0 {
+		cmd.Env = append(os.Environ(), extra...)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -143,14 +154,17 @@ func ArquivosMudados(dir string) ([]string, error) {
 
 // Commit registra todas as mudancas de dir num commit com a mensagem dada
 // (git add -A + git commit). Serializado pelo mutex do repo. O commit e sempre
-// do orquestrador — o harness continua proibido de commitar.
-func (o *Ops) Commit(dir, msg string) error {
+// do orquestrador — o harness continua proibido de commitar. A identidade vem
+// SEMPRE de autor (env por comando), nunca da config git da maquina: autor =
+// usuario da plataforma (valor zero = o proprio Praxis), committer = Praxis.
+func (o *Ops) Commit(dir, msg string, autor Identidade) error {
 	defer o.trava(dir)()
 	if out, err := git(dir, "add", "-A"); err != nil {
 		return fmt.Errorf("git add em %s: %w — %s", dir, err, out)
 	}
 	cmd := exec.Command("git", "-C", dir, "commit", "-F", "-")
 	cmd.Stdin = strings.NewReader(msg)
+	cmd.Env = append(os.Environ(), autor.env()...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git commit em %s: %v — %s", dir, err, out)
 	}

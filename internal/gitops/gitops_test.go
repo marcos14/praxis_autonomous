@@ -90,7 +90,7 @@ func TestCommitELimpo(t *testing.T) {
 	if len(mudados) != 1 || mudados[0] != "b.txt" {
 		t.Fatalf("ArquivosMudados = %v, esperava [b.txt]", mudados)
 	}
-	if err := o.Commit(repo, "adiciona b.txt"); err != nil {
+	if err := o.Commit(repo, "adiciona b.txt", Identidade{}); err != nil {
 		t.Fatal(err)
 	}
 	if limpo, _ := Limpo(repo); !limpo {
@@ -152,7 +152,7 @@ func TestPushPublicaBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	escrever(t, wt, "c.txt", "conteudo\n")
-	if err := o.Commit(wt, "adiciona c.txt"); err != nil {
+	if err := o.Commit(wt, "adiciona c.txt", Identidade{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := o.Push(repo, branch, 1); err != nil {
@@ -210,11 +210,11 @@ func TestCommitsNaoPublicados(t *testing.T) {
 
 	// dois commits locais, nenhum publicado → 2.
 	escrever(t, wt, "c1.txt", "1\n")
-	if err := o.Commit(wt, "c1"); err != nil {
+	if err := o.Commit(wt, "c1", Identidade{}); err != nil {
 		t.Fatal(err)
 	}
 	escrever(t, wt, "c2.txt", "2\n")
-	if err := o.Commit(wt, "c2"); err != nil {
+	if err := o.Commit(wt, "c2", Identidade{}); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := CommitsNaoPublicados(wt, branch); err != nil || n != 2 {
@@ -231,7 +231,7 @@ func TestCommitsNaoPublicados(t *testing.T) {
 
 	// mais um commit apos o push → 1 pendente.
 	escrever(t, wt, "c3.txt", "3\n")
-	if err := o.Commit(wt, "c3"); err != nil {
+	if err := o.Commit(wt, "c3", Identidade{}); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := CommitsNaoPublicados(wt, branch); err != nil || n != 1 {
@@ -297,7 +297,7 @@ func TestMergeNoFF(t *testing.T) {
 	gitT(t, repo, "commit", "-m", "feature")
 	gitT(t, repo, "checkout", "main")
 
-	if err := o.MergeNoFF(repo, "main", "praxis/d6-merge", "merge da d6"); err != nil {
+	if err := o.MergeNoFF(repo, "main", "praxis/d6-merge", "merge da d6", Identidade{}); err != nil {
 		t.Fatalf("MergeNoFF: %v", err)
 	}
 	// main agora tem o arquivo

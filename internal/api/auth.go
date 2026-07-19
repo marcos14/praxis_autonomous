@@ -376,6 +376,18 @@ func temPermissao(r *http.Request, perm string) bool {
 	return principalDaRequisicao(r).tem(perm)
 }
 
+// usuarioDaRequisicao devolve o id do USUÁRIO logado (nil para token de API e
+// modo bootstrap, que não têm usuário). Usado para carimbar autoria — ex.:
+// demands.criado_por, que vira o autor git dos commits da demanda.
+func usuarioDaRequisicao(r *http.Request) *int64 {
+	pr := principalDaRequisicao(r)
+	if pr.userID <= 0 {
+		return nil
+	}
+	uid := pr.userID
+	return &uid
+}
+
 // exigirPermissao responde 403 e devolve false quando o principal não tem perm;
 // devolve true (sem escrever nada) quando tem. Usado por handlers cuja permissão
 // varia com o corpo (ex.: /actions).

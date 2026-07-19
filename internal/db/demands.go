@@ -51,8 +51,12 @@ type Demanda struct {
 	CustoUSD     float64 `json:"custo_usd"`
 	BudgetUSD    float64 `json:"budget_usd"`
 	Erro         string  `json:"erro"`
-	CriadoEm     string  `json:"criado_em"`
-	AtualizadoEm string  `json:"atualizado_em"`
+	// CriadoPor é o usuário logado que criou a demanda (users.id) — o AUTOR dos
+	// commits das fases. Nulo em demandas de token de API/bootstrap (o autor cai
+	// na identidade do próprio Praxis).
+	CriadoPor    *int64 `json:"criado_por"`
+	CriadoEm     string `json:"criado_em"`
+	AtualizadoEm string `json:"atualizado_em"`
 }
 
 // FiltroDemandas restringe ListarDemandas. Campos nulos/vazios não filtram.
@@ -66,16 +70,18 @@ type FiltroDemandas struct {
 
 // colunasDemanda lista as colunas de demands na ordem esperada por scanDemanda.
 const colunasDemanda = `id, project_id, titulo, origem, origem_ref, status, prioridade,
-	branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_em, atualizado_em`
+	branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por, criado_em, atualizado_em`
 
 // scanDemanda lê uma linha de demands (na ordem de colunasDemanda) para Demanda.
 func scanDemanda(sc interface{ Scan(...any) error }) (Demanda, error) {
 	var d Demanda
+	var criadoPor sql.NullInt64
 	if err := sc.Scan(&d.ID, &d.ProjectID, &d.Titulo, &d.Origem, &d.OrigemRef,
 		&d.Status, &d.Prioridade, &d.Branch, &d.WorktreePath, &d.PlanoMD,
-		&d.CustoUSD, &d.BudgetUSD, &d.Erro, &d.CriadoEm, &d.AtualizadoEm); err != nil {
+		&d.CustoUSD, &d.BudgetUSD, &d.Erro, &criadoPor, &d.CriadoEm, &d.AtualizadoEm); err != nil {
 		return Demanda{}, err
 	}
+	d.CriadoPor = ptrDeNull(criadoPor)
 	return d, nil
 }
 
@@ -92,11 +98,12 @@ func (d *DB) CriarDemanda(ctx context.Context, dem Demanda) (Demanda, error) {
 	row := d.Escritor.QueryRowContext(ctx, `
 		INSERT INTO demands
 			(project_id, titulo, origem, origem_ref, status, prioridade,
-			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em, atualizado_em`,
 		dem.ProjectID, dem.Titulo, dem.Origem, dem.OrigemRef, dem.Status, dem.Prioridade,
 		dem.Branch, dem.WorktreePath, dem.PlanoMD, dem.CustoUSD, dem.BudgetUSD, dem.Erro,
+		nullInt(dem.CriadoPor),
 	)
 	if err := row.Scan(&dem.ID, &dem.CriadoEm, &dem.AtualizadoEm); err != nil {
 		return Demanda{}, traduzirErroFK(err)
@@ -129,11 +136,12 @@ func (d *DB) CriarDemandaComFases(ctx context.Context, dem Demanda, fases []Fase
 	row := tx.QueryRowContext(ctx, `
 		INSERT INTO demands
 			(project_id, titulo, origem, origem_ref, status, prioridade,
-			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em, atualizado_em`,
 		dem.ProjectID, dem.Titulo, dem.Origem, dem.OrigemRef, dem.Status, dem.Prioridade,
 		dem.Branch, dem.WorktreePath, dem.PlanoMD, dem.CustoUSD, dem.BudgetUSD, dem.Erro,
+		nullInt(dem.CriadoPor),
 	)
 	if err := row.Scan(&dem.ID, &dem.CriadoEm, &dem.AtualizadoEm); err != nil {
 		return Demanda{}, nil, traduzirErroFK(err)
@@ -258,12 +266,14 @@ func (d *DB) ListarDemandasResumo(ctx context.Context, f FiltroDemandas) ([]Dema
 	resumos := []DemandaResumo{}
 	for rows.Next() {
 		var r DemandaResumo
+		var criadoPor sql.NullInt64
 		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Titulo, &r.Origem, &r.OrigemRef,
 			&r.Status, &r.Prioridade, &r.Branch, &r.WorktreePath, &r.PlanoMD,
-			&r.CustoUSD, &r.BudgetUSD, &r.Erro, &r.CriadoEm, &r.AtualizadoEm,
+			&r.CustoUSD, &r.BudgetUSD, &r.Erro, &criadoPor, &r.CriadoEm, &r.AtualizadoEm,
 			&r.FasesTotal, &r.FasesConcluidas, &r.Motor); err != nil {
 			return nil, err
 		}
+		r.CriadoPor = ptrDeNull(criadoPor)
 		resumos = append(resumos, r)
 	}
 	if err := rows.Err(); err != nil {

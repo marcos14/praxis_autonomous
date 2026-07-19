@@ -103,6 +103,7 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 		responderErro(w, http.StatusBadRequest, "invalido", msg)
 		return
 	}
+	dem.CriadoPor = usuarioDaRequisicao(r)
 
 	criada, criadas, err := s.banco.CriarDemandaComFases(r.Context(), dem, fases)
 	if err != nil {
@@ -153,6 +154,7 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 		PlanoMD:    req.PlanoMD,
 		BudgetUSD:  req.BudgetUSD,
 		Branch:     branch,
+		CriadoPor:  usuarioDaRequisicao(r),
 	}
 	criada, _, err := s.banco.CriarDemandaComChat(r.Context(), dem, db.MensagemChat{
 		Papel:    db.PapelUser,

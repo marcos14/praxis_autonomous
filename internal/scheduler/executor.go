@@ -343,6 +343,7 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 		ConfigDirs:       map[string]string{},
 		MaxCorrecoes:     maxCorrecoesDefault,
 		MaxCiclosRevisao: maxCiclosRevisaoDefault,
+		GitSufixoPraxis:  true, // sufixo " - Praxis" no autor: ligado por default
 	}
 
 	motores, err := store.ListarMotores(ctx)
@@ -385,6 +386,9 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 	}
 	if n, ok := configInt(efetiva, "max_ciclos_revisao"); ok {
 		cfg.MaxCiclosRevisao = n
+	}
+	if b, ok := db.ConfigBool(efetiva, "git_sufixo_praxis"); ok {
+		cfg.GitSufixoPraxis = b
 	}
 	if cmds := configListaStrings(efetiva, "gates"); len(cmds) > 0 {
 		// a config "gates" é uma lista de comandos de shell; vira um bloco de gate
