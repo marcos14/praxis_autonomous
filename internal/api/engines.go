@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/motor"
 )
 
 // reqMotor é o corpo aceito em POST/PUT de motores. Os campos opcionais são
@@ -46,6 +47,8 @@ func (s *Servidor) registrarRotasMotores(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/engines", s.handleCriarMotor)
 	mux.HandleFunc("GET /api/v1/engines", s.handleListarMotores)
 	mux.HandleFunc("PUT /api/v1/engines/ordem", s.handleReordenarMotores)
+	mux.HandleFunc("GET /api/v1/engines/deteccao", s.handleDetectarMotores)
+	mux.HandleFunc("POST /api/v1/engines/deteccao", s.handleAutocadastrarMotores)
 	mux.HandleFunc("GET /api/v1/engines/{id}", s.handleObterMotor)
 	mux.HandleFunc("PUT /api/v1/engines/{id}", s.handleAtualizarMotor)
 	mux.HandleFunc("POST /api/v1/engines/{id}/accounts", s.handleCriarConta)
@@ -89,6 +92,87 @@ func (s *Servidor) handleListarMotores(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responderJSON(w, http.StatusOK, motores)
+}
+
+// handleDetectarMotores inspeciona o ambiente (PATH + variaveis) e devolve, para
+// cada harness conhecido, uma sugestao de cadastro (modelos, budget, timeout e
+// contas derivadas do ambiente), marcando quais já estão cadastrados. Ajuda a
+// cadastrar motores num servidor remoto sem saber, de antemão, o que está
+// instalado. Não altera nada.
+func (s *Servidor) handleDetectarMotores(w http.ResponseWriter, r *http.Request) {
+	sugestoes, err := s.detectarMotores(r)
+	if err != nil {
+		s.responderErroMotor(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, sugestoes)
+}
+
+// handleAutocadastrarMotores cadastra automaticamente todos os harnesses
+// detectados que estão instalados e ainda não constam no banco, criando também
+// as contas derivadas do ambiente. Devolve os motores criados (vazio quando não
+// havia nada novo a cadastrar). Idempotente: rodar de novo não duplica.
+func (s *Servidor) handleAutocadastrarMotores(w http.ResponseWriter, r *http.Request) {
+	sugestoes, err := s.detectarMotores(r)
+	if err != nil {
+		s.responderErroMotor(w, err)
+		return
+	}
+	criados := []db.Motor{}
+	for _, sug := range sugestoes {
+		if !sug.Instalado || sug.JaCadastrado {
+			continue
+		}
+		prox, err := s.banco.ProximaPrioridadeMotor(r.Context())
+		if err != nil {
+			s.responderErroMotor(w, err)
+			return
+		}
+		m, err := s.banco.CriarMotor(r.Context(), db.Motor{
+			Nome:           sug.Nome,
+			Prioridade:     prox,
+			Ativo:          true,
+			ModeloExec:     sug.ModeloExec,
+			ModeloAnalise:  sug.ModeloAnalise,
+			ModeloConsulta: sug.ModeloConsulta,
+			BudgetFaseUSD:  sug.BudgetFaseUSD,
+			TimeoutMin:     sug.TimeoutMin,
+			Params:         json.RawMessage("{}"),
+		})
+		if err != nil {
+			s.responderErroMotor(w, err)
+			return
+		}
+		for _, c := range sug.Contas {
+			conta, msg := montarConta(reqConta{Alias: c.Alias, ConfigDir: c.ConfigDir}, db.Conta{EngineID: m.ID}, true)
+			if msg != "" {
+				continue
+			}
+			if criada, err := s.banco.CriarConta(r.Context(), conta); err == nil {
+				m.Contas = append(m.Contas, criada)
+			}
+		}
+		criados = append(criados, m)
+	}
+	responderJSON(w, http.StatusOK, criados)
+}
+
+// detectarMotores roda a detecção de ambiente e marca cada sugestão com
+// JaCadastrado comparando (case-insensitive) com os motores já persistidos.
+func (s *Servidor) detectarMotores(r *http.Request) ([]motor.SugestaoMotor, error) {
+	sugestoes := motor.DetectarMotores()
+	motores, err := s.banco.ListarMotores(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	existentes := map[string]bool{}
+	for _, m := range motores {
+		existentes[strings.ToLower(strings.TrimSpace(m.Nome))] = true
+	}
+	for i := range sugestoes {
+		sugestoes[i].JaCadastrado = existentes[strings.ToLower(strings.TrimSpace(sugestoes[i].Nome))]
+	}
+	return sugestoes, nil
 }
 
 // handleObterMotor devolve um motor por id (com contas).

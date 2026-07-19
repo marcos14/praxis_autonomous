@@ -83,6 +83,50 @@ func TestCriarMotorPrioridadeAutoIncrementa(t *testing.T) {
 	}
 }
 
+func TestDetectarMotoresEndpoint(t *testing.T) {
+	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
+	criarMotorAPI(t, srv, "claude") // já cadastrado deve vir marcado
+	rec := fazerReq(t, srv, http.MethodGet, "/api/v1/engines/deteccao", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var sug []struct {
+		Nome         string `json:"nome"`
+		JaCadastrado bool   `json:"ja_cadastrado"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &sug); err != nil {
+		t.Fatalf("decodificar sugestões: %v (corpo=%s)", err, rec.Body.String())
+	}
+	if len(sug) == 0 {
+		t.Fatal("esperava ao menos uma sugestão de motor")
+	}
+	var achouClaude bool
+	for _, s := range sug {
+		if s.Nome == "claude" {
+			achouClaude = true
+			if !s.JaCadastrado {
+				t.Fatal("claude já foi cadastrado; deveria vir ja_cadastrado=true")
+			}
+		}
+	}
+	if !achouClaude {
+		t.Fatal("sugestão do claude ausente")
+	}
+}
+
+func TestAutocadastrarMotoresEndpoint(t *testing.T) {
+	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
+	// Em ambiente de teste os CLIs não estão instalados, então nada é cadastrado.
+	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/engines/deteccao", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	criados := decodMotores(t, rec)
+	if criados == nil {
+		t.Fatal("resposta deveria ser uma lista (mesmo que vazia), não nil")
+	}
+}
+
 func TestCriarMotorNomeObrigatorio(t *testing.T) {
 	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
 	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/engines", map[string]any{"modelo_exec": "opus"})

@@ -138,7 +138,11 @@
       <h1 class="page">Motores</h1>
       <p class="sub">Ordene por prioridade — se a franquia do primeiro esgotar, o próximo assume (fallback automático). Use ▲/▼ para reordenar.</p>
       <div style="max-width:820px">
-        <button class="btn" style="margin-bottom:12px" id="btn-novo-motor">+ Novo motor</button>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn" id="btn-novo-motor">+ Novo motor</button>
+          <button class="btn ghost" id="btn-detectar-motores">⟳ Detectar no ambiente</button>
+        </div>
+        <div class="panel" id="painel-deteccao" style="margin-bottom:14px" hidden></div>
         <div id="lista-motores"></div>
         <div class="panel" id="painel-motor" style="margin-top:18px" hidden></div>
       </div>

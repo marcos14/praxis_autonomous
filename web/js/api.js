@@ -111,6 +111,10 @@ export const api = {
   criarMotor: (m) => req("POST", "/api/v1/engines", m),
   atualizarMotor: (id, m) => req("PUT", `/api/v1/engines/${id}`, m),
   reordenarMotores: (ids) => req("PUT", "/api/v1/engines/ordem", { ids }),
+  // detecção automática: sugere motores a partir do ambiente do servidor
+  // (harness instalado + variáveis) e cadastra os detectados com um POST.
+  detectarMotores: () => req("GET", "/api/v1/engines/deteccao"),
+  autocadastrarMotores: () => req("POST", "/api/v1/engines/deteccao"),
   criarConta: (engineID, c) => req("POST", `/api/v1/engines/${engineID}/accounts`, c),
   atualizarConta: (engineID, contaID, c) => req("PUT", `/api/v1/engines/${engineID}/accounts/${contaID}`, c),
   removerConta: (engineID, contaID) => req("DELETE", `/api/v1/engines/${engineID}/accounts/${contaID}`),

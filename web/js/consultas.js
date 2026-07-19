@@ -5,7 +5,7 @@
 // progresso ("lendo arquivo…") e um poll de fallback detecta o fim do turno.
 
 import { api } from "./api.js";
-import { el, limpar, toast, bannerErro } from "./ui.js";
+import { el, limpar, toast, bannerErro, renderMarkdown } from "./ui.js";
 
 let consultas = [];
 let selecionadaID = null;
@@ -319,7 +319,7 @@ function bolha(m) {
   } catch { /* meta inválido: segue sem extras */ }
   return el("div", { class: "msg " + classe },
     rotulo ? el("div", { class: "who", text: rotulo }) : null,
-    el("div", { class: "txt", text: m.conteudo }),
+    el("div", { class: "txt md" }, ...renderMarkdown(m.conteudo || "")),
     extra,
   );
 }

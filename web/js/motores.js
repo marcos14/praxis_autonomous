@@ -14,6 +14,7 @@ export async function montarMotores() {
     editandoID = "novo";
     renderPainel(null);
   };
+  document.getElementById("btn-detectar-motores").onclick = () => detectar();
   if (editandoID != null && editandoID !== "novo") {
     const m = motores.find((x) => x.id === editandoID);
     if (m) renderPainel(m);
@@ -86,6 +87,125 @@ async function mover(de, para) {
     await recarregar();
   } catch (e) {
     bannerErro("Falha ao reordenar: " + e.message);
+  }
+}
+
+// detectar consulta o servidor sobre quais harnesses estão instalados e como o
+// ambiente está configurado, e mostra sugestões de cadastro num painel.
+async function detectar() {
+  const painel = document.getElementById("painel-deteccao");
+  painel.hidden = false;
+  limpar(painel);
+  painel.append(el("p", { class: "sub", text: "Analisando o ambiente do servidor…" }));
+  let sugestoes;
+  try {
+    sugestoes = (await api.detectarMotores()) || [];
+  } catch (e) {
+    limpar(painel);
+    painel.append(el("p", { class: "sub", text: "Falha ao detectar motores: " + e.message }));
+    return;
+  }
+  renderDeteccao(painel, sugestoes);
+}
+
+function renderDeteccao(painel, sugestoes) {
+  limpar(painel);
+  painel.append(el("h3", {}, "Detecção no ambiente ",
+    el("small", {}, "harness instalado + variáveis de ambiente")));
+
+  const pendentes = sugestoes.filter((s) => s.instalado && !s.ja_cadastrado);
+  const cabecalho = el("div", { style: "display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap" });
+  const btnFechar = el("button", { class: "btn sm ghost", onclick: () => { painel.hidden = true; limpar(painel); } }, "Fechar");
+  if (pendentes.length > 0) {
+    const btnTodos = el("button", { class: "btn sm" }, `Cadastrar detectados (${pendentes.length})`);
+    btnTodos.onclick = () => autocadastrar(btnTodos);
+    cabecalho.append(btnTodos);
+  }
+  cabecalho.append(btnFechar);
+  painel.append(cabecalho);
+
+  for (const s of sugestoes) {
+    painel.append(cardSugestao(s));
+  }
+}
+
+function cardSugestao(s) {
+  const dot = s.ja_cadastrado ? "dot-good" : s.instalado ? "dot-blue" : "dot-muted";
+  const estado = s.ja_cadastrado ? "já cadastrado" : s.instalado ? "detectado" : "não instalado";
+  const modelos = [
+    s.modelo_exec ? `exec ${s.modelo_exec}` : null,
+    s.modelo_analise ? `análise ${s.modelo_analise}` : null,
+    s.modelo_consulta ? `consultas ${s.modelo_consulta}` : null,
+  ].filter(Boolean).join(" · ") || "usa o modelo configurado no próprio harness";
+
+  const vars = (s.variaveis || []).filter((v) => v.definida);
+  const varsTxt = vars.length
+    ? vars.map((v) => v.sensivel ? `${v.nome}=••••` : `${v.nome}=${v.valor}`).join("  ")
+    : "nenhuma variável relevante definida";
+
+  const contasTxt = (s.contas || []).length
+    ? "contas do ambiente: " + s.contas.map((c) => `${c.alias} → ${c.config_dir}`).join(", ")
+    : null;
+
+  const linhas = [
+    el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+      el("span", { class: "pill" }, el("span", { class: "dot " + dot }), " " + estado),
+      el("b", { text: s.nome }),
+      s.caminho_cli ? el("span", { class: "sub", style: "margin:0", text: s.caminho_cli }) : null,
+    ),
+    el("div", { class: "sub", style: "margin:6px 0 0", text: "modelos sugeridos: " + modelos }),
+    el("div", { class: "sub", style: "margin:2px 0 0", text: "variáveis: " + varsTxt }),
+    contasTxt ? el("div", { class: "sub", style: "margin:2px 0 0", text: contasTxt }) : null,
+    s.observacao ? el("div", { class: "sub", style: "margin:2px 0 0", text: s.observacao }) : null,
+  ].filter(Boolean);
+
+  if (s.instalado && !s.ja_cadastrado) {
+    const btn = el("button", { class: "btn sm", style: "margin-top:8px" }, "Cadastrar este");
+    btn.onclick = () => cadastrarSugestao(s, btn);
+    linhas.push(btn);
+  }
+
+  return el("div", { class: "motor-row", style: "display:block" }, ...linhas);
+}
+
+async function cadastrarSugestao(s, btn) {
+  if (btn) btn.disabled = true;
+  bannerErro("");
+  try {
+    const criado = await api.criarMotor({
+      nome: s.nome,
+      modelo_exec: s.modelo_exec,
+      modelo_analise: s.modelo_analise,
+      modelo_consulta: s.modelo_consulta,
+      budget_fase_usd: s.budget_fase_usd,
+      timeout_min: s.timeout_min,
+      params: {},
+    });
+    for (const c of s.contas || []) {
+      try {
+        await api.criarConta(criado.id, { alias: c.alias, config_dir: c.config_dir });
+      } catch { /* conta duplicada/ inválida: ignora, o motor já foi criado */ }
+    }
+    toast(`Motor ${s.nome} cadastrado.`, "ok");
+    await recarregar();
+    await detectar();
+  } catch (e) {
+    bannerErro("Falha ao cadastrar motor: " + e.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function autocadastrar(btn) {
+  if (btn) btn.disabled = true;
+  bannerErro("");
+  try {
+    const criados = (await api.autocadastrarMotores()) || [];
+    toast(criados.length ? `${criados.length} motor(es) cadastrado(s).` : "Nada novo a cadastrar.", "ok");
+    await recarregar();
+    await detectar();
+  } catch (e) {
+    bannerErro("Falha ao auto-cadastrar motores: " + e.message);
+    if (btn) btn.disabled = false;
   }
 }
 

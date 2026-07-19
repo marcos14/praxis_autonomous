@@ -3,7 +3,7 @@
 // arrastar, filtros ricos) — isso é o M4; aqui é a porta de entrada para o card.
 
 import { api } from "./api.js";
-import { el, limpar, bannerErro, toast } from "./ui.js";
+import { el, limpar, bannerErro, toast, renderMarkdown } from "./ui.js";
 
 let projetos = [];
 let filtro = { project: "", status: "" };
@@ -354,7 +354,7 @@ function bolha(m) {
   }
   return el("div", { class: "msg " + classe },
     rotulo ? el("div", { class: "who", text: rotulo }) : null,
-    el("div", { class: "txt", text: m.conteudo }),
+    el("div", { class: "txt md" }, ...renderMarkdown(m.conteudo || "")),
   );
 }
 

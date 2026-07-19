@@ -63,9 +63,9 @@ type ResultadoRun struct {
 
 // Capacidades declara o que um motor faz nativamente.
 type Capacidades struct {
-	SchemaNativo   bool
-	BudgetNativo   bool
-	CustoUSDNativo bool
+	SchemaNativo   bool `json:"schema_nativo"`
+	BudgetNativo   bool `json:"budget_nativo"`
+	CustoUSDNativo bool `json:"custo_usd_nativo"`
 }
 
 // Motor e um backend de execucao de codigo (Claude Code, Codex, etc.).
