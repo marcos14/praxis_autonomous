@@ -173,6 +173,12 @@ export const api = {
   pendencias: () => req("GET", "/api/v1/pendencias"),
   atividade: (limite) => req("GET", "/api/v1/activity" + (limite ? "?limite=" + limite : "")),
 
+  // IDE web (edição manual do worktree): o POST emite o cookie de sessão do
+  // /ide/* e garante o serve-web no ar — 202 {estado:"preparando"} enquanto
+  // sobe (repita o POST), 200 {estado:"pronto", url} quando pronto.
+  sessaoIDE: (demandId) => req("POST", "/api/v1/ide/sessao", { demand_id: demandId }),
+  statusIDE: () => req("GET", "/api/v1/ide/status"),
+
   // manual embutido (Fase 5b).
   listarManual: () => req("GET", "/api/v1/manual"),
   secaoManual: (slug) => req("GET", `/api/v1/manual/${slug}`),

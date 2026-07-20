@@ -222,11 +222,20 @@ func (s *Servidor) marcarConflito(r *http.Request, dem db.Demanda, contexto stri
 // merge_local, Fase 4d). Antes do merge, simula com PreviaMerge: em conflito,
 // coloca a demanda em `conflito` (+ arquivos) e devolve 409, sem tocar a main;
 // limpo, faz o merge, marca `integrada` e registra o evento. A limpeza do
-// worktree/branch é da Fase 4e. Só faz sentido no modo merge_local.
+// worktree/branch é da Fase 4e. Só faz sentido no modo merge_local — e SEMPRE
+// por ação humana explícita: nenhum caminho do sistema chama isto sozinho.
 func (s *Servidor) acaoIntegrar(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
 	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
 	if err != nil {
 		s.responderErroDemanda(w, err)
+		return
+	}
+	// Integrar é o fechamento: só de demanda concluída (ou em conflito, após
+	// resolver). Integrar no meio da execução mesclaria trabalho incompleto e
+	// removeria o worktree debaixo do harness.
+	if dem.Status != db.StatusDemandaConcluida && dem.Status != db.StatusDemandaConflito {
+		responderErro(w, http.StatusConflict, "estado_invalido",
+			"só é possível integrar uma demanda concluída ou em conflito (status atual: "+dem.Status+")")
 		return
 	}
 	if strings.TrimSpace(dem.Branch) == "" {
@@ -296,9 +305,17 @@ func (s *Servidor) limparPosIntegracao(r *http.Request, proj db.Projeto, dem db.
 // e se a branch estiver totalmente contida em origin/<base> (ou na base local),
 // marca a demanda como integrada e limpa worktree/branch. Best-effort e
 // idempotente. Devolve a demanda (possivelmente atualizada) e se integrou agora.
+//
+// SÓ roda com a demanda concluída ou em conflito: é quando um MR pode ter sido
+// mesclado. Antes disso o teste "branch contida na base" dá falso positivo — uma
+// branch recém-criada, ainda SEM commits (o commit vem no fim da fase), está
+// trivialmente contida na main, e reconciliar aqui marcaria a demanda como
+// integrada e removeria o worktree DEBAIXO do executor em andamento.
 func (s *Servidor) reconciliarMR(r *http.Request, proj db.Projeto, dem db.Demanda) (db.Demanda, bool) {
-	if proj.ModoIntegracao != db.ModoIntegracaoMergeRequest ||
-		dem.Status == db.StatusDemandaIntegrada || strings.TrimSpace(dem.Branch) == "" {
+	if proj.ModoIntegracao != db.ModoIntegracaoMergeRequest || strings.TrimSpace(dem.Branch) == "" {
+		return dem, false
+	}
+	if dem.Status != db.StatusDemandaConcluida && dem.Status != db.StatusDemandaConflito {
 		return dem, false
 	}
 	base := baseDoProjeto(proj)
@@ -334,6 +351,14 @@ func (s *Servidor) acaoAtualizarBranch(w http.ResponseWriter, r *http.Request, d
 	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
 	if err != nil {
 		s.responderErroDemanda(w, err)
+		return
+	}
+	// Nunca com o scheduler podendo escrever no worktree (mesmo gate da edição
+	// manual): o merge no worktree colidiria com a fase em andamento.
+	switch dem.Status {
+	case db.StatusDemandaPronta, db.StatusDemandaExecutando, db.StatusDemandaAguardandoFranquia:
+		responderErro(w, http.StatusConflict, "estado_invalido",
+			"não é possível atualizar a branch com a demanda na fila ou executando — pause-a antes (status atual: "+dem.Status+")")
 		return
 	}
 	if strings.TrimSpace(dem.Branch) == "" || strings.TrimSpace(dem.WorktreePath) == "" {

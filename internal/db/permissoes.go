@@ -18,6 +18,7 @@ const (
 	PermConfigGerir       = "config.gerir"       // motores/contas e config global (configurações avançadas)
 	PermUsuariosGerir     = "usuarios.gerir"     // usuários, papéis e tokens de API
 	PermConsultasUsar     = "consultas.usar"     // abrir consultas e conversar com o consultor (produto/suporte)
+	PermCodigoEditar      = "codigo.editar"      // abrir o IDE web (VS Code) no worktree de uma demanda
 	PermCuringa           = "*"                  // todas (só o papel de sistema admin)
 )
 
@@ -41,6 +42,7 @@ var CatalogoPermissoes = []Permissao{
 	{PermConfigGerir, "Configurações avançadas", "Gerir motores, contas e a configuração global."},
 	{PermUsuariosGerir, "Usuários e acessos", "Gerir usuários, papéis e tokens de API."},
 	{PermConsultasUsar, "Consultar o código", "Conversar com o consultor sobre o comportamento do sistema (sem acesso ao código-fonte)."},
+	{PermCodigoEditar, "Editar código (IDE web)", "Abrir o VS Code no navegador para ajustes manuais no worktree de uma demanda. O IDE dá acesso de desenvolvedor ao servidor (terminal incluído)."},
 }
 
 // permissoesAtribuiveis é o conjunto (para validação) das chaves do catálogo.

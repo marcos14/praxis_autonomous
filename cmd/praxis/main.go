@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -25,6 +26,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/consultor"
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
+	"github.com/marcos14/praxis-autonomous/internal/ide"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/manutencao"
 	"github.com/marcos14/praxis-autonomous/internal/notify"
@@ -105,7 +107,10 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	addr := fs.String("addr", enderecoPadrao, "endereço TCP de bind do servidor HTTP")
+	addr := fs.String("addr", enderecoPadrao, "endereço TCP de bind do servidor HTTP (use 0.0.0.0:7799 para acesso pela rede — com TLS)")
+	autoTLS := fs.Bool("tls", false, "habilita HTTPS com certificado autoassinado gerado/reutilizado em PRAXIS_HOME/tls")
+	tlsCert := fs.String("tls-cert", "", "certificado TLS (PEM) próprio; habilita HTTPS (exige -tls-key)")
+	tlsKey := fs.String("tls-key", "", "chave privada TLS (PEM) do -tls-cert")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -174,8 +179,51 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if sched != nil {
 		opts.Exec = sched
 	}
+	// IDE web (edição manual do worktree pelo navegador): instância única de
+	// `code serve-web` sob demanda, exposta pelo proxy /ide/*. Sem PRAXIS_HOME o
+	// recurso fica desligado (a API responde 503 ao solicitar).
+	if ger := novoIDEWeb(ctx, registro, logger); ger != nil {
+		opts.IDE = ger
+	}
 	srv := api.Novo(opts)
-	return servirHTTP(ctx, *addr, srv.Handler(), out, logger)
+
+	cfgTLS, err := resolverTLS(*tlsCert, *tlsKey, *autoTLS, logger)
+	if err != nil {
+		return err
+	}
+	return servirHTTP(ctx, *addr, srv.Handler(), cfgTLS, out, logger)
+}
+
+// novoIDEWeb monta o gerente do VS Code Web com o CLI/dados sob PRAXIS_HOME e o
+// PID do serve-web no mesmo registro dos harnesses (órfãos morrem no boot). Sem
+// PRAXIS_HOME resolvido devolve nil — o recurso fica desligado.
+func novoIDEWeb(ctx context.Context, registro *procs.Registro, logger *slog.Logger) *ide.Gerente {
+	home, err := db.PraxisHome()
+	if err != nil {
+		logger.Warn("IDE web desligado: resolver PRAXIS_HOME", "erro", err)
+		return nil
+	}
+	return ide.Novo(ide.Opcoes{
+		Home:      home,
+		Ctx:       ctx,
+		Log:       func(msg string) { logger.Info(msg) },
+		Registrar: registro.Registrar,
+	})
+}
+
+// resolverTLS monta a configuração TLS do serve (nil = HTTP puro). O certificado
+// autoassinado vive em PRAXIS_HOME/tls.
+func resolverTLS(tlsCert, tlsKey string, autoTLS bool, logger *slog.Logger) (*tls.Config, error) {
+	dirTLS := ""
+	if autoTLS && tlsCert == "" {
+		home, err := db.PraxisHome()
+		if err != nil {
+			return nil, fmt.Errorf("-tls: resolver PRAXIS_HOME: %w", err)
+		}
+		dirTLS = filepath.Join(home, "tls")
+	}
+	return configTLS(tlsCert, tlsKey, autoTLS, dirTLS,
+		func(msg string, kv ...any) { logger.Info(msg, kv...) })
 }
 
 // registroPIDs cria o registro de PIDs dos harnesses em PRAXIS_HOME/pids. Falha
@@ -296,28 +344,37 @@ func recuperarPosRestart(ctx context.Context, banco *db.DB, git *gitops.Ops, reg
 		"projetos", rec.ProjetosPreparados, "orfaos", rec.OrfaosMortos, "demandas_refiladas", rec.DemandasRefiladas)
 }
 
-// servirHTTP abre o listener em addr e delega a servirListener. Separar a
-// abertura do listener permite testar o ciclo servir/shutdown com um listener
-// controlado pelo teste.
-func servirHTTP(ctx context.Context, addr string, h http.Handler, out io.Writer, logger *slog.Logger) error {
+// servirHTTP abre o listener em addr (envolvendo-o com TLS quando cfgTLS não é
+// nil) e delega a servirListener. Separar a abertura do listener permite testar
+// o ciclo servir/shutdown com um listener controlado pelo teste.
+func servirHTTP(ctx context.Context, addr string, h http.Handler, cfgTLS *tls.Config, out io.Writer, logger *slog.Logger) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("escutar em %s: %w", addr, err)
 	}
-	return servirListener(ctx, ln, h, out, logger)
+	if cfgTLS != nil {
+		// Listener misto: HTTP puro na porta TLS vira redirect 307 para https://
+		// (navegadores tentam http:// primeiro), em vez de erro de handshake.
+		ln = novoListenerMisto(ln, cfgTLS)
+	}
+	return servirListener(ctx, ln, h, cfgTLS != nil, out, logger)
 }
 
 // servirListener serve h em ln até ctx ser cancelado, quando faz o shutdown
 // gracioso (drena conexões por até timeoutShutdown). Retorna nil no encerramento
 // limpo.
-func servirListener(ctx context.Context, ln net.Listener, h http.Handler, out io.Writer, logger *slog.Logger) error {
+func servirListener(ctx context.Context, ln net.Listener, h http.Handler, comTLS bool, out io.Writer, logger *slog.Logger) error {
 	servidor := &http.Server{
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
-	fmt.Fprintf(out, "praxis serve: ouvindo em http://%s\n", ln.Addr())
+	esquema := "http"
+	if comTLS {
+		esquema = "https"
+	}
+	fmt.Fprintf(out, "praxis serve: ouvindo em %s://%s\n", esquema, ln.Addr())
 	logger.Info("servidor no ar", "addr", ln.Addr().String())
 
 	errServe := make(chan error, 1)

@@ -45,6 +45,9 @@ type Opcoes struct {
 	// Git executa as operações de integração (merge-preview, push, merge --no-ff,
 	// remoção de worktree) das Fases 4c/4d/4e. Se nil, o Novo usa gitops.Novo().
 	Git *gitops.Ops
+	// IDE é o gerente do VS Code Web (edição manual do worktree pelo navegador).
+	// Opcional: nil = recurso desligado (POST /ide/sessao responde 503).
+	IDE IDEWeb
 }
 
 // ConsultorSvc dispara turnos de consulta e gerações de overview em background
@@ -80,6 +83,7 @@ type Servidor struct {
 	planejamento Planejador
 	consultor    ConsultorSvc
 	git          *gitops.Ops
+	ideWeb       IDEWeb
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -122,7 +126,7 @@ func Novo(opts Opcoes) *Servidor {
 		gitOps = gitops.Novo()
 	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
-		planejamento: opts.Planejamento, consultor: opts.Consultas, git: gitOps,
+		planejamento: opts.Planejamento, consultor: opts.Consultas, git: gitOps, ideWeb: opts.IDE,
 		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 
@@ -144,6 +148,8 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasGruposUsuarios(mux)
 	s.registrarRotasManual(mux)
 	s.registrarRotasOverlap(mux)
+	s.registrarRotasIDE(mux)
+	s.registrarRotasCert(mux)
 	s.registrarRotasWeb(mux)
 
 	// A ordem coloca o recover na camada mais externa e a autorização (comAuth)

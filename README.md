@@ -51,15 +51,41 @@ go test ./... -count=1
 ## 3. Subir o serviço
 
 ```sh
-./praxis serve                      # bind padrão 127.0.0.1:7799
-./praxis serve -addr 127.0.0.1:9000 # porta alternativa
+./praxis serve                           # bind padrão 127.0.0.1:7799 (uso local)
+./praxis serve -addr 127.0.0.1:9000      # porta alternativa
+./praxis serve -addr 0.0.0.0:7799 -tls   # acesso pela rede, HTTPS autoassinado
 ```
 
 Abra **http://127.0.0.1:7799** no navegador. O serviço faz o encerramento gracioso
 com `Ctrl+C` (SIGINT/SIGTERM), drenando as conexões e as tarefas em voo.
 
-O bind padrão é **loopback** (127.0.0.1) por segurança. Para acessar de fora, use um
-**túnel SSH** ou um reverse-proxy — não exponha a porta diretamente (ver §9).
+### Acesso pela rede (HTTPS)
+
+Para acessar de outras máquinas, faça o bind em `0.0.0.0` **com TLS**:
+
+- `-tls` gera (e reutiliza) um certificado **autoassinado** em `PRAXIS_HOME/tls`, com
+  SANs para `localhost`, o hostname e os IPs da máquina no momento da geração. Se o
+  IP do servidor mudar, apague `PRAXIS_HOME/tls` para regenerar.
+- `-tls-cert cert.pem -tls-key key.pem` usa um certificado próprio (CA interna da
+  empresa ou certificado válido) — sem nenhum passo nos dispositivos.
+
+**Instale o certificado nos dispositivos** (necessário para o IDE web): apenas
+"aceitar o risco" no aviso do navegador NÃO basta — o Chrome aplica a exceção à
+página, mas **recusa o certificado nas conexões WebSocket**, e o IDE web depende
+delas (sintoma: workbench abre e cai com "WebSocket close 1006"). Em cada
+dispositivo, baixe `https://<servidor>:7799/cert` e instale como confiável:
+
+- **Windows:** baixe o `praxis.crt`, duplo clique → *Instalar certificado* →
+  *Usuário atual* → armazenar em **Autoridades de Certificação Raiz Confiáveis**.
+  Ou, em terminal: `certutil -addstore -user Root praxis.crt`. Reinicie o navegador.
+- **Android:** Configurações → Segurança → Instalar certificado (CA).
+- **iOS/macOS:** abra o arquivo, instale o perfil e marque como confiável em
+  Ajustes → Geral → Confiança de certificados.
+
+O TLS não é opcional para o acesso remoto ao **IDE web** (§5): o VS Code no navegador
+exige contexto seguro (`https://` ou `localhost`). Sem TLS, apenas o uso local
+funciona. Um túnel SSH ou reverse-proxy com TLS próprio continuam sendo alternativas
+válidas (ver §9).
 
 ### O que sobe junto com o `serve`
 
@@ -87,7 +113,9 @@ PRAXIS_HOME/
 ├─ worktrees/<projeto>/<demanda>/   # working trees git isolados por demanda
 ├─ logs/d<id>/          # .jsonl do log ao vivo de cada execução
 ├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotação: mantém os 7 mais recentes)
-└─ pids/                # PIDs dos harnesses (para matar órfãos no boot)
+├─ pids/                # PIDs dos harnesses e do IDE web (para matar órfãos no boot)
+├─ tls/                 # cert.pem/key.pem autoassinados do -tls (gerados na 1ª vez)
+└─ tools/               # CLI do VS Code + dados do serve-web (IDE web, baixados na 1ª vez)
 ```
 
 Nas pastas dos **projetos-alvo** só entram os commits nas branches `praxis/d<id>-<slug>`.
@@ -134,6 +162,33 @@ Navegação (menu lateral):
      conflito, worktree e branch são removidos e a demanda vai para `Integrada`.
    - **Conflito** → a demanda volta destacada com os arquivos; use **Atualizar branch**
      (traz a main para a branch) ou resolva no worktree.
+
+### 5.1b Editar o código manualmente (IDE web)
+
+Para ajustes e correções manuais no worktree de uma demanda, a aba **Integração** tem
+o botão **Editar código ⧉**: abre o **VS Code no navegador** (`code serve-web`), direto
+na pasta do worktree, com terminal integrado — sem instalar nada na máquina de quem
+acessa.
+
+Como funciona:
+
+- **Sob demanda:** na primeira vez, o Praxis baixa o CLI oficial do VS Code do endpoint
+  da Microsoft (`update.code.visualstudio.com`) para `PRAXIS_HOME/tools` e sobe uma
+  instância única do serve-web (só no loopback, com connection-token gerado). A
+  instância é derrubada após ~30 min sem uso; o próximo acesso sobe de novo em segundos.
+- **Mesma porta, mesma segurança:** o IDE é exposto pelo proxy `/ide/*` do próprio
+  Praxis — nenhuma porta extra, o connection-token nunca chega ao navegador e o acesso
+  exige a permissão **`codigo.editar`** (papéis em Configurações → Usuários).
+- **Gate de estado:** só com a demanda **pausada, falhada, em conflito ou encerrada** —
+  nunca enquanto o scheduler pode escrever no worktree. Para mexer numa demanda em
+  execução, **pause-a** primeiro; ao terminar, **retome**.
+- Cada abertura do IDE gera um evento de auditoria (`codigo_acessado`) na demanda.
+- **Uso local:** quem acessa por `localhost` também vê o atalho **Abrir no VS Code
+  local** (`vscode://`), que usa o VS Code instalado na própria máquina.
+
+> ⚠ O IDE web dá acesso de **desenvolvedor** ao servidor (o terminal integrado roda
+> como o usuário do serviço). Conceda `codigo.editar` só a quem você daria shell na
+> máquina — e, na internet pública, prefira VPN (ver §9).
 
 ### 5.2 Parâmetros de configuração (global → override por projeto)
 
@@ -269,8 +324,13 @@ sc.exe start praxis
 
 ## 9. Segurança e boas práticas
 
-- **Bind loopback + túnel/reverse-proxy** para acesso remoto. Quem estiver no loopback
-  tem acesso admin — trate a máquina como confiável.
+- **Acesso remoto: sempre com TLS.** Na LAN/VPN, `-addr 0.0.0.0:7799 -tls` (ou
+  certificado próprio) é o caminho direto; túnel SSH e reverse-proxy com TLS continuam
+  valendo. Na **internet pública**, prefira VPN (WireGuard/Tailscale) na frente — com o
+  IDE web habilitado, uma conta com `codigo.editar` comprometida equivale a um shell no
+  servidor.
+- Quem estiver no loopback **antes do primeiro admin ser criado** tem acesso pleno
+  (modo bootstrap) — crie o primeiro usuário logo após subir o serviço.
 - **Tokens** para chamadores programáticos (sistema de chamados, integrações): dê o
   menor papel necessário (`operador` para criar demandas; `leitor` para dashboards).
 - **Push protegido:** o Praxis só empurra branches `praxis/*`; a main nunca é empurrada;

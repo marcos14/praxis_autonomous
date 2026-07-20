@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bufio"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -57,6 +60,29 @@ func (c *capturaStatus) Flush() {
 		f.Flush()
 	}
 }
+
+// Hijack repassa o hijack ao ResponseWriter subjacente. Necessário para o
+// upgrade de WebSocket do proxy /ide/*: sem isto o ReverseProxy responde 502
+// ("can't switch protocols using non-Hijacker ResponseWriter"). Os dois
+// embrulhos da cadeia (comRecover e comLog) delegam um no outro até chegar à
+// conexão real.
+func (c *capturaStatus) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := c.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("resposta não suporta hijack (%T)", c.ResponseWriter)
+	}
+	// A conexão sai do controle do net/http: registra 101 no log e marca a
+	// resposta como escrita (o recover não deve tentar responder por cima).
+	if !c.escreveu {
+		c.status = http.StatusSwitchingProtocols
+		c.escreveu = true
+	}
+	return hj.Hijack()
+}
+
+// Unwrap expõe o ResponseWriter subjacente para o http.ResponseController
+// localizar Flusher/Hijacker através do embrulho.
+func (c *capturaStatus) Unwrap() http.ResponseWriter { return c.ResponseWriter }
 
 // comLog registra cada requisição atendida (método, caminho, status, duração)
 // via slog. logger pode ser nil, caso em que usa o logger default.

@@ -58,7 +58,7 @@ func TestServirListenerShutdownGracioso(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	var out bytes.Buffer
 	done := make(chan error, 1)
-	go func() { done <- servirListener(ctx, ln, mux, &out, logger) }()
+	go func() { done <- servirListener(ctx, ln, mux, false, &out, logger) }()
 
 	// Aguarda o servidor aceitar conexões e faz uma requisição real.
 	resp := esperarResposta(t, "http://"+addr+"/ping")

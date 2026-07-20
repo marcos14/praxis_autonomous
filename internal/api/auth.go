@@ -357,6 +357,9 @@ func permissaoMutacao(seg []string, resto string) string {
 		// Criar consulta, conversar e excluir a própria consulta (o handler de
 		// DELETE ainda checa criador-ou-admin).
 		return db.PermConsultasUsar
+	case "ide":
+		// Abrir sessão do IDE web (edição manual do worktree de uma demanda).
+		return db.PermCodigoEditar
 	}
 	return db.PermCuringa
 }

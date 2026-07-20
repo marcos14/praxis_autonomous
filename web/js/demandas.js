@@ -546,6 +546,10 @@ async function ativarIntegracao(cont, id, overlay) {
             try { await navigator.clipboard.writeText(mp.worktree_path); toast("Caminho copiado.", "ok"); }
             catch { toast("Não foi possível copiar.", "err"); }
           } }),
+        el("button", { class: "btn sm", text: "Editar código ⧉",
+          title: "Abre o VS Code no navegador, direto neste worktree (exige demanda pausada, falhada, em conflito ou encerrada).",
+          onclick: (ev) => abrirIDEWeb(id, mp.worktree_path, ev.currentTarget) }),
+        linkVSCodeLocal(mp.worktree_path),
       ) : null,
     ),
   ));
@@ -570,17 +574,26 @@ async function ativarIntegracao(cont, id, overlay) {
         onclick: () => executarAcaoIntegr(id, "publicar_branch", cont, overlay) })));
   }
 
-  // Botões de fechamento.
+  // Botões de fechamento — só quando a demanda está em estado integrável
+  // (concluída ou em conflito). O backend também valida (409 estado_invalido);
+  // esconder aqui evita o clique prematuro que mesclaria trabalho incompleto.
+  const integravel = ["concluida", "conflito"].includes(mp.status);
+  const agendada = AGENDAVEIS.includes(mp.status);
   const acoes = el("div", { class: "integr-acoes" });
-  if (mp.modo_integracao === "merge_request" && mp.url_mr) {
+  if (integravel && mp.modo_integracao === "merge_request" && mp.url_mr) {
     acoes.append(el("a", { class: "btn", href: mp.url_mr, target: "_blank", rel: "noopener", text: "Abrir Merge Request ↗" }));
   }
-  if (mp.modo_integracao === "merge_local") {
+  if (integravel && mp.modo_integracao === "merge_local") {
     acoes.append(el("button", { class: "btn good", text: "Integrar na main",
       onclick: () => executarAcaoIntegr(id, "integrar", cont, overlay) }));
   }
-  acoes.append(el("button", { class: "btn ghost", text: "Atualizar branch (trazer main)",
-    onclick: () => executarAcaoIntegr(id, "atualizar_branch", cont, overlay) }));
+  if (!agendada && !mp.ja_integrada && mp.worktree_path) {
+    acoes.append(el("button", { class: "btn ghost", text: "Atualizar branch (trazer main)",
+      onclick: () => executarAcaoIntegr(id, "atualizar_branch", cont, overlay) }));
+  }
+  if (!integravel && !mp.ja_integrada) {
+    acoes.append(el("span", { class: "sub", text: "A integração fica disponível quando a demanda concluir." }));
+  }
   cont.append(acoes);
 
   // Lista de commits.
@@ -597,6 +610,47 @@ async function ativarIntegracao(cont, id, overlay) {
     }
     cont.append(lista);
   }
+}
+
+// ---------- IDE web (edição manual do worktree) ----------
+
+// abrirIDEWeb cria/renova a sessão do IDE (cookie de /ide/*) e abre o VS Code
+// Web no worktree da demanda. A aba é aberta JÁ no clique (contra bloqueio de
+// popup); enquanto o serve-web sobe, o proxy serve uma página "preparando" que
+// recarrega sozinha preservando o ?folder=.
+async function abrirIDEWeb(id, worktree, btn) {
+  const rotulo = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Abrindo…";
+  const aba = window.open("", "praxis-ide");
+  try {
+    await api.sessaoIDE(id); // valida estado/permissão, emite o cookie e sobe o serve-web
+    // O valor de ?folder= PRECISA começar com "/" (o workbench só monta a URI
+    // remota para caminhos com "/" inicial; "C:/…" viraria scheme de URI).
+    let caminho = worktree.replace(/\\/g, "/");
+    if (!caminho.startsWith("/")) caminho = "/" + caminho;
+    const url = "/ide/?folder=" + encodeURIComponent(caminho);
+    if (aba && !aba.closed) aba.location = url;
+    else window.open(url, "praxis-ide");
+  } catch (e) {
+    if (aba && !aba.closed) aba.close();
+    toast("IDE: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = rotulo;
+  }
+}
+
+// linkVSCodeLocal devolve o link vscode://file/… para abrir o worktree no VS
+// Code instalado — só quando o navegador acessa o Praxis por loopback, único
+// caso em que o caminho do servidor existe nesta máquina. (Um túnel SSH também
+// parece loopback; nesse caso o link abre um caminho inexistente — use o
+// "Editar código" web.)
+function linkVSCodeLocal(worktree) {
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return null;
+  return el("a", { class: "btn sm ghost", text: "Abrir no VS Code local",
+    href: "vscode://file/" + encodeURI(worktree.replace(/\\/g, "/")),
+    title: "Requer o Praxis rodando NESTA máquina e o VS Code instalado." });
 }
 
 // executarAcaoIntegr dispara uma ação de integração e recarrega o card.
