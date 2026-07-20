@@ -139,6 +139,11 @@ export const api = {
   responderPerguntas: (id, respostas) => req("POST", `/api/v1/demands/${id}/answers`, { respostas }),
   // plano & fases (Fase 3c): editar o conjunto de fases, aprovar ou rejeitar o plano.
   editarFases: (id, fases) => req("PUT", `/api/v1/demands/${id}/phases`, { fases }),
+  // concluir manualmente uma fase que exige intervenção humana (requer_humano):
+  // marca a fase como feita e, se a demanda estava pausada aguardando humano, a
+  // devolve à fila do scheduler para seguir com as próximas fases.
+  concluirFaseHumana: (id, codigo) =>
+    req("POST", `/api/v1/demands/${id}/phases/${encodeURIComponent(codigo)}/complete`),
   aprovarPlano: (id) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: true }),
   rejeitarPlano: (id, comentario) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: false, comentario }),
   // ações de controle de execução (Fase 2i/4c/4d): pausar | retomar | cancelar |

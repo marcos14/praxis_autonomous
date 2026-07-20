@@ -68,6 +68,61 @@ func TestPendenciasHome(t *testing.T) {
 	}
 }
 
+func TestPendenciasIncluiPausadaComFaseHumana(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	proj := criarProjetoTeste(t, srv)
+	ctx := context.Background()
+
+	// Pausada aguardando humano (fase requer_humano pendente) → é pendência.
+	dHum, err := banco.CriarDemanda(ctx, db.Demanda{
+		ProjectID: proj, Titulo: "aguarda humano", Status: db.StatusDemandaPausada})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+	if _, err := banco.SubstituirFases(ctx, dHum.ID, []db.Fase{
+		{Codigo: "1", Titulo: "Deploy manual", RequerHumano: true},
+	}); err != nil {
+		t.Fatalf("fases: %v", err)
+	}
+
+	// Pausada manualmente (sem fase humana pendente) → NÃO é pendência.
+	dMan, err := banco.CriarDemanda(ctx, db.Demanda{
+		ProjectID: proj, Titulo: "pausa manual", Status: db.StatusDemandaPausada})
+	if err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+	if _, err := banco.SubstituirFases(ctx, dMan.ID, []db.Fase{
+		{Codigo: "1", Titulo: "Automática"},
+	}); err != nil {
+		t.Fatalf("fases: %v", err)
+	}
+
+	rec := fazerReq(t, srv, http.MethodGet, "/api/v1/pendencias", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200", rec.Code)
+	}
+	var pend []db.Demanda
+	if err := json.Unmarshal(rec.Body.Bytes(), &pend); err != nil {
+		t.Fatalf("decodificar: %v", err)
+	}
+	var viuHumano, viuManual bool
+	for _, d := range pend {
+		if d.ID == dHum.ID {
+			viuHumano = true
+		}
+		if d.ID == dMan.ID {
+			viuManual = true
+		}
+	}
+	if !viuHumano {
+		t.Fatalf("pausada com fase humana pendente deveria ser pendência: %+v", pend)
+	}
+	if viuManual {
+		t.Fatalf("pausada manual (sem fase humana) não deveria ser pendência: %+v", pend)
+	}
+}
+
 func TestAtividadeRecente(t *testing.T) {
 	banco := abrirBancoTemp(t)
 	srv := Novo(Opcoes{Banco: banco})

@@ -216,6 +216,111 @@ func TestRejeitarPlanoSemComentario(t *testing.T) {
 	}
 }
 
+// seedDemandaPausadaHumano cria uma demanda `pausada` (como o scheduler a deixa
+// ao só restarem fases requer_humano) com uma fase humana pendente e uma fase
+// automática que depende dela, para exercitar a conclusão manual.
+func seedDemandaPausadaHumano(t *testing.T, banco *db.DB) int64 {
+	t.Helper()
+	ctx := context.Background()
+	proj, err := banco.CriarProjeto(ctx, db.Projeto{Nome: "P", Slug: "p-humano", Pasta: `C:\repo`,
+		BranchPrincipal: "main", ModoIntegracao: "merge_request", Ativo: true})
+	if err != nil {
+		t.Fatalf("criar projeto: %v", err)
+	}
+	dem, err := banco.CriarDemanda(ctx, db.Demanda{ProjectID: proj.ID, Titulo: "D",
+		Status: db.StatusDemandaPausada})
+	if err != nil {
+		t.Fatalf("criar demanda: %v", err)
+	}
+	if _, err := banco.SubstituirFases(ctx, dem.ID, []db.Fase{
+		{Codigo: "1", Titulo: "Migração manual do banco", RequerHumano: true},
+		{Codigo: "2", Titulo: "API", DependeDe: []string{"1"}},
+	}); err != nil {
+		t.Fatalf("substituir fases: %v", err)
+	}
+	return dem.ID
+}
+
+func TestConcluirFaseHumanaLiberaExecucao(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	dem := seedDemandaPausadaHumano(t, banco)
+
+	rec := fazerReq(t, srv, http.MethodPost,
+		"/api/v1/demands/"+strconv.FormatInt(dem, 10)+"/phases/1/complete", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	d := decodDemanda(t, rec)
+	// demanda pausada por humano volta à fila (pronta).
+	if d.Status != db.StatusDemandaPronta {
+		t.Fatalf("status = %q, quero pronta", d.Status)
+	}
+	// a fase humana ficou concluída; a automática segue pendente.
+	var f1, f2 db.Fase
+	for _, f := range d.Fases {
+		switch f.Codigo {
+		case "1":
+			f1 = f
+		case "2":
+			f2 = f
+		}
+	}
+	if f1.Status != db.StatusFaseConcluida {
+		t.Fatalf("fase 1 = %q, quero concluida", f1.Status)
+	}
+	if f1.ConcluidoEm == "" {
+		t.Fatalf("fase 1 sem concluido_em")
+	}
+	if f2.Status != db.StatusFasePendente {
+		t.Fatalf("fase 2 = %q, quero pendente", f2.Status)
+	}
+	evs, _ := banco.ListarEventos(context.Background(), db.FiltroEventos{DemandID: &dem})
+	if !temEvento(evs, "fase_humana_concluida") {
+		t.Fatalf("evento fase_humana_concluida não registrado: %+v", evs)
+	}
+}
+
+func TestConcluirFaseHumanaIdempotente(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	dem := seedDemandaPausadaHumano(t, banco)
+	base := "/api/v1/demands/" + strconv.FormatInt(dem, 10) + "/phases/1/complete"
+
+	if rec := fazerReq(t, srv, http.MethodPost, base, nil); rec.Code != http.StatusOK {
+		t.Fatalf("1ª conclusão: status = %d", rec.Code)
+	}
+	// segunda chamada: idempotente (fase já concluída) → 200, sem erro.
+	if rec := fazerReq(t, srv, http.MethodPost, base, nil); rec.Code != http.StatusOK {
+		t.Fatalf("2ª conclusão (idempotente): status = %d (corpo=%q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConcluirFaseNaoHumanaRejeita(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	dem := seedDemandaPausadaHumano(t, banco)
+
+	// fase 2 não é requer_humano — não pode ser concluída à mão.
+	rec := fazerReq(t, srv, http.MethodPost,
+		"/api/v1/demands/"+strconv.FormatInt(dem, 10)+"/phases/2/complete", nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, quero 409 (fase automática)", rec.Code)
+	}
+}
+
+func TestConcluirFaseInexistente(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	dem := seedDemandaPausadaHumano(t, banco)
+
+	rec := fazerReq(t, srv, http.MethodPost,
+		"/api/v1/demands/"+strconv.FormatInt(dem, 10)+"/phases/99/complete", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404 (fase inexistente)", rec.Code)
+	}
+}
+
 // temEvento informa se algum evento tem o tipo dado.
 func temEvento(evs []db.Evento, tipo string) bool {
 	for _, e := range evs {

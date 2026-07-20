@@ -66,6 +66,7 @@ func (s *Servidor) registrarRotasDemandas(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/demands/{id}/questions", s.handleListarPerguntas)
 	mux.HandleFunc("POST /api/v1/demands/{id}/answers", s.handleResponderPerguntas)
 	mux.HandleFunc("PUT /api/v1/demands/{id}/phases", s.handleEditarFases)
+	mux.HandleFunc("POST /api/v1/demands/{id}/phases/{codigo}/complete", s.handleConcluirFaseHumana)
 	mux.HandleFunc("POST /api/v1/demands/{id}/approve-plan", s.handleAprovarPlano)
 }
 

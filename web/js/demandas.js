@@ -438,13 +438,35 @@ function renderPerguntas(cont, dados, perguntas, overlay) {
       const answer = el("div", { class: "answer" });
       if (temOpcoes && q.tipo !== "texto") {
         const chips = [];
+        // Campo de texto livre revelado pelo chip "Outro…", para quando nenhuma
+        // das opções sugeridas pela IA atende. Se a resposta corrente já não é
+        // uma das opções (ex.: resposta digitada antes), começa visível.
+        const respostaEhOpcao = q.opcoes.includes(estado[q.id]);
+        const inpOutro = el("input", { type: "text", placeholder: "Digite outra resposta…",
+          value: respostaEhOpcao ? "" : estado[q.id] });
+        if (respostaEhOpcao) inpOutro.style.display = "none";
+        inpOutro.addEventListener("input", () => { estado[q.id] = inpOutro.value; });
+
+        const marcar = (sel) => chips.forEach((c) => c.classList.toggle("sel", c === sel));
+
         q.opcoes.forEach((op) => {
           const rotulo = op + (op === q.sugestao ? " (sugestão)" : "");
           const chip = el("button", { class: "chip" + (op === estado[q.id] ? " sel" : ""), text: rotulo,
-            onclick: () => { estado[q.id] = op; chips.forEach((c) => c.classList.remove("sel")); chip.classList.add("sel"); } });
+            onclick: () => { estado[q.id] = op; inpOutro.style.display = "none"; marcar(chip); } });
           chips.push(chip);
           answer.append(chip);
         });
+
+        const chipOutro = el("button", { class: "chip" + (respostaEhOpcao ? "" : " sel"), text: "✎ Outro…",
+          onclick: () => {
+            if (q.opcoes.includes(estado[q.id])) estado[q.id] = ""; // limpa a opção antes selecionada
+            inpOutro.value = estado[q.id];
+            inpOutro.style.display = "";
+            marcar(chipOutro);
+            inpOutro.focus();
+          } });
+        chips.push(chipOutro);
+        answer.append(chipOutro, inpOutro);
       } else {
         const inp = el("input", { type: "text", value: estado[q.id] });
         inp.addEventListener("input", () => { estado[q.id] = inp.value; });
@@ -768,6 +790,16 @@ function renderFases(cont, dados, overlay) {
   if (fases.length === 0) {
     cont.append(el("p", { class: "vazio", text: "Esta demanda ainda não tem fases." }));
   }
+
+  // Aviso quando há fase(s) que exigem intervenção humana ainda por fazer: o
+  // scheduler nunca as executa sozinho; alguém precisa fazer o trabalho manual e
+  // clicar em "Marcar como feito ✓" para liberar a execução das próximas fases.
+  const pendenteHumano = (f) => f.requer_humano && f.status !== "concluida" && f.status !== "falhou";
+  if (!TERMINAIS.includes(dados.status) && fases.some(pendenteHumano)) {
+    cont.append(el("div", { class: "banner banner-warn" },
+      "✋ Esta demanda tem fase(s) que exigem intervenção humana. Faça o trabalho da fase e clique em “Marcar como feito ✓” para liberar a execução."));
+  }
+
   for (const f of fases) {
     const dep = (f.depende_de && f.depende_de.length) ? "dep: " + f.depende_de.join("+") : "";
     let custo = "";
@@ -775,14 +807,39 @@ function renderFases(cont, dados, overlay) {
     else if (f.requer_humano) custo = "exige humano";
     else if (dep) custo = dep;
     const classe = f.status === "concluida" ? "done" : (f.status === "executando" ? "run" : "");
+
+    // Botão de conclusão manual: só para fase requer_humano ainda não concluída,
+    // enquanto a demanda não está encerrada.
+    let botaoFeito = null;
+    if (pendenteHumano(f) && !TERMINAIS.includes(dados.status)) {
+      botaoFeito = el("button", { class: "btn sm good", text: "Marcar como feito ✓",
+        title: "Conclui esta fase manualmente e libera a execução das próximas.",
+        onclick: async (ev) => {
+          const b = ev.currentTarget;
+          b.disabled = true;
+          try {
+            await api.concluirFaseHumana(dados.id, f.codigo);
+          } catch (e) {
+            bannerErro("Falha ao concluir a fase: " + e.message);
+            b.disabled = false;
+            return;
+          }
+          bannerErro("");
+          fecharCard(overlay);
+          await recarregarLista();
+          await abrirCard(dados.id);
+        } });
+    }
+
     cont.append(el("div", { class: "fase-row " + classe },
       iconeFase(f),
       el("span", { class: "nm", text: `${f.codigo}. ${f.titulo}` }),
+      botaoFeito,
       el("span", { class: "cost", text: custo }),
     ));
   }
   if (dados.plano_md) {
-    cont.append(el("div", { class: "plano-md", text: dados.plano_md }));
+    cont.append(el("div", { class: "plano-md md" }, ...renderMarkdown(dados.plano_md)));
   }
 }
 
@@ -849,7 +906,7 @@ function renderFasesEditavel(cont, dados, overlay) {
   cont.append(el("div", { class: "fases-edit-add" }, btnAdd));
 
   if (dados.plano_md) {
-    cont.append(el("div", { class: "plano-md", text: dados.plano_md }));
+    cont.append(el("div", { class: "plano-md md" }, ...renderMarkdown(dados.plano_md)));
   }
 
   // ações do plano.

@@ -57,15 +57,49 @@ var statusPrecisaDeVoce = []string{
 }
 
 // handlePendencias devolve as demandas que precisam do usuário (perguntas a
-// responder, plano a aprovar ou conflito a resolver).
+// responder, plano a aprovar, conflito a resolver ou fase que exige intervenção
+// humana aguardando o "feito").
 func (s *Servidor) handlePendencias(w http.ResponseWriter, r *http.Request) {
-	demandas, err := s.banco.ListarDemandasPorStatus(r.Context(), statusPrecisaDeVoce,
-		visibilidadeDaRequisicao(r))
+	vis := visibilidadeDaRequisicao(r)
+	demandas, err := s.banco.ListarDemandasPorStatus(r.Context(), statusPrecisaDeVoce, vis)
 	if err != nil {
 		s.responderErroDemanda(w, err)
 		return
 	}
+
+	// Demandas `pausada` também podem precisar de você — mas só quando a pausa é
+	// por uma fase que exige intervenção humana (o scheduler pausa a demanda ao só
+	// restarem fases requer_humano). Uma pausa manual do usuário NÃO é pendência,
+	// então filtramos por fase para não poluir a lista "Precisa de você".
+	pausadas, err := s.banco.ListarDemandasPorStatus(r.Context(), []string{db.StatusDemandaPausada}, vis)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	for _, d := range pausadas {
+		fases, err := s.banco.ListarFases(r.Context(), d.ID)
+		if err != nil {
+			s.log.Warn("listar fases para pendências", "erro", err, "demanda", d.ID)
+			continue
+		}
+		if temFaseHumanaPendente(fases) {
+			demandas = append(demandas, d)
+		}
+	}
+
 	responderJSON(w, http.StatusOK, demandas)
+}
+
+// temFaseHumanaPendente informa se há ao menos uma fase que exige intervenção
+// humana ainda por concluir (pendente/pausada) — o sinal de que a demanda
+// pausada aguarda alguém fazer o trabalho manual e clicar em "feito".
+func temFaseHumanaPendente(fases []db.Fase) bool {
+	for _, f := range fases {
+		if f.RequerHumano && (f.Status == db.StatusFasePendente || f.Status == db.StatusFasePausada) {
+			return true
+		}
+	}
+	return false
 }
 
 // handleAtividade devolve os eventos mais recentes (backlog inicial que a Home
