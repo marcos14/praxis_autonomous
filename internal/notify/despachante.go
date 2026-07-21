@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -22,12 +23,19 @@ type FonteEventos interface {
 // para refletir mudanças feitas na tela de Configurações sem reiniciar).
 type ProvedorConfig func(ctx context.Context) (Config, error)
 
+// ProvedorOverride resolve o override de notificações de um projeto (quais
+// eventos notificar). Devolve (override, existe, erro): existe=false quando o
+// projeto não tem override e todos os seus eventos caem no padrão global. nil no
+// despachante desliga o override por projeto (comportamento só-global).
+type ProvedorOverride func(ctx context.Context, projectID int64) (OverrideProjeto, bool, error)
+
 // Despachante observa os eventos persistidos e envia notificações para os canais
 // configurados, respeitando o filtro por tipo de evento. É o elo "eventos do
 // banco → webhooks" da Fase 4e.
 type Despachante struct {
 	fonte     FonteEventos
 	cfg       ProvedorConfig
+	override  ProvedorOverride
 	notif     *Notificador
 	intervalo time.Duration
 	log       func(string)
@@ -42,8 +50,9 @@ type Despachante struct {
 type OpcoesDespachante struct {
 	Fonte     FonteEventos
 	Config    ProvedorConfig
-	Notif     *Notificador  // nil = Novo()
-	Intervalo time.Duration // <=0 = intervaloPollPadrao
+	Override  ProvedorOverride // nil = sem override por projeto (só-global)
+	Notif     *Notificador     // nil = Novo()
+	Intervalo time.Duration    // <=0 = intervaloPollPadrao
 	Log       func(string)
 	AoIniciar func() // hook de teste; chamado após capturar o cursor inicial
 }
@@ -65,7 +74,7 @@ func NovoDespachante(o OpcoesDespachante) *Despachante {
 	if n.Aviso == nil {
 		n.Aviso = func(msg string) { logf("notify: " + msg) }
 	}
-	return &Despachante{fonte: o.Fonte, cfg: o.Config, notif: n, intervalo: iv, log: logf, aoIniciar: o.AoIniciar}
+	return &Despachante{fonte: o.Fonte, cfg: o.Config, override: o.Override, notif: n, intervalo: iv, log: logf, aoIniciar: o.AoIniciar}
 }
 
 // Rodar tail-a a tabela de eventos até ctx ser cancelado. O cursor inicial é o
@@ -102,12 +111,39 @@ func (d *Despachante) processar(ctx context.Context, cursor int64) int64 {
 		// não avança o cursor: tenta de novo no próximo ciclo com a config lida.
 		return cursor
 	}
+	// Os canais/cabeçalho são globais; o override de projeto só troca o mapa de
+	// eventos. Como os canais não mudam por projeto, um único teste basta para
+	// decidir se há para onde enviar.
 	notificar := AlgumCanalAtivo(cfg)
+	efetivaPorProjeto := map[int64]Config{} // cache dentro do ciclo (evita relê-lo por evento)
 	for _, ev := range novos {
 		if notificar {
-			d.notif.EnviarEvento(ctx, cfg, ev.Tipo, ev.Titulo, ev.Detalhe)
+			d.notif.EnviarEvento(ctx, d.configDoEvento(ctx, cfg, ev, efetivaPorProjeto), ev.Tipo, ev.Titulo, ev.Detalhe)
 		}
 		cursor = ev.ID
 	}
 	return cursor
+}
+
+// configDoEvento resolve a config efetiva a aplicar a um evento: a global, com o
+// mapa de eventos trocado pelo override do projeto do evento (quando há um e ele
+// não usa o padrão). Eventos sem projeto, ou sem provedor de override, usam a
+// global. O cache evita reconsultar o mesmo projeto no ciclo; erro ao ler o
+// override cai no global (best-effort, nunca silencia por falha de leitura).
+func (d *Despachante) configDoEvento(ctx context.Context, global Config, ev db.Evento, cache map[int64]Config) Config {
+	if ev.ProjectID == nil || d.override == nil {
+		return global
+	}
+	pid := *ev.ProjectID
+	if c, ok := cache[pid]; ok {
+		return c
+	}
+	efetiva := global
+	if ov, existe, err := d.override(ctx, pid); err == nil {
+		efetiva = ParaProjeto(global, ov, existe)
+	} else {
+		d.log("notify: override do projeto " + fmt.Sprint(pid) + ": " + err.Error())
+	}
+	cache[pid] = efetiva
+	return efetiva
 }

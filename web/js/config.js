@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { el, limpar, toast, bannerErro } from "./ui.js";
 import { temPermissao } from "./auth.js";
 import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
+import { GRUPOS_EVENTOS, CANAIS, resolverEventos } from "./notify-events.js";
 
 let desconhecidas = {}; // chaves fora da whitelist, preservadas no save
 
@@ -48,7 +49,123 @@ export async function montarConfig() {
   form.append(btn);
   painel.append(form);
 
+  await montarNotificacoes();
   await montarTokens();
+}
+
+// ---------- Notificações externas ----------
+//
+// A config de notificações vive na chave global "notificacoes" (config_entries),
+// um JSON com { canais, eventos, cabecalho } lido pelo despachante do backend
+// (internal/notify). Aqui editamos os canais/tokens e os eventos notificados por
+// padrão. O save é read-modify-write: relê a config global completa e troca só a
+// chave "notificacoes", preservando as demais (parâmetros e chaves desconhecidas).
+
+async function montarNotificacoes() {
+  const painel = document.getElementById("painel-notificacoes");
+  if (!painel) return;
+  limpar(painel);
+
+  let cfg;
+  try {
+    cfg = await api.obterConfigGlobal();
+  } catch (e) {
+    painel.append(el("p", { class: "sub", text: "Falha ao carregar notificações: " + e.message }));
+    return;
+  }
+  const notif = cfg["notificacoes"] || {};
+  const canaisSalvos = notif.canais || {};
+  const eventos = resolverEventos(notif.eventos);
+
+  const form = el("div", { class: "form" });
+
+  const inpCab = el("input", { type: "text", value: notif.cabecalho || "", placeholder: "ex.: [Praxis · Produção]" });
+  form.append(el("div", {},
+    el("label", {}, "Cabeçalho das mensagens ", el("span", { class: "opt" }, "(opcional)")),
+    inpCab,
+    el("div", { class: "hint", text: "Linha fixa no topo de toda notificação — útil para identificar o ambiente." })));
+
+  // Canais.
+  const canalCtl = new Map();
+  form.append(el("h3", { class: "notif-sub" }, "Canais"));
+  for (const canal of CANAIS) {
+    const salvo = canaisSalvos[canal.chave] || {};
+    const chkAtivo = el("input", { type: "checkbox" });
+    chkAtivo.checked = !!salvo.ativo;
+    const inputs = new Map();
+    const campoNodes = [];
+    for (const campo of canal.campos) {
+      const inp = el("input", {
+        type: campo.tipo === "password" ? "password" : "text",
+        value: salvo[campo.chave] || "", placeholder: campo.placeholder || "", autocomplete: "off",
+      });
+      inputs.set(campo.chave, inp);
+      campoNodes.push(el("div", {}, el("label", {}, campo.rotulo), inp));
+    }
+    const corpo = el("div", { class: "notif-canal-corpo" },
+      ...campoNodes, canal.hint ? el("div", { class: "hint", text: canal.hint }) : null);
+    const card = el("div", { class: "notif-canal" },
+      el("label", { class: "notif-canal-head" }, chkAtivo, el("b", { text: canal.rotulo })),
+      corpo);
+    const sync = () => { corpo.hidden = !chkAtivo.checked; };
+    chkAtivo.addEventListener("change", sync);
+    sync();
+    canalCtl.set(canal.chave, { chkAtivo, inputs });
+    form.append(card);
+  }
+
+  // Eventos notificados por padrão.
+  form.append(el("h3", { class: "notif-sub" }, "Eventos notificados por padrão"));
+  form.append(el("div", { class: "hint", style: "margin-top:-6px", text: "Valem para todos os projetos que não personalizarem suas notificações." }));
+  const evtCtl = new Map();
+  for (const g of GRUPOS_EVENTOS) {
+    const grid = el("div", { class: "notif-eventos" });
+    for (const ev of g.itens) {
+      const chk = el("input", { type: "checkbox" });
+      chk.checked = eventos[ev.tipo];
+      evtCtl.set(ev.tipo, chk);
+      grid.append(el("label", { class: "notif-evento" }, chk, ev.rotulo));
+    }
+    form.append(el("div", { class: "notif-grupo" }, el("div", { class: "notif-grupo-tit", text: g.grupo }), grid));
+  }
+
+  const btn = el("button", { class: "btn", style: "width:fit-content" }, "Salvar notificações");
+  btn.onclick = () => salvarNotificacoes(canalCtl, evtCtl, inpCab, btn);
+  form.append(btn);
+  painel.append(form);
+}
+
+async function salvarNotificacoes(canalCtl, evtCtl, inpCab, btn) {
+  const canais = {};
+  for (const [chave, ctl] of canalCtl) {
+    const c = { ativo: ctl.chkAtivo.checked };
+    for (const [k, inp] of ctl.inputs) {
+      const v = inp.value.trim();
+      if (v) c[k] = v;
+    }
+    canais[chave] = c;
+  }
+  const eventos = {};
+  for (const [tipo, chk] of evtCtl) eventos[tipo] = chk.checked;
+  const notificacoes = { canais, eventos };
+  const cab = inpCab.value.trim();
+  if (cab) notificacoes.cabecalho = cab;
+
+  bannerErro("");
+  btn.disabled = true;
+  try {
+    // read-modify-write: preserva as demais chaves da config global.
+    const atual = await api.obterConfigGlobal();
+    atual["notificacoes"] = notificacoes;
+    await api.definirConfigGlobal(atual);
+    toast("Notificações salvas.", "ok");
+    await montarNotificacoes();
+  } catch (e) {
+    bannerErro("Falha ao salvar notificações: " + e.message);
+    toast("Falha ao salvar.", "err");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- Tokens de API (Fase 5a) ----------

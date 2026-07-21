@@ -303,10 +303,29 @@ func iniciarNotificacoes(ctx context.Context, banco *db.DB, logger *slog.Logger)
 		}
 		return cfg, nil
 	}
+	// Override por projeto: quais eventos notificam neste projeto (chave
+	// "notificacoes" no escopo do projeto). Ausente → todos os eventos do projeto
+	// caem no padrão global. Os canais/cabeçalho continuam vindo do global.
+	override := func(ctx context.Context, projectID int64) (notify.OverrideProjeto, bool, error) {
+		entradas, err := banco.ObterConfigProjeto(ctx, projectID)
+		if err != nil {
+			return notify.OverrideProjeto{}, false, err
+		}
+		bruto, ok := entradas["notificacoes"]
+		if !ok || len(bruto) == 0 {
+			return notify.OverrideProjeto{}, false, nil
+		}
+		var ov notify.OverrideProjeto
+		if err := json.Unmarshal(bruto, &ov); err != nil {
+			return notify.OverrideProjeto{}, false, err
+		}
+		return ov, true, nil
+	}
 	desp := notify.NovoDespachante(notify.OpcoesDespachante{
-		Fonte:  banco,
-		Config: provedor,
-		Log:    func(msg string) { logger.Info(msg) },
+		Fonte:    banco,
+		Config:   provedor,
+		Override: override,
+		Log:      func(msg string) { logger.Info(msg) },
 	})
 	go desp.Rodar(ctx)
 }

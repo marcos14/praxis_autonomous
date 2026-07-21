@@ -159,6 +159,78 @@ func TestDespachanteNotificaEventoNovo(t *testing.T) {
 	}
 }
 
+func TestParaProjeto(t *testing.T) {
+	global := Config{
+		Canais:    map[string]Canal{"webhook": {Ativo: true, URL: "http://x"}},
+		Eventos:   map[string]bool{"push_falhou": true},
+		Cabecalho: "Praxis",
+	}
+	// sem override / usar padrão → devolve o global inalterado.
+	if got := ParaProjeto(global, OverrideProjeto{}, false); got.Eventos["push_falhou"] != true {
+		t.Fatal("sem override deveria manter os eventos globais")
+	}
+	if got := ParaProjeto(global, OverrideProjeto{UsarPadrao: true, Eventos: map[string]bool{"push_falhou": false}}, true); got.Eventos["push_falhou"] != true {
+		t.Fatal("UsarPadrao deveria ignorar o mapa do override")
+	}
+	// override ativo → troca os eventos, preserva canais/cabeçalho.
+	got := ParaProjeto(global, OverrideProjeto{Eventos: map[string]bool{"push_falhou": false}}, true)
+	if EventoLigado(got, "push_falhou") {
+		t.Fatal("override deveria desligar push_falhou")
+	}
+	if !AlgumCanalAtivo(got) || got.Cabecalho != "Praxis" {
+		t.Fatal("override deveria preservar canais e cabeçalho do global")
+	}
+}
+
+func TestDespachanteAplicaOverrideDoProjeto(t *testing.T) {
+	col := &coletor{}
+	ts := httptest.NewServer(col.handler())
+	defer ts.Close()
+
+	fonte := &fonteFake{}
+	cfg := Config{Canais: map[string]Canal{"webhook": {Ativo: true, URL: ts.URL}}}
+	// projeto 7 desliga "fase_falhou"; os demais projetos usam o padrão (ligado).
+	override := func(_ context.Context, projectID int64) (OverrideProjeto, bool, error) {
+		if projectID == 7 {
+			return OverrideProjeto{Eventos: map[string]bool{"fase_falhou": false}}, true, nil
+		}
+		return OverrideProjeto{}, false, nil
+	}
+	pronto := make(chan struct{})
+	desp := NovoDespachante(OpcoesDespachante{
+		Fonte:     fonte,
+		Config:    func(context.Context) (Config, error) { return cfg, nil },
+		Override:  override,
+		Intervalo: 5 * time.Millisecond,
+		AoIniciar: func() { close(pronto) },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go desp.Rodar(ctx)
+	<-pronto
+
+	p7, p9 := int64(7), int64(9)
+	fonte.adicionar(db.Evento{ID: 1, ProjectID: &p7, Tipo: "fase_falhou", Titulo: "silenciado"})
+	fonte.adicionar(db.Evento{ID: 2, ProjectID: &p9, Tipo: "fase_falhou", Titulo: "notificado"})
+
+	prazo := time.After(3 * time.Second)
+	for col.len() == 0 {
+		select {
+		case <-prazo:
+			t.Fatal("timeout esperando a notificação do projeto 9")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	// dá tempo de o evento do projeto 7 (que deveria ser ignorado) ser processado.
+	time.Sleep(60 * time.Millisecond)
+	if col.len() != 1 {
+		t.Fatalf("recebidos = %d, quero 1 (só o projeto 9)", col.len())
+	}
+	if col.corpos[0]["titulo"] != "notificado" {
+		t.Fatalf("notificação = %+v; o evento do projeto 7 não deveria passar", col.corpos[0])
+	}
+}
+
 func TestDespachanteRespeitaFiltroEvento(t *testing.T) {
 	col := &coletor{}
 	ts := httptest.NewServer(col.handler())

@@ -34,6 +34,28 @@ type Config struct {
 	Cabecalho string           `json:"cabecalho,omitempty"`
 }
 
+// OverrideProjeto é o override de notificações de um projeto (config_entries,
+// escopo project, chave "notificacoes"). Define apenas QUAIS eventos notificam
+// neste projeto — os canais e o cabeçalho vêm sempre da config global (as
+// credenciais são do sistema, não do projeto). UsarPadrao=true (ou override
+// ausente) mantém os eventos padrão do sistema; false usa o mapa Eventos deste
+// projeto.
+type OverrideProjeto struct {
+	UsarPadrao bool            `json:"usar_padrao"`
+	Eventos    map[string]bool `json:"eventos,omitempty"`
+}
+
+// ParaProjeto devolve a config efetiva de notificações de um projeto: mantém os
+// canais e o cabeçalho do global e só troca o mapa de eventos pelo do override
+// quando ele não usa o padrão. Sem override (temOverride=false) ou com
+// UsarPadrao, devolve o global inalterado.
+func ParaProjeto(global Config, ov OverrideProjeto, temOverride bool) Config {
+	if !temOverride || ov.UsarPadrao {
+		return global
+	}
+	return Config{Canais: global.Canais, Eventos: ov.Eventos, Cabecalho: global.Cabecalho}
+}
+
 // Notificador envia as notificações (best-effort: uma falha nunca propaga).
 // Portado de notificacoes.go do Praxis atual, com a config vinda do banco.
 type Notificador struct {

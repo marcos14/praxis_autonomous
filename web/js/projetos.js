@@ -4,6 +4,7 @@
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, mdEditor } from "./ui.js";
 import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
+import { GRUPOS_EVENTOS, resolverEventos } from "./notify-events.js";
 
 let projetos = [];
 let selecionadoID = null;
@@ -146,6 +147,88 @@ function renderEdicao(p) {
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
     painel.append(el("h3", {}, "Parâmetros ", el("small", {}, "override do global")));
     renderOverride(painel, p);
+
+    painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
+    painel.append(el("h3", {}, "Notificações ", el("small", {}, "quais eventos avisam neste projeto")));
+    renderNotificacoes(painel, p);
+  }
+}
+
+// renderNotificacoes desenha a seleção de notificações do projeto. Por padrão o
+// projeto usa os eventos padrão do sistema; ao personalizar, escolhe evento a
+// evento quais notificam. Os canais/tokens são sempre os globais (definidos em
+// Configurações) — aqui só se decide QUAIS eventos deste projeto disparam.
+async function renderNotificacoes(painel, p) {
+  let override, global;
+  try {
+    [override, global] = await Promise.all([api.obterConfigProjeto(p.id), api.obterConfigGlobal()]);
+  } catch (e) {
+    painel.append(el("p", { class: "sub", text: "Falha ao carregar notificações: " + e.message }));
+    return;
+  }
+  const ov = (override && override["notificacoes"]) || {};
+  const temOverride = Object.prototype.hasOwnProperty.call(override || {}, "notificacoes");
+  const personalizar = temOverride && ov.usar_padrao === false;
+
+  // Base = padrão do sistema (para preencher os eventos ainda não personalizados).
+  const base = resolverEventos(((global && global["notificacoes"]) || {}).eventos);
+  const eventos = resolverEventos(ov.eventos, base);
+
+  const form = el("div", { class: "form" });
+
+  const chkPersonalizar = el("input", { type: "checkbox" });
+  chkPersonalizar.checked = personalizar;
+  form.append(el("label", { class: "notif-modo" }, chkPersonalizar,
+    el("span", {}, el("b", {}, "Personalizar notificações deste projeto"),
+      el("div", { class: "hint", style: "margin:2px 0 0", text: "Desmarcado: usa os eventos padrão do sistema. Marcado: escolha abaixo quais eventos deste projeto notificam." }))));
+
+  const evtCtl = new Map();
+  const box = el("div", { class: "notif-projeto-eventos" });
+  for (const g of GRUPOS_EVENTOS) {
+    const grid = el("div", { class: "notif-eventos" });
+    for (const ev of g.itens) {
+      const chk = el("input", { type: "checkbox" });
+      chk.checked = eventos[ev.tipo];
+      evtCtl.set(ev.tipo, chk);
+      grid.append(el("label", { class: "notif-evento" }, chk, ev.rotulo));
+    }
+    box.append(el("div", { class: "notif-grupo" }, el("div", { class: "notif-grupo-tit", text: g.grupo }), grid));
+  }
+  form.append(box);
+
+  const sync = () => {
+    box.hidden = !chkPersonalizar.checked;
+  };
+  chkPersonalizar.addEventListener("change", sync);
+  sync();
+
+  const btn = el("button", { class: "btn", text: "Salvar notificações" });
+  btn.onclick = () => salvarNotificacoesProjeto(p, chkPersonalizar, evtCtl, btn);
+  form.append(el("div", { class: "acoes" }, btn));
+  painel.append(form);
+}
+
+async function salvarNotificacoesProjeto(p, chkPersonalizar, evtCtl, btn) {
+  bannerErro("");
+  btn.disabled = true;
+  try {
+    // read-modify-write do override do projeto: preserva as demais chaves.
+    const atual = (await api.obterConfigProjeto(p.id)) || {};
+    if (chkPersonalizar.checked) {
+      const eventos = {};
+      for (const [tipo, chk] of evtCtl) eventos[tipo] = chk.checked;
+      atual["notificacoes"] = { usar_padrao: false, eventos };
+    } else {
+      // Volta ao padrão do sistema: remove o override de notificações.
+      delete atual["notificacoes"];
+    }
+    await api.definirConfigProjeto(p.id, atual);
+    toast(chkPersonalizar.checked ? "Notificações personalizadas salvas." : "Notificações voltaram ao padrão do sistema.", "ok");
+  } catch (e) {
+    bannerErro("Falha ao salvar notificações: " + e.message);
+    toast("Falha ao salvar.", "err");
+  } finally {
+    btn.disabled = false;
   }
 }
 

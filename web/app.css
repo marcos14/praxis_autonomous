@@ -510,3 +510,20 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
   padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; color: var(--ink-2); }
 .papel-chip.on { background: var(--blue-dim); border-color: var(--blue); color: #fff; }
 .usuario-inativo { opacity: .55; }
+
+/* Notificações externas (Configurações) e por projeto. */
+.notif-sub { font-size: 13px; margin: 6px 0 -4px; color: var(--ink-2); }
+.notif-canal { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface-2); }
+.notif-canal-head { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; cursor: pointer; }
+.notif-canal-head b { font-weight: 600; }
+.notif-canal-corpo { display: grid; gap: 10px; margin-top: 11px; }
+.notif-grupo { margin-top: 2px; }
+.notif-grupo-tit { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 7px; }
+.notif-eventos { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+.notif-evento { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 400; color: var(--ink-2); margin: 0; cursor: pointer; }
+.notif-evento input { flex: none; }
+.notif-modo { display: flex; align-items: flex-start; gap: 9px; font-weight: 400; cursor: pointer; margin: 0; }
+.notif-modo input { margin-top: 3px; }
+.notif-modo b { font-weight: 600; color: var(--ink); }
+.notif-projeto-eventos { display: grid; gap: 10px; }
+@media (max-width: 640px) { .notif-eventos { grid-template-columns: 1fr; } }
