@@ -5,7 +5,7 @@
 // progresso ("lendo arquivo…") e um poll de fallback detecta o fim do turno.
 
 import { api } from "./api.js";
-import { el, limpar, toast, bannerErro, renderMarkdown } from "./ui.js";
+import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
 
 let consultas = [];
 let selecionadaID = null;
@@ -116,13 +116,13 @@ async function renderNova() {
   for (const g of grupos) sel.append(el("option", { value: "g:" + g.id }, "Grupo: " + g.nome));
   for (const p of projetos) sel.append(el("option", { value: "p:" + p.id }, p.nome));
 
-  const txt = el("textarea", {
-    rows: "5",
+  const ed = mdEditor({
+    rows: 5,
     placeholder: "O que você quer entender? Ex.: \"Como funciona a baixa de títulos?\", \"Preciso montar um PRD para melhorar a régua de cobrança\", \"Como implantar o Vulcano Chat para um cliente com duas filiais?\"",
   });
   const btn = el("button", { class: "btn", text: "Iniciar consulta" });
   btn.onclick = async () => {
-    const mensagem = txt.value.trim();
+    const mensagem = ed.ta.value.trim();
     if (!mensagem) { bannerErro("Escreva a sua pergunta."); return; }
     bannerErro("");
     btn.disabled = true;
@@ -145,11 +145,11 @@ async function renderNova() {
   painel.append(el("div", { class: "form" },
     el("div", {}, el("label", {}, "Projeto ou solução"), sel,
       el("div", { class: "hint", text: "Num grupo, o consultor enxerga todos os repositórios da solução." })),
-    el("div", {}, el("label", {}, "Sua pergunta"), txt,
+    el("div", {}, el("label", {}, "Sua pergunta"), ed.no,
       el("div", { class: "hint", text: "Não precisa ser técnico: se faltar contexto, o consultor faz perguntas antes de responder." })),
     el("div", { class: "acoes" }, btn),
   ));
-  txt.focus();
+  ed.ta.focus();
 }
 
 // ---------- conversa ----------
@@ -192,7 +192,9 @@ async function abrirConsulta(id) {
 
   const box = el("div", { class: "chat" });
   const progresso = el("div", { class: "hint", hidden: true });
-  const inp = el("input", { type: "text", placeholder: "Responder ao consultor ou fazer outra pergunta…" });
+  const inp = el("textarea", { rows: "1",
+    placeholder: "Responder ao consultor ou fazer outra pergunta… (Shift+Enter quebra linha)" });
+  const ajustarAltura = autoCrescer(inp);
   const btn = el("button", { class: "btn", text: "Enviar" });
   painel.append(cab, sub, box, progresso, el("div", { class: "chat-input" }, inp, btn));
 
@@ -279,6 +281,7 @@ async function abrirConsulta(id) {
     try {
       await api.enviarChatConsulta(cons.id, texto);
       inp.value = "";
+      ajustarAltura();
       await abrirConsulta(cons.id); // re-renderiza já em modo "pensando"
     } catch (e) {
       if (e.status === 409) {
@@ -291,7 +294,9 @@ async function abrirConsulta(id) {
     }
   }
   btn.addEventListener("click", enviar);
-  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") enviar(); });
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
+  });
 
   await recarregarChat();
   aplicarEstado();

@@ -3,7 +3,7 @@
 // arrastar, filtros ricos) — isso é o M4; aqui é a porta de entrada para o card.
 
 import { api } from "./api.js";
-import { el, limpar, bannerErro, toast, renderMarkdown } from "./ui.js";
+import { el, limpar, bannerErro, toast, renderMarkdown, autoCrescer } from "./ui.js";
 
 let projetos = [];
 let filtro = { project: "", status: "" };
@@ -363,7 +363,9 @@ function bolha(m) {
 async function ativarChat(cont, id) {
   limpar(cont);
   const box = el("div", { class: "chat" });
-  const inp = el("input", { type: "text", placeholder: "Complementar a demanda…" });
+  const inp = el("textarea", { rows: "1",
+    placeholder: "Complementar a demanda… (Shift+Enter quebra linha)" });
+  const ajustarAltura = autoCrescer(inp);
   const btn = el("button", { class: "btn", text: "Enviar" });
   cont.append(box, el("div", { class: "chat-input" }, inp, btn));
 
@@ -391,6 +393,7 @@ async function ativarChat(cont, id) {
     try {
       await api.enviarChat(id, texto);
       inp.value = "";
+      ajustarAltura();
       await recarregar();
     } catch (e) {
       bannerErro("Falha ao enviar: " + e.message);
@@ -399,7 +402,9 @@ async function ativarChat(cont, id) {
     }
   }
   btn.addEventListener("click", enviar);
-  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") enviar(); });
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
+  });
 
   await recarregar();
 }

@@ -3,7 +3,7 @@
 // Ao criar, navega para Demandas e abre o card já na aba Chat/PRD.
 
 import { api } from "./api.js";
-import { el, limpar, bannerErro, toast } from "./ui.js";
+import { el, limpar, bannerErro, toast, mdEditor } from "./ui.js";
 import { abrirCard } from "./demandas.js";
 
 export async function montarNovaDemanda() {
@@ -27,7 +27,7 @@ export async function montarNovaDemanda() {
     ...projetos.map((p) => el("option", { value: String(p.id), text: p.nome })));
   const inpTitulo = el("input", { type: "text", placeholder: "Opcional — se vazio, usamos a primeira linha do PRD" });
   const inpBranch = el("input", { type: "text", placeholder: "Opcional — ex.: painel-home (vira praxis/painel-home)" });
-  const txtPRD = el("textarea", { placeholder: "Cole aqui o PRD ou descreva o chamado…", rows: "10" });
+  const edPRD = mdEditor({ placeholder: "Cole aqui o PRD ou descreva o chamado…", rows: 10 });
   const btn = el("button", { class: "btn", text: "Criar demanda" });
 
   const form = el("div", { class: "form" },
@@ -36,13 +36,13 @@ export async function montarNovaDemanda() {
     el("div", {}, el("label", { text: "Branch" }), inpBranch,
       el("p", { class: "sub", style: "margin:4px 0 0",
         text: "Em branco, geramos praxis/d<id>-<título>. O prefixo praxis/ é sempre adicionado." })),
-    el("div", {}, el("label", { text: "PRD / descrição do chamado" }), txtPRD),
+    el("div", {}, el("label", { text: "PRD / descrição do chamado" }), edPRD.no),
     el("div", { class: "acoes" }, btn),
   );
   cont.append(form);
 
   async function criar() {
-    const prd = txtPRD.value.trim();
+    const prd = edPRD.ta.value.trim();
     if (!prd) {
       bannerErro("Cole o PRD ou descreva o chamado antes de criar a demanda.");
       return;
@@ -59,7 +59,7 @@ export async function montarNovaDemanda() {
       // limpa o formulário e abre o card da demanda recém-criada.
       inpTitulo.value = "";
       inpBranch.value = "";
-      txtPRD.value = "";
+      edPRD.ta.value = "";
       location.hash = "demandas";
       await abrirCard(d.id);
     } catch (e) {

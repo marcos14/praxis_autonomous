@@ -2,7 +2,7 @@
 // projeto (Fase 1e) com herança explícita do global, e "Ver config efetiva".
 
 import { api } from "./api.js";
-import { el, limpar, toast, bannerErro } from "./ui.js";
+import { el, limpar, toast, bannerErro, mdEditor } from "./ui.js";
 import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
 
 let projetos = [];
@@ -223,10 +223,13 @@ async function renderAcesso(painel, p) {
 // (sem código) que orienta o consultor da feature de Consultas. Pode ser escrito
 // à mão ou gerado pelo harness em background.
 function renderOverview(painel, p) {
-  const txt = el("textarea", {
-    rows: "10",
+  const ed = mdEditor({
+    rows: 10,
     placeholder: "Objetivo do sistema, domínio, principais módulos, fluxos de negócio… (markdown, sem código)",
-  }, p.overview_md || "");
+    valor: p.overview_md || "",
+    // quem já tem overview quase sempre quer lê-lo, não editá-lo.
+    abrirEmPreview: !!(p.overview_md || "").trim(),
+  });
   const info = el("div", { class: "hint", text: p.overview_em
     ? "Última atualização: " + p.overview_em
     : "Ainda sem overview — as consultas deste projeto terão menos contexto." });
@@ -235,7 +238,7 @@ function renderOverview(painel, p) {
   btnSalvar.onclick = async () => {
     btnSalvar.disabled = true;
     try {
-      await api.salvarOverview(p.id, txt.value);
+      await api.salvarOverview(p.id, ed.ta.value);
       toast("Overview salvo.", "ok");
     } catch (e) {
       bannerErro("Falha ao salvar overview: " + e.message);
@@ -268,7 +271,7 @@ function renderOverview(painel, p) {
   };
 
   painel.append(el("div", { class: "form" },
-    el("div", {}, txt, info),
+    el("div", {}, ed.no, info),
     el("div", { class: "acoes" }, btnSalvar, btnGerar, btnRecarregar),
   ));
 }
