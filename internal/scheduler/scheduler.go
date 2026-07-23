@@ -292,6 +292,19 @@ func (s *Scheduler) Interromper(demandaID int64) bool {
 	return ok
 }
 
+// Reenfileirar tira a demanda do conjunto de finalizadas (e de qualquer
+// adiamento), devolvendo-a ao alcance da Fonte. Usado pela ação
+// `tentar_novamente` da API ao refilar uma demanda que falhou: sem isso o
+// scheduler nunca mais a despacharia neste processo (a marca `concluidas` de
+// trabalhar é permanente). No-op quando a demanda não estava marcada.
+func (s *Scheduler) Reenfileirar(demandaID int64) {
+	s.mu.Lock()
+	delete(s.concluidas, demandaID)
+	delete(s.naoAntesDe, demandaID)
+	s.mu.Unlock()
+	s.sinalizar()
+}
+
 // reservarConta aplica a afinidade conta↔demanda (chamada sob s.mu):
 //   - sem contas configuradas → "" (sem restricao);
 //   - demanda ja tem conta fixa → usa-a se estiver livre, senao espera (mantem a

@@ -524,6 +524,9 @@ function botoesAcao(dados, overlay) {
 
   if (AGENDAVEIS.includes(dados.status)) add("pausar", "Pausar", "ghost");
   if (RETOMAVEIS.includes(dados.status)) add("retomar", "Retomar", "good");
+  // falhou é terminal, mas reativável: retoma do estágio que falhou (análise,
+  // planejamento ou fases falhadas) — útil após ajustar o budget do motor.
+  if (dados.status === "falhou") add("tentar_novamente", "Tentar novamente", "good");
   if (!TERMINAIS.includes(dados.status)) add("cancelar", "Cancelar", "danger");
   return botoes;
 }

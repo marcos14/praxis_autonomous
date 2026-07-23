@@ -181,6 +181,34 @@ func itens(n int, projeto int64) []Item {
 
 // --- testes -------------------------------------------------------------------
 
+// TestReenfileirarReativaDemandaConcluida: uma demanda que concluiu (sucesso ou
+// falha) ganha a marca permanente `concluidas` e nunca mais é despachada neste
+// processo. Reenfileirar (ação tentar_novamente) limpa a marca e a demanda volta
+// a rodar quando a Fonte a listar de novo.
+func TestReenfileirarReativaDemandaConcluida(t *testing.T) {
+	stub := novoStub()
+	is := []Item{{DemandaID: 1, ProjectID: 1}}
+	s := Novo(Opcoes{Fonte: &fonteFixa{itens: is}, Executor: stub, Intervalo: 2 * time.Millisecond})
+
+	// 1ª execução: conclui e ganha a marca de concluída.
+	rodarPor(t, s, func() bool { return stub.execCount(1) >= 1 }, 3*time.Second)
+	if got := stub.execCount(1); got != 1 {
+		t.Fatalf("demanda rodou %d vez(es), esperava 1", got)
+	}
+
+	// sem Reenfileirar, o dispatch é vetado pela marca.
+	if s.tentarDespachar(context.Background(), is[0]) {
+		t.Fatal("demanda concluída não deveria ser despachada de novo")
+	}
+
+	// Reenfileirar limpa a marca; a demanda volta a ser despachável.
+	s.Reenfileirar(1)
+	rodarPor(t, s, func() bool { return stub.execCount(1) >= 2 }, 3*time.Second)
+	if got := stub.execCount(1); got < 2 {
+		t.Fatalf("demanda rodou %d vez(es) após Reenfileirar, esperava 2", got)
+	}
+}
+
 func TestLimiteGlobalRespeitado(t *testing.T) {
 	stub := novoStub()
 	stub.trabalho = 8 * time.Millisecond

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -15,6 +17,10 @@ import (
 // `cancelada` deixa de ser agendável e não é mais conduzida.
 type ControladorExecucao interface {
 	Interromper(demandaID int64) bool
+	// Reenfileirar devolve a demanda ao alcance do scheduler depois de um estado
+	// terminal (a marca em memória `concluidas` impediria o redespacho) — usado
+	// pela ação `tentar_novamente` ao refilar uma demanda que falhou na execução.
+	Reenfileirar(demandaID int64)
 }
 
 // reqAcao é o corpo de POST /demands/{id}/actions.
@@ -54,7 +60,7 @@ func (s *Servidor) handleAcaoDemanda(w http.ResponseWriter, r *http.Request) {
 	// middenware só garantiu que o chamador está autenticado.
 	acao := strings.TrimSpace(strings.ToLower(req.Acao))
 	switch acao {
-	case "pausar", "retomar", "cancelar":
+	case "pausar", "retomar", "cancelar", "tentar_novamente":
 		if !exigirPermissao(w, r, db.PermDemandasOperar) {
 			return
 		}
@@ -71,6 +77,8 @@ func (s *Servidor) handleAcaoDemanda(w http.ResponseWriter, r *http.Request) {
 		s.aplicarAcao(w, r, dem, acaoRetomar)
 	case "cancelar":
 		s.aplicarAcao(w, r, dem, acaoCancelar)
+	case "tentar_novamente":
+		s.acaoTentarNovamente(w, r, dem)
 	case "publicar_branch":
 		s.acaoPublicarBranch(w, r, dem)
 	case "integrar":
@@ -79,7 +87,7 @@ func (s *Servidor) handleAcaoDemanda(w http.ResponseWriter, r *http.Request) {
 		s.acaoAtualizarBranch(w, r, dem)
 	default:
 		responderErro(w, http.StatusBadRequest, "invalido",
-			"ação desconhecida: use pausar, retomar, cancelar, publicar_branch, integrar ou atualizar_branch")
+			"ação desconhecida: use pausar, retomar, cancelar, tentar_novamente, publicar_branch, integrar ou atualizar_branch")
 	}
 }
 
@@ -182,6 +190,130 @@ func (s *Servidor) aplicarAcao(w http.ResponseWriter, r *http.Request, dem db.De
 	}
 
 	s.responderDemandaComFases(w, r, atual)
+}
+
+// acaoTentarNovamente reativa uma demanda `falhou`, retomando do estágio que
+// falhou em vez de exigir recriá-la do zero. O caso típico é um run que estourou
+// o teto de custo (error_max_budget_usd): o usuário ajusta o budget do motor e
+// tenta de novo — cada estágio relê a config do banco ao rodar. O estágio é
+// deduzido do estado persistido:
+//   - alguma fase `falhou` → essas fases voltam a `pendente` e a demanda a
+//     `pronta`; o scheduler reexecuta do ponto onde parou (worktree preservado);
+//   - sem fase falhada, mas o intake já tinha passado da análise (fases de um
+//     plano anterior, perguntas todas respondidas ou fala do analista no chat)
+//     → replaneja (`planejando` + planejador em background);
+//   - caso contrário a falha foi na análise → reanalisa (`recebida` + analista
+//     em background); respostas já dadas permanecem até a nova análise
+//     substituir as perguntas.
+func (s *Servidor) acaoTentarNovamente(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
+	if dem.Status != db.StatusDemandaFalhou {
+		responderErro(w, http.StatusConflict, "estado_invalido",
+			"só é possível tentar novamente uma demanda que falhou (status atual: "+dem.Status+")")
+		return
+	}
+	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	var falhas []db.Fase
+	for _, f := range fases {
+		if f.Status == db.StatusFaseFalhou {
+			falhas = append(falhas, f)
+		}
+	}
+
+	var alvo, detalhe string
+	switch {
+	case len(falhas) > 0:
+		for _, f := range falhas {
+			f.Status = db.StatusFasePendente
+			f.Observacao = ""
+			if _, err := s.banco.AtualizarFase(r.Context(), f); err != nil {
+				s.responderErroDemanda(w, err)
+				return
+			}
+		}
+		alvo = db.StatusDemandaPronta
+		detalhe = fmt.Sprintf("%d fase(s) falhada(s) voltaram a pendente; demanda refilada para o scheduler reexecutar.", len(falhas))
+	case s.intakePassouDaAnalise(r.Context(), dem, fases):
+		alvo = db.StatusDemandaPlanejando
+		detalhe = "A falha foi no planejamento; planejador redisparado."
+	default:
+		alvo = db.StatusDemandaRecebida
+		detalhe = "A falha foi na análise do PRD; analista redisparado."
+	}
+
+	dem.Status = alvo
+	dem.Erro = ""
+	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+
+	pid, did := atual.ProjectID, atual.ID
+	ev := db.Evento{Tipo: "demanda_reativada", Titulo: "Praxis: tentando novamente", Detalhe: detalhe}
+	if pid > 0 {
+		ev.ProjectID = &pid
+	}
+	if did > 0 {
+		ev.DemandID = &did
+	}
+	if _, err := s.banco.RegistrarEvento(r.Context(), ev); err != nil {
+		s.log.Warn("registrar evento de tentar novamente", "erro", err, "demanda", did)
+	}
+
+	switch alvo {
+	case db.StatusDemandaPronta:
+		if s.exec != nil {
+			s.exec.Reenfileirar(atual.ID)
+		}
+	case db.StatusDemandaPlanejando:
+		if s.planejamento != nil {
+			s.planejamento.DispararPlanejamento(atual.ID)
+		}
+	case db.StatusDemandaRecebida:
+		if s.intake != nil {
+			s.intake.Disparar(atual.ID)
+		}
+	}
+
+	s.responderDemandaComFases(w, r, atual)
+}
+
+// intakePassouDaAnalise informa se a demanda que falhou já tinha concluído a
+// análise — a falha então foi no planejamento (primeiro plano ou replanejar).
+// Sinais, em ordem: fases persistidas (um plano anterior existiu), perguntas
+// todas respondidas (o usuário já submeteu as respostas e o planejador rodou) ou
+// uma fala do analista no chat (análise concluída sem perguntas + plano gerado
+// direto). Pergunta sem resposta indica falha na (re)análise — reanalisar.
+func (s *Servidor) intakePassouDaAnalise(ctx context.Context, dem db.Demanda, fases []db.Fase) bool {
+	if len(fases) > 0 {
+		return true
+	}
+	perguntas, err := s.banco.ListarPerguntas(ctx, dem.ID)
+	if err != nil {
+		return false
+	}
+	if len(perguntas) > 0 {
+		for _, p := range perguntas {
+			if strings.TrimSpace(p.RespondidaEm) == "" {
+				return false
+			}
+		}
+		return true
+	}
+	msgs, err := s.banco.ListarMensagensChat(ctx, dem.ID)
+	if err != nil {
+		return false
+	}
+	for _, m := range msgs {
+		if m.Papel == db.PapelAnalista {
+			return true
+		}
+	}
+	return false
 }
 
 // responderDemandaComFases devolve 200 com a demanda e suas fases (mesmo contrato

@@ -237,6 +237,32 @@ func TestAnalistaResultadoErroMarcaFalhou(t *testing.T) {
 	}
 }
 
+// TestAnalistaBudgetEstouradoTemDica: quando o run estoura o teto de custo
+// (error_max_budget_usd), o erro da demanda orienta o usuário a aumentar o
+// budget do motor e usar "Tentar novamente".
+func TestAnalistaBudgetEstouradoTemDica(t *testing.T) {
+	d := abrirDB(t)
+	ctx := context.Background()
+	dem := demandaComPRD(t, d, "PRD bem grande.")
+	a := &Analista{
+		Store: d, Motor: "claude",
+		Prompt: func(context.Context, string) (string, error) { return "x", nil },
+		Selecionar: seletorStub(stubMotor{nome: "claude", fn: func(motor.OpcoesRun) (*motor.ResultadoRun, error) {
+			return &motor.ResultadoRun{IsError: true, Subtipo: "error_max_budget_usd", LogPath: "l.jsonl"}, nil
+		}}),
+	}
+	if err := a.Analisar(ctx, dem.ID); err != nil {
+		t.Fatalf("Analisar: %v", err)
+	}
+	got, _ := d.ObterDemanda(ctx, dem.ID)
+	if got.Status != db.StatusDemandaFalhou {
+		t.Fatalf("status = %q, quero falhou", got.Status)
+	}
+	if !strings.Contains(got.Erro, "error_max_budget_usd") || !strings.Contains(got.Erro, "Tentar novamente") {
+		t.Fatalf("erro deveria citar o subtipo e a dica de retry, veio %q", got.Erro)
+	}
+}
+
 func TestAnalistaRecusaStatusInvalido(t *testing.T) {
 	d := abrirDB(t)
 	ctx := context.Background()

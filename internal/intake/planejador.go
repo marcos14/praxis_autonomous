@@ -108,7 +108,7 @@ func (p *Planejador) Planejar(ctx context.Context, demandaID int64) error {
 		return p.falhar(ctx, dem, fmt.Sprintf("planejamento falhou: %v", err))
 	}
 	if res.IsError {
-		return p.falhar(ctx, dem, fmt.Sprintf("planejamento terminou com erro (%s) — log: %s", res.Subtipo, res.LogPath))
+		return p.falhar(ctx, dem, motivoRunErro("planejamento", res))
 	}
 
 	var saida SaidaPlanejador

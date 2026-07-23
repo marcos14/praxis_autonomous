@@ -108,7 +108,7 @@ func (a *Analista) Analisar(ctx context.Context, demandaID int64) error {
 		return a.falhar(ctx, dem, fmt.Sprintf("análise falhou: %v", err))
 	}
 	if res.IsError {
-		return a.falhar(ctx, dem, fmt.Sprintf("análise terminou com erro (%s) — log: %s", res.Subtipo, res.LogPath))
+		return a.falhar(ctx, dem, motivoRunErro("análise", res))
 	}
 
 	var saida SaidaAnalista
@@ -314,6 +314,18 @@ func limparStrings(itens []string) []string {
 		}
 	}
 	return out
+}
+
+// motivoRunErro descreve o desfecho de erro de um run do harness para o campo
+// erro da demanda, com uma dica acionável quando o run estourou o teto de custo
+// (subtipos como error_max_budget_usd): o usuário pode aumentar o budget do
+// motor e usar "Tentar novamente" no card — o novo run relê a config do banco.
+func motivoRunErro(etapa string, res *motor.ResultadoRun) string {
+	motivo := fmt.Sprintf("%s terminou com erro (%s) — log: %s", etapa, res.Subtipo, res.LogPath)
+	if strings.Contains(res.Subtipo, "max_budget") {
+		motivo += ` · o run atingiu o teto de custo (budget): aumente o budget do motor na tela Motores e clique em "Tentar novamente" no card da demanda`
+	}
+	return motivo
 }
 
 // sufixoModelo formata " / modelo" quando há modelo (para mensagens).
