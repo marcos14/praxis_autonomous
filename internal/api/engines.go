@@ -51,6 +51,7 @@ func (s *Servidor) registrarRotasMotores(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/engines/ordem", s.handleReordenarMotores)
 	mux.HandleFunc("GET /api/v1/engines/deteccao", s.handleDetectarMotores)
 	mux.HandleFunc("POST /api/v1/engines/deteccao", s.handleAutocadastrarMotores)
+	mux.HandleFunc("GET /api/v1/engines/uso", s.handleUsoMotores)
 	mux.HandleFunc("GET /api/v1/engines/{id}", s.handleObterMotor)
 	mux.HandleFunc("PUT /api/v1/engines/{id}", s.handleAtualizarMotor)
 	mux.HandleFunc("POST /api/v1/engines/{id}/accounts", s.handleCriarConta)

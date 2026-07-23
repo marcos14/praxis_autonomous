@@ -15,6 +15,7 @@ export async function montarMotores() {
     renderPainel(null);
   };
   document.getElementById("btn-detectar-motores").onclick = () => detectar();
+  document.getElementById("btn-uso-motores").onclick = () => alternarUso();
   if (editandoID != null && editandoID !== "novo") {
     const m = motores.find((x) => x.id === editandoID);
     if (m) renderPainel(m);
@@ -89,6 +90,133 @@ async function mover(de, para) {
   } catch (e) {
     bannerErro("Falha ao reordenar: " + e.message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Painel "Uso e franquia": consumo do Praxis por motor/perfil (hoje, 7 dias,
+// total) + última leitura de franquia do vendor feita pelo monitor periódico.
+// Enquanto o painel está aberto, atualiza sozinho a cada 60s.
+
+let usoTimer = null;
+
+function alternarUso() {
+  const painel = document.getElementById("painel-uso");
+  if (!painel.hidden) {
+    fecharUso(painel);
+    return;
+  }
+  painel.hidden = false;
+  limpar(painel).append(el("p", { class: "sub", text: "Carregando uso dos motores…" }));
+  carregarUso(painel);
+}
+
+function fecharUso(painel) {
+  if (usoTimer) { clearInterval(usoTimer); usoTimer = null; }
+  painel.hidden = true;
+  limpar(painel);
+}
+
+async function carregarUso(painel) {
+  let dados;
+  try {
+    dados = await api.usoMotores();
+  } catch (e) {
+    limpar(painel).append(el("p", { class: "sub", text: "Falha ao carregar o uso: " + e.message }));
+    return;
+  }
+  renderUso(painel, dados);
+  if (!usoTimer) {
+    usoTimer = setInterval(() => {
+      if (painel.hidden || !painel.isConnected) { fecharUso(painel); return; }
+      carregarUso(painel);
+    }, 60_000);
+  }
+}
+
+function renderUso(painel, dados) {
+  limpar(painel);
+  const cab = el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+    el("h3", { style: "margin:0" }, "Uso e franquia"),
+    el("span", { class: "sub", style: "margin:0", text: `franquia verificada a cada ${dados.intervalo_min}min (ajustável em Configurações)` }),
+    el("button", { class: "btn sm ghost", style: "margin-left:auto", onclick: () => carregarUso(painel) }, "Atualizar"),
+    el("button", { class: "btn sm ghost", onclick: () => fecharUso(painel) }, "Fechar"),
+  );
+  painel.append(cab);
+
+  const motoresAtivos = dados.motores || [];
+  if (motoresAtivos.length === 0) {
+    painel.append(el("p", { class: "sub", text: "Nenhum motor ativo." }));
+    return;
+  }
+  for (const m of motoresAtivos) {
+    painel.append(el("div", { style: "margin:12px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+      el("b", { text: m.nome }),
+      m.fallback === false ? el("span", { class: "pill", text: "fora do fallback" }) : null,
+    ));
+    const corpo = el("tbody", {});
+    const perfis = m.perfis || [];
+    if (perfis.length === 0 && !m.uso_sem_perfil) {
+      corpo.append(el("tr", {}, el("td", { colspan: "5", class: "sub", text: "Nenhum perfil ativo." })));
+    }
+    for (const p of perfis) {
+      corpo.append(el("tr", {},
+        el("td", { text: p.alias }),
+        el("td", {}, celulaUsoPraxis(p.uso_praxis && p.uso_praxis.hoje)),
+        el("td", {}, celulaUsoPraxis(p.uso_praxis && p.uso_praxis.ultimos_7_dias)),
+        el("td", {}, celulaUsoPraxis(p.uso_praxis && p.uso_praxis.total)),
+        el("td", {}, celulaFranquia(p.franquia)),
+      ));
+    }
+    if (m.uso_sem_perfil) {
+      corpo.append(el("tr", {},
+        el("td", { class: "sub", text: "(sem perfil)" }),
+        el("td", {}, celulaUsoPraxis(m.uso_sem_perfil.hoje)),
+        el("td", {}, celulaUsoPraxis(m.uso_sem_perfil.ultimos_7_dias)),
+        el("td", {}, celulaUsoPraxis(m.uso_sem_perfil.total)),
+        el("td", { class: "sub", text: "—" }),
+      ));
+    }
+    painel.append(el("table", { class: "plain" },
+      el("thead", {}, el("tr", {},
+        el("th", {}, "Perfil"), el("th", {}, "Hoje"), el("th", {}, "7 dias"),
+        el("th", {}, "Total"), el("th", {}, "Franquia do vendor"))),
+      corpo));
+  }
+  painel.append(el("div", { class: "hint", text: "Hoje/7 dias/Total: consumo registrado pelo Praxis (execuções · custo estimado · tokens). Franquia: leitura no CLI do vendor quando disponível — o Claude não expõe /usage de forma headless." }));
+}
+
+function celulaUsoPraxis(j) {
+  if (!j || !j.execucoes) return el("span", { class: "sub", style: "margin:0", text: "—" });
+  const custo = j.custo_usd > 0 ? ` · US$ ${j.custo_usd.toFixed(2)}` : "";
+  const tokens = (j.tokens_in || j.tokens_out) ? ` · ${fmtTokens(j.tokens_in + j.tokens_out)} tok` : "";
+  return el("span", { text: `${j.execucoes} exec${custo}${tokens}` });
+}
+
+function fmtTokens(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+
+function celulaFranquia(f) {
+  if (!f) return el("span", { class: "sub", style: "margin:0", text: "aguardando primeira verificação…" });
+  const quando = f.verificado_em ? new Date(f.verificado_em) : null;
+  const hhmm = quando ? quando.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  if (!f.disponivel) {
+    return el("span", { class: "sub", style: "margin:0", title: hhmm ? `verificado às ${hhmm}` : "", text: f.mensagem || "indisponível" });
+  }
+  const linhas = (f.janelas || []).map((j) => {
+    const pct = Math.max(0, Math.min(100, j.usado_pct));
+    const barra = el("div", { style: "background:var(--border);border-radius:4px;height:6px;width:120px;overflow:hidden" },
+      el("div", { style: `height:100%;width:${pct}%;border-radius:4px;background:${pct >= 90 ? "var(--err, #d33)" : pct >= 70 ? "orange" : "var(--ok, #2a2)"}` }));
+    const reset = j.reset_em ? ` · reset ${new Date(j.reset_em).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "";
+    return el("div", { style: "display:flex;align-items:center;gap:6px;margin:2px 0" },
+      el("span", { class: "sub", style: "margin:0;min-width:52px", text: j.rotulo }),
+      barra,
+      el("span", { class: "sub", style: "margin:0", text: `${pct.toFixed(0)}%${reset}` }));
+  });
+  const cont = el("div", { title: hhmm ? `verificado às ${hhmm}` : "" }, ...linhas);
+  return linhas.length ? cont : el("span", { class: "sub", style: "margin:0", text: "sem janelas informadas" });
 }
 
 // detectar consulta o servidor sobre quais harnesses estão instalados e como o

@@ -78,6 +78,8 @@ O desenho mantém um único motor por vendor e usa `engine_accounts` como os per
 - [x] Persistir a conta usada em cada run — migração 11 + `Execucao.Conta`/`ExecucaoConsulta.Conta`, propagado pelo pipeline (`Config.Contas`, refletindo o motor efetivamente usado após fallback), intake, consultor e overview; o separador do log ao vivo mostra `engine:conta/modelo`.
 - [x] Fallback entre perfis do mesmo motor — `Config.Perfis` (todos os perfis ativos, o da afinidade primeiro) e `rodarComFallback` esgota perfil a perfil (evento `troca_de_perfil`) antes de trocar de motor (evento `troca_de_harness`); o run registra o perfil que executou de fato.
 - [x] Switch `engines.fallback` por motor — migração 12 (default 1); desligado, o motor sai da cadeia e da escolha automática (scheduler, intake, consultas) e vale só no uso manual, com queda para a cadeia quando esgota. Exposto na API (`fallback`, default true na criação) e na tela Motores.
+- [x] Monitor de uso e franquia — `internal/uso.Monitor` verifica periodicamente a franquia de cada perfil ativo (config global `uso_intervalo_min`, default 5 min, relida a cada ciclo — ajustar não exige reinício) e guarda só o último snapshot sanitizado em memória. Leitura por vendor em `motor.ConsultarFranquia`: Codex pelo `app-server` (`account/rateLimits/read`; versão sem o contrato vira indisponível com mensagem), Claude marcado indisponível (sem API headless de `/usage`; nada de scraping da tela interativa).
+- [x] Painel "Uso e franquia" — `GET /api/v1/engines/uso` (leitura autenticada) lista os motores ativos e seus perfis ativos com o consumo do Praxis (hoje/7 dias/total: execuções, custo, tokens — agregado de `runs` + `consulta_runs` por engine/conta) e a franquia do vendor quando disponível; a tela Motores ganhou o painel com barras de percentual e auto-atualização.
 - [x] Executar `go test ./...`, `go vet ./...` e `go build ./...`.
 - [x] Atualizar este documento com decisões finais, limitações verificadas e resultado dos gates.
 
@@ -95,7 +97,8 @@ O desenho mantém um único motor por vendor e usa `engine_accounts` como os per
 - O "esgotado" de perfil/motor vale **dentro da fase em execução** (`EstadoFallback`); a fase seguinte volta a tentar o perfil preferido. Persistir a janela de reset da quota entre fases continua no backlog ([TODOS.md](TODOS.md)).
 - Um motor com `fallback` desligado usado manualmente ainda cai na cadeia dos participantes ao esgotar — ele não é alvo do fallback, mas tem fallback.
 - O estado `verificando` existe apenas na UI (durante o polling); o backend responde `autenticado`/`deslogado`/`erro` — a fonte de verdade continua sendo o CLI do vendor.
-- Balanceamento por menor uso/franquia e limites de concorrência por perfil continuam no backlog ([TODOS.md](TODOS.md)).
+- O snapshot de franquia vive só em memória (reiniciar o serviço zera o cache até o próximo ciclo) e expõe apenas rótulo da janela, percentual usado e horário de reset — nunca identificadores de conta/plano do vendor. A franquia do Claude aparece como indisponível por decisão registrada em [TODOS.md](TODOS.md) (sem API headless; sem scraping), com o acompanhamento feito pelo consumo do Praxis.
+- Balanceamento por menor uso/franquia, limites de concorrência por perfil e histórico persistido de franquia continuam no backlog ([TODOS.md](TODOS.md)).
 
 ## Critérios de aceite
 

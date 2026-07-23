@@ -6,12 +6,12 @@ Este arquivo mantém o que foi deliberadamente deixado fora do primeiro incremen
 
 ## Uso e franquia (`/usage`)
 
-- [ ] Criar uma visão de uso local do Praxis por período, motor, projeto e perfil a partir de `runs` (tokens, custo, falhas e duração).
-- [ ] Persistir `engine_id` e `engine_account_id` em cada execução para atribuição precisa.
-- [ ] Integrar a franquia estruturada do Codex quando oferecida pelo `app-server`, incluindo renovação e data da última leitura.
-- [ ] Para Claude, mostrar uso local e marcar franquia do vendor como indisponível enquanto não existir API headless estável; não automatizar scraping da tela interativa `/usage`.
+- [x] Criar uma visão de uso local do Praxis por motor e perfil a partir de `runs` + `consulta_runs` (execuções, custo e tokens em hoje/7 dias/total). *(Entregue: painel "Uso e franquia" na tela Motores + `GET /engines/uso`; recortes por período livre e por projeto ficam para depois.)*
+- [ ] Persistir `engine_id` e `engine_account_id` em cada execução para atribuição precisa. *(Hoje a atribuição é por nome do motor + alias vigente — `runs.engine`/`runs.conta`.)*
+- [x] Integrar a franquia estruturada do Codex quando oferecida pelo `app-server` (`account/rateLimits/read`; versão sem o contrato aparece como indisponível com mensagem). *(Verificação periódica pelo monitor — config `uso_intervalo_min`, default 5 min; renovação/última leitura expostas por janela via `reset_em`/`verificado_em`.)*
+- [x] Para Claude, mostrar uso local e marcar franquia do vendor como indisponível enquanto não existir API headless estável; não automatizar scraping da tela interativa `/usage`.
 - [ ] Para OpenCode, separar `opencode stats` (uso local) de limites de cada provider.
-- [ ] Sempre informar fonte, horário da coleta e estado `desconhecido`; ausência de dado nunca deve aparecer como zero.
+- [x] Sempre informar fonte, horário da coleta e estado indisponível com mensagem; ausência de dado nunca aparece como zero (franquia sem leitura fica "aguardando verificação"/mensagem, não 0%).
 
 ## Instalação assistida dos motores
 

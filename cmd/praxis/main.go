@@ -32,6 +32,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/notify"
 	"github.com/marcos14/praxis-autonomous/internal/procs"
 	"github.com/marcos14/praxis-autonomous/internal/scheduler"
+	"github.com/marcos14/praxis-autonomous/internal/uso"
 )
 
 // versao é a versão do binário. Substituível em build via -ldflags.
@@ -174,8 +175,14 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// logs/eventos, em background ligado ao ctx de vida do serviço.
 	iniciarManutencao(ctx, banco, logger)
 
+	// Monitor de uso: verifica a franquia de cada perfil ativo periodicamente
+	// (config global `uso_intervalo_min`, default 5min, relida a cada ciclo) e
+	// alimenta o painel de uso da tela Motores.
+	monitorUso := uso.Novo(uso.Opcoes{Store: banco, Log: func(msg string) { logger.Warn(msg) }})
+	go monitorUso.Rodar(ctx)
+
 	opts := api.Opcoes{Banco: banco, Log: logger, Git: git, Intake: intakeSvc,
-		Planejamento: intakeSvc, Consultas: consultorSvc}
+		Planejamento: intakeSvc, Consultas: consultorSvc, Uso: monitorUso}
 	if sched != nil {
 		opts.Exec = sched
 	}

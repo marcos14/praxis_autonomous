@@ -115,6 +115,8 @@ export const api = {
   // (harness instalado + variáveis) e cadastra os detectados com um POST.
   detectarMotores: () => req("GET", "/api/v1/engines/deteccao"),
   autocadastrarMotores: () => req("POST", "/api/v1/engines/deteccao"),
+  // uso: consumo do Praxis por motor/perfil + franquia do vendor (monitor).
+  usoMotores: () => req("GET", "/api/v1/engines/uso"),
   criarConta: (engineID, c) => req("POST", `/api/v1/engines/${engineID}/accounts`, c),
   atualizarConta: (engineID, contaID, c) => req("PUT", `/api/v1/engines/${engineID}/accounts/${contaID}`, c),
   removerConta: (engineID, contaID) => req("DELETE", `/api/v1/engines/${engineID}/accounts/${contaID}`),

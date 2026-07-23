@@ -11,6 +11,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
+	"github.com/marcos14/praxis-autonomous/internal/uso"
 )
 
 // intervaloPollLogPadrao é a cadência com que o SSE de log ao vivo relê o .jsonl
@@ -52,6 +53,9 @@ type Opcoes struct {
 	// LoginMotores gerencia as sessões efêmeras de autenticação Claude/Codex.
 	// Nil cria um gerente próprio; o seam existe para testes.
 	LoginMotores *motor.GerenteLogin
+	// Uso é o monitor periódico de franquia dos perfis. Opcional: nil = o
+	// endpoint de uso devolve só o consumo do Praxis, sem franquia do vendor.
+	Uso *uso.Monitor
 }
 
 // ConsultorSvc dispara turnos de consulta e gerações de overview em background
@@ -89,6 +93,7 @@ type Servidor struct {
 	git          *gitops.Ops
 	ideWeb       IDEWeb
 	loginMotores *motor.GerenteLogin
+	uso          *uso.Monitor
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -136,6 +141,7 @@ func Novo(opts Opcoes) *Servidor {
 	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
 		planejamento: opts.Planejamento, consultor: opts.Consultas, git: gitOps, ideWeb: opts.IDE, loginMotores: loginMotores,
+		uso:                  opts.Uso,
 		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 

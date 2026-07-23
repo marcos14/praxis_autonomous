@@ -25,6 +25,8 @@ export const CAMPOS = [
   { chave: "budget_demanda_usd", rotulo: "Budget por demanda (US$)", tipo: "number", escopo: "ambos" },
   { chave: "gates", rotulo: "Gates (validação determinística)", tipo: "lines", escopo: "ambos",
     hint: "Um comando por linha. Executados após cada fase; a fase só conclui com todos verdes." },
+  { chave: "uso_intervalo_min", rotulo: "Verificação de franquia (min)", tipo: "number", escopo: "global",
+    hint: "De quanto em quanto tempo o Praxis consulta a franquia de cada perfil dos motores (padrão 5 minutos; mínimo 1). Vale sem reiniciar o serviço." },
 ];
 
 // camposDoEscopo devolve os campos visíveis num escopo ("global" ou "project").

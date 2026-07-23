@@ -100,6 +100,18 @@ func helperCodex(args []string) {
 		switch req.Method {
 		case "initialize":
 			_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]any{"codexHome": dir}})
+		case "account/rateLimits/read":
+			if os.Getenv("PRAXIS_USO_SEM_CONTRATO") == "1" {
+				_ = enc.Encode(map[string]any{"id": req.ID, "error": map[string]any{"code": -32601, "message": "method not found"}})
+				return
+			}
+			_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]any{
+				"rateLimits": map[string]any{
+					"primary":   map[string]any{"usedPercent": 34.5, "windowMinutes": 300, "resetsInSeconds": 3600},
+					"secondary": map[string]any{"used_percent": 12.0, "window_minutes": 10080, "resets_in_seconds": 86400},
+				},
+			}})
+			return
 		case "account/login/start":
 			_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]any{
 				"type": "chatgptDeviceCode", "loginId": "login-1",
