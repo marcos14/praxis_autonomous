@@ -503,32 +503,29 @@ async function verificarLogin(m, c, estado, btn, btnLogin) {
 }
 
 async function iniciarLogin(m, c, estado, acoes, btn) {
-  // Abre a aba durante o clique para não ser bloqueada; ela só navega quando o
-  // backend receber a URL emitida pelo vendor.
-  let aba = null;
-  try { aba = window.open("about:blank", "_blank"); } catch { /* o link também aparece na tela */ }
+  // Nada é aberto automaticamente: a URL só serve no navegador de quem pediu o
+  // login (muitas vezes outra máquina que não o servidor), então a tela exibe o
+  // link e o campo para colar o código, e o usuário conduz o restante.
   btn.disabled = true;
   estado.textContent = "iniciando login…";
   const detalhe = el("div", { style: "width:100%;min-width:260px" });
   acoes.append(detalhe);
   try {
     let sessao = await api.iniciarLoginMotor(m.id, c.id);
-    let abriuURL = false;
+    let versaoRenderizada = "";
     while (detalhe.isConnected) {
-      renderSessaoLogin(sessao, detalhe);
-      if (sessao.url && !abriuURL) {
-        abriuURL = true;
-        if (aba && !aba.closed) {
-          try { aba.location.href = sessao.url; aba.opener = null; } catch { /* usa o link visível */ }
-        }
+      // Re-renderiza só quando a sessão muda; render incondicional apagaria o
+      // código que o usuário está colando no campo.
+      const versao = [sessao.estado, sessao.url, sessao.codigo, sessao.requer_codigo, sessao.mensagem].join(" ");
+      if (versao !== versaoRenderizada) {
+        renderSessaoLogin(sessao, detalhe);
+        versaoRenderizada = versao;
       }
       estado.textContent = rotuloSessaoLogin(sessao);
       if (["concluido", "erro", "cancelado", "expirado"].includes(sessao.estado)) {
         if (sessao.estado === "concluido") {
           toast(`Perfil ${c.alias} autenticado.`, "ok");
           await verificarLogin(m, c, estado, null, btn);
-        } else if (aba && !aba.closed && !abriuURL) {
-          aba.close();
         }
         break;
       }
@@ -538,7 +535,6 @@ async function iniciarLogin(m, c, estado, acoes, btn) {
   } catch (e) {
     estado.textContent = "login indisponível";
     detalhe.replaceChildren(el("span", { class: "sub", text: e.message }));
-    if (aba && !aba.closed) aba.close();
   } finally {
     btn.disabled = false;
   }
@@ -560,7 +556,11 @@ function renderSessaoLogin(sessao, alvo) {
   limpar(alvo);
   alvo.append(el("div", { class: "sub", style: "margin:4px 0", text: sessao.mensagem || rotuloSessaoLogin(sessao) }));
   if (sessao.url) {
-    alvo.append(el("a", { href: sessao.url, target: "_blank", rel: "noopener noreferrer", text: "Abrir página de autenticação ↗" }));
+    const abrir = el("a", { href: sessao.url, target: "_blank", rel: "noopener noreferrer", text: "Abrir página de autenticação ↗" });
+    const copiar = el("button", { class: "btn sm ghost", onclick: async () => {
+      try { await navigator.clipboard.writeText(sessao.url); toast("URL copiada.", "ok"); } catch { toast("Copie a URL pelo menu de contexto do link.", "err"); }
+    } }, "Copiar URL");
+    alvo.append(el("div", { class: "acoes", style: "margin:5px 0" }, abrir, copiar));
   }
   if (sessao.codigo) {
     const codigo = el("code", { style: "font-size:1.05em", text: sessao.codigo });

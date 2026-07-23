@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os/exec"
 	"regexp"
@@ -324,15 +325,50 @@ var (
 	reANSI = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 )
 
-func urlPublica(linha string) string {
+// extrairURL localiza a primeira URL http(s) da linha, já sem códigos ANSI.
+func extrairURL(linha string) *url.URL {
 	linha = reANSI.ReplaceAllString(linha, "")
 	bruta := reURL.FindString(linha)
 	bruta = strings.TrimRight(bruta, ").,;]")
 	u, err := url.Parse(bruta)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return nil
+	}
+	return u
+}
+
+// hostLoopback identifica hosts que só existem na máquina do serviço. O
+// navegador de quem usa o Praxis costuma estar em outro computador da rede,
+// então essas URLs nunca são entregues à UI.
+func hostLoopback(host string) bool {
+	host = strings.ToLower(host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
+
+func urlPublica(linha string) string {
+	u := extrairURL(linha)
+	if u == nil || hostLoopback(u.Hostname()) {
 		return ""
 	}
 	return u.String()
+}
+
+// suprimirNavegadorLocal aponta BROWSER para um comando inexistente: o CLI
+// desiste de abrir um navegador na sessão do serviço e imprime a URL, que é o
+// que a UI entrega ao navegador de quem pediu o login.
+func suprimirNavegadorLocal(cmd *exec.Cmd) {
+	env := cmd.Environ()
+	filtrado := env[:0]
+	for _, item := range env {
+		if !strings.EqualFold(strings.SplitN(item, "=", 2)[0], "BROWSER") {
+			filtrado = append(filtrado, item)
+		}
+	}
+	cmd.Env = append(filtrado, "BROWSER=praxis-sem-navegador-local")
 }
 
 func (g *GerenteLogin) executarClaude(ctx context.Context, id, dir string) {
@@ -341,6 +377,7 @@ func (g *GerenteLogin) executarClaude(ctx context.Context, id, dir string) {
 		g.finalizar(id, LoginErro, "não foi possível aplicar o perfil Claude")
 		return
 	}
+	suprimirNavegadorLocal(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		g.finalizar(id, LoginErro, "não foi possível preparar a entrada do login Claude")
@@ -393,9 +430,15 @@ func (g *GerenteLogin) executarClaude(ctx context.Context, id, dir string) {
 	go ler(stderr)
 	go func() { wg.Wait(); close(linhas) }()
 	for linha := range linhas {
-		if u := urlPublica(linha); u != "" {
-			g.disponibilizarNavegador(id, u, "", true)
+		u := extrairURL(linha)
+		if u == nil {
+			continue
 		}
+		if hostLoopback(u.Hostname()) {
+			g.avisarURLLocal(id)
+			continue
+		}
+		g.disponibilizarNavegador(id, u.String(), "", true)
 	}
 	errWait := cmd.Wait()
 	_ = stdin.Close()
@@ -429,6 +472,7 @@ func (g *GerenteLogin) executarCodex(ctx context.Context, id, dir string) {
 		g.finalizar(id, LoginErro, "não foi possível aplicar o perfil Codex")
 		return
 	}
+	suprimirNavegadorLocal(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		g.finalizar(id, LoginErro, "não foi possível preparar o app-server do Codex")
@@ -509,7 +553,11 @@ func (g *GerenteLogin) executarCodex(ctx context.Context, id, dir string) {
 				u = strings.TrimSpace(resp.AuthURL)
 			}
 			if urlPublica(u) == "" {
-				g.finalizar(id, LoginErro, "o Codex não devolveu uma URL de autenticação válida")
+				msg := "o Codex não devolveu uma URL de autenticação válida"
+				if p := extrairURL(u); p != nil && hostLoopback(p.Hostname()) {
+					msg = "o Codex ofereceu apenas uma URL local do servidor; essa versão não permite concluir o login a partir de outra máquina"
+				}
+				g.finalizar(id, LoginErro, msg)
 				concluido = true
 				break
 			}
@@ -571,6 +619,19 @@ func (g *GerenteLogin) definirEscritor(id string, escrever func(string) error) {
 	if s, ok := g.sessoes[id]; ok && !loginTerminal(s.publico.Estado) {
 		s.escrever = escrever
 	}
+}
+
+// avisarURLLocal cobre CLIs antigos que só imprimem a URL do callback em
+// loopback: ela não abre em outra máquina, então a sessão explica o motivo em
+// vez de ficar muda até expirar.
+func (g *GerenteLogin) avisarURLLocal(id string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s, ok := g.sessoes[id]
+	if !ok || s.publico.Estado != LoginIniciando {
+		return
+	}
+	s.publico.Mensagem = "o CLI ofereceu apenas uma URL local do servidor; atualize o CLI para concluir o login a partir de outra máquina"
 }
 
 func (g *GerenteLogin) disponibilizarNavegador(id, endereco, codigo string, requerCodigo bool) {

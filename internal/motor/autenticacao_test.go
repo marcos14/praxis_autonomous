@@ -64,6 +64,8 @@ func helperClaude(args []string) {
 	if strings.Join(args, " ") != "auth login" {
 		os.Exit(2)
 	}
+	fmt.Fprintln(os.Stdout, "Opening browser to sign in…")
+	fmt.Fprintln(os.Stdout, "Aguardando callback em http://localhost:43117/callback")
 	fmt.Fprintln(os.Stdout, "Abra https://example.test/claude-login para continuar")
 	sc := bufio.NewScanner(os.Stdin)
 	if sc.Scan() && strings.TrimSpace(sc.Text()) == "codigo-claude" {
@@ -113,6 +115,12 @@ func helperCodex(args []string) {
 			}})
 			return
 		case "account/login/start":
+			if os.Getenv("PRAXIS_LOGIN_LOOPBACK") == "1" {
+				_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]any{
+					"type": "chatgpt", "loginId": "login-1", "authUrl": "http://localhost:1455/auth/x",
+				}})
+				return
+			}
 			_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]any{
 				"type": "chatgptDeviceCode", "loginId": "login-1",
 				"verificationUrl": "https://example.test/codex-device", "userCode": "ABCD-EFGH",
@@ -192,6 +200,44 @@ func TestLoginCodexDeviceCode(t *testing.T) {
 	d := verificarAutenticacaoCom(context.Background(), "codex", dir, comandoHelperAuth)
 	if !d.Autenticado || d.Metodo != "chatgpt" {
 		t.Fatalf("diagnóstico Codex: %+v", d)
+	}
+}
+
+func TestURLPublicaRejeitaLoopback(t *testing.T) {
+	casos := map[string]string{
+		"Abra https://example.test/claude-login para continuar": "https://example.test/claude-login",
+		"veja (https://exemplo.com/a).":                         "https://exemplo.com/a",
+		"Aguardando callback em http://localhost:43117/cb":      "",
+		"callback em http://127.0.0.1:8080/cb":                  "",
+		"callback em http://[::1]:9/cb":                         "",
+		"callback em http://0.0.0.0:80/cb":                      "",
+		"callback em http://app.localhost/cb":                   "",
+		"sem url nenhuma":                                       "",
+		"ftp://exemplo.com/x":                                   "",
+	}
+	for linha, esperado := range casos {
+		if got := urlPublica(linha); got != esperado {
+			t.Errorf("urlPublica(%q) = %q; esperado %q", linha, got, esperado)
+		}
+	}
+}
+
+func TestLoginCodexComURLLocalFalhaExplicito(t *testing.T) {
+	t.Setenv("PRAXIS_LOGIN_LOOPBACK", "1")
+	g := NovoGerenteLogin()
+	g.comando = comandoHelperAuth
+	g.duracao = 5 * time.Second
+
+	s, err := g.IniciarLogin("codex", filepath.Join(t.TempDir(), "codex"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s = aguardarSessao(t, g, s.ID, func(s SessaoLogin) bool { return loginTerminal(s.Estado) })
+	if s.Estado != LoginErro || !strings.Contains(s.Mensagem, "URL local") {
+		t.Fatalf("esperava erro explícito de URL local, veio: %+v", s)
+	}
+	if s.URL != "" {
+		t.Fatalf("URL de loopback não pode ser exposta à UI: %+v", s)
 	}
 }
 
