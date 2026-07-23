@@ -51,8 +51,11 @@ func iniciarScheduler(ctx context.Context, banco *db.DB, git *gitops.Ops, regist
 		Store:         banco,
 		MaxGlobal:     maxGlobal,
 		MaxPorProjeto: maxPorProjeto,
-		Contas:        contasParaAfinidade(ctx, banco, logger),
-		Log:           logf,
+		// Perfis são resolvidos dinamicamente do banco por motor e demanda no
+		// ExecutorDemanda. A lista antiga usava aliases globais, colidia entre
+		// vendors e exigia reiniciar o serviço após qualquer alteração.
+		Contas: nil,
+		Log:    logf,
 	})
 	go sched.Rodar(ctx)
 	logger.Info("scheduler no ar", "max_global", maxGlobal, "max_por_projeto", maxPorProjeto, "gates_simultaneos", gatesSimultaneos)

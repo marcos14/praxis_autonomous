@@ -2,6 +2,9 @@ package motor
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -69,5 +72,40 @@ func TestTextoErroCodex(t *testing.T) {
 	got := textoErroCodex(json.RawMessage(`{"message":"quota","code":429}`))
 	if !strings.Contains(got, "quota") || !strings.Contains(got, "429") {
 		t.Fatalf("erro objeto mal extraido: %q", got)
+	}
+}
+
+func TestMotorCodexUsaCodexHomeDoPerfil(t *testing.T) {
+	dirBin := t.TempDir()
+	registro := filepath.Join(t.TempDir(), "codex_env.txt")
+	nome := "codex"
+	conteudo := "#!/bin/sh\nprintf '%s' \"$CODEX_HOME\" > \"" + registro + "\"\necho '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"ok\"}}'\necho '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\nexit 0\n"
+	if runtime.GOOS == "windows" {
+		nome = "codex.bat"
+		conteudo = "@echo off\r\n>\"" + registro + "\" echo %CODEX_HOME%\r\necho {\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"ok\"}}\r\necho {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}\r\nexit /b 0\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(dirBin, nome), []byte(conteudo), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dirBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	perfil := filepath.Join(t.TempDir(), "perfil-codex")
+	res, err := motorCodex{}.Rodar(OpcoesRun{
+		Dir: t.TempDir(), DirLogs: t.TempDir(), Prompt: "teste", RotuloLog: "env",
+		TimeoutMin: 1, PerfilDir: perfil,
+	})
+	if err != nil {
+		t.Fatalf("rodar codex fake: %v", err)
+	}
+	if res == nil || strings.TrimSpace(res.Resultado) != "ok" {
+		t.Fatalf("resultado inesperado: %+v", res)
+	}
+	b, err := os.ReadFile(registro)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs, _ := filepath.Abs(perfil)
+	if got := strings.TrimSpace(string(b)); got != abs {
+		t.Fatalf("CODEX_HOME = %q, quero %q", got, abs)
 	}
 }

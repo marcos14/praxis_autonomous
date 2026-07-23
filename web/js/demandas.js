@@ -998,7 +998,7 @@ function ativarLog(cont, id) {
 function separadorExec(raw) {
   let m = {};
   try { m = JSON.parse(raw); } catch { /* ignora */ }
-  const motor = m.engine ? m.engine + (m.modelo ? "/" + m.modelo : "") : "";
+  const motor = m.engine ? m.engine + (m.conta ? ":" + m.conta : "") + (m.modelo ? "/" + m.modelo : "") : "";
   const txt = `▶ ${m.operacao || "execução"}${motor ? " · " + motor : ""}`;
   return el("span", { class: "ln sep", text: txt });
 }

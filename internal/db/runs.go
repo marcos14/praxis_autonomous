@@ -21,11 +21,14 @@ const (
 // Execucao é uma linha da tabela runs (uma invocação de motor/gate). PhaseID é
 // opcional: execuções de intake (analista/planejador) não têm fase.
 type Execucao struct {
-	ID          int64   `json:"id"`
-	DemandID    int64   `json:"demand_id"`
-	PhaseID     *int64  `json:"phase_id"`
-	Operacao    string  `json:"operacao"`
-	Engine      string  `json:"engine"`
+	ID       int64  `json:"id"`
+	DemandID int64  `json:"demand_id"`
+	PhaseID  *int64 `json:"phase_id"`
+	Operacao string `json:"operacao"`
+	Engine   string `json:"engine"`
+	// Conta é o alias do perfil (engine_accounts.alias) usado na execução, vigente
+	// no momento do run ("" quando o motor rodou sem perfil cadastrado).
+	Conta       string  `json:"conta"`
 	Modelo      string  `json:"modelo"`
 	CustoUSD    float64 `json:"custo_usd"`
 	TokensIn    int64   `json:"tokens_in"`
@@ -37,7 +40,7 @@ type Execucao struct {
 }
 
 // colunasExecucao lista as colunas de runs na ordem esperada por scanExecucao.
-const colunasExecucao = `id, demand_id, phase_id, operacao, engine, modelo, custo_usd,
+const colunasExecucao = `id, demand_id, phase_id, operacao, engine, conta, modelo, custo_usd,
 	tokens_in, tokens_out, is_error, log_ref, iniciado_em, terminado_em`
 
 // scanExecucao lê uma linha de runs (na ordem de colunasExecucao) para Execucao,
@@ -48,8 +51,8 @@ func scanExecucao(sc interface{ Scan(...any) error }) (Execucao, error) {
 		phaseID sql.NullInt64
 		isError int
 	)
-	if err := sc.Scan(&e.ID, &e.DemandID, &phaseID, &e.Operacao, &e.Engine, &e.Modelo,
-		&e.CustoUSD, &e.TokensIn, &e.TokensOut, &isError, &e.LogRef,
+	if err := sc.Scan(&e.ID, &e.DemandID, &phaseID, &e.Operacao, &e.Engine, &e.Conta,
+		&e.Modelo, &e.CustoUSD, &e.TokensIn, &e.TokensOut, &isError, &e.LogRef,
 		&e.IniciadoEm, &e.TerminadoEm); err != nil {
 		return Execucao{}, err
 	}
@@ -64,11 +67,11 @@ func scanExecucao(sc interface{ Scan(...any) error }) (Execucao, error) {
 func (d *DB) CriarExecucao(ctx context.Context, e Execucao) (Execucao, error) {
 	row := d.Escritor.QueryRowContext(ctx, `
 		INSERT INTO runs
-			(demand_id, phase_id, operacao, engine, modelo, custo_usd,
+			(demand_id, phase_id, operacao, engine, conta, modelo, custo_usd,
 			 tokens_in, tokens_out, is_error, log_ref, terminado_em)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, iniciado_em`,
-		e.DemandID, nullInt(e.PhaseID), e.Operacao, e.Engine, e.Modelo, e.CustoUSD,
+		e.DemandID, nullInt(e.PhaseID), e.Operacao, e.Engine, e.Conta, e.Modelo, e.CustoUSD,
 		e.TokensIn, e.TokensOut, booleanParaInt(e.IsError), e.LogRef, e.TerminadoEm,
 	)
 	if err := row.Scan(&e.ID, &e.IniciadoEm); err != nil {
@@ -140,10 +143,10 @@ func (d *DB) ObterExecucao(ctx context.Context, id int64) (Execucao, error) {
 func (d *DB) AtualizarExecucao(ctx context.Context, e Execucao) (Execucao, error) {
 	res, err := d.Escritor.ExecContext(ctx, `
 		UPDATE runs SET
-			engine = ?, modelo = ?, custo_usd = ?, tokens_in = ?, tokens_out = ?,
+			engine = ?, conta = ?, modelo = ?, custo_usd = ?, tokens_in = ?, tokens_out = ?,
 			is_error = ?, log_ref = ?, terminado_em = ?
 		WHERE id = ?`,
-		e.Engine, e.Modelo, e.CustoUSD, e.TokensIn, e.TokensOut,
+		e.Engine, e.Conta, e.Modelo, e.CustoUSD, e.TokensIn, e.TokensOut,
 		booleanParaInt(e.IsError), e.LogRef, e.TerminadoEm, e.ID,
 	)
 	if err != nil {

@@ -62,7 +62,8 @@ type Consultor struct {
 	Motor      string   // nome base do motor (claude/codex/opencode)
 	Modelo     string   // modelo de análise; vazio → default do motor
 	Esforco    string   // esforço; vazio → default do motor
-	ConfigDir  string   // CLAUDE_CONFIG_DIR da conta; "" = sem conta
+	Conta      string   // alias do perfil usado (registro no run); "" = sem conta
+	ConfigDir  string   // diretório isolado do perfil; "" = perfil padrão do CLI
 	Dir        string   // raiz do repo principal (cmd.Dir do harness — só leitura)
 	DirLogs    string   // pasta dos .jsonl das execuções
 	AddDirs    []string // repos/diretórios extras liberados (só leitura)
@@ -233,7 +234,7 @@ func (c *Consultor) rodar(ctx context.Context, cons db.Consulta, historico strin
 	}
 
 	exec, err := c.Store.CriarExecucaoConsulta(ctx, db.ExecucaoConsulta{
-		ConsultaID: &cons.ID, Operacao: db.OperacaoConsultor, Engine: c.Motor, Modelo: c.Modelo,
+		ConsultaID: &cons.ID, Operacao: db.OperacaoConsultor, Engine: c.Motor, Conta: c.Conta, Modelo: c.Modelo,
 	})
 	if err != nil {
 		return nil, c.Motor, 0, fmt.Errorf("registrar execução: %w", err)
@@ -250,7 +251,7 @@ func (c *Consultor) rodar(ctx context.Context, cons db.Consulta, historico strin
 	})
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: c.Dir, DirLogs: c.DirLogs, Prompt: prompt,
-		Modelo: c.Modelo, Esforco: c.Esforco, ClaudeConfigDir: c.ConfigDir,
+		Modelo: c.Modelo, Esforco: c.Esforco, PerfilDir: c.ConfigDir,
 		AddDirs: c.AddDirs, BudgetUSD: c.BudgetUSD, TimeoutMin: c.TimeoutMin,
 		Schema: SchemaConsultor, SomenteLeitura: true, ProibirCommit: true,
 		RotuloLog: fmt.Sprintf("consultor-c%d", cons.ID), Ctx: ctx,

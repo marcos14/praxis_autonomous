@@ -33,6 +33,101 @@ func TestProximoMotorFallbackComAlias(t *testing.T) {
 	}
 }
 
+// TestProximoMotorFallbackMotorForaDaCadeia: um motor de uso manual (fora da
+// ordem) cai no PRIMEIRO motor livre da cadeia — o uso manual tem fallback, so
+// nao e alvo dele.
+func TestProximoMotorFallbackMotorForaDaCadeia(t *testing.T) {
+	estado := NovoEstadoFallback()
+	ordem := []string{"claude", "codex"}
+	if got := proximoMotorFallback(ordem, "exclusivo", estado); got != "claude" {
+		t.Fatalf("fallback do motor manual deveria ir para claude, veio %q", got)
+	}
+	estado.marcarEsgotado("claude")
+	if got := proximoMotorFallback(ordem, "exclusivo", estado); got != "codex" {
+		t.Fatalf("fallback do motor manual deveria pular para codex, veio %q", got)
+	}
+}
+
+// TestRodarComFallbackEsgotaPerfisAntesDoMotor: com dois perfis no motor
+// primario, o limite do primeiro perfil troca para o SEGUNDO PERFIL do mesmo
+// motor — o proximo motor da cadeia nem e chamado.
+func TestRodarComFallbackEsgotaPerfisAntesDoMotor(t *testing.T) {
+	var dirs []string
+	claude := stubMotor{nome: "claude", fn: func(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		dirs = append(dirs, op.PerfilDir)
+		if op.PerfilDir == "dir-1" {
+			return &motor.ResultadoRun{LimiteSessao: true, DetalheLimite: "usage limit"}, nil
+		}
+		return &motor.ResultadoRun{Resultado: "ok pelo segundo perfil"}, nil
+	}}
+	codex := stubMotor{nome: "codex", fn: func(motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		t.Fatal("codex nao deveria ser chamado enquanto o claude tem perfil livre")
+		return nil, nil
+	}}
+	c := &ContextoExec{
+		Config: Config{
+			Fallback: Fallback{Ativo: true, Ordem: []string{"claude", "codex"}},
+			Perfis: map[string][]PerfilMotor{
+				"claude": {{Conta: "p1", Dir: "dir-1"}, {Conta: "p2", Dir: "dir-2"}},
+			},
+		},
+		Selecionar: seletorStub(claude, codex),
+	}
+	res, usado, conta, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if usado != "claude" || conta != "p2" {
+		t.Fatalf("usado = %s:%s, esperava claude:p2", usado, conta)
+	}
+	if res == nil || res.Resultado != "ok pelo segundo perfil" {
+		t.Fatalf("resultado inesperado: %#v", res)
+	}
+	if len(dirs) != 2 || dirs[0] != "dir-1" || dirs[1] != "dir-2" {
+		t.Fatalf("perfis aplicados = %v, esperava [dir-1 dir-2]", dirs)
+	}
+}
+
+// TestRodarComFallbackTrocaDeMotorAposTodosOsPerfis: só depois de TODOS os
+// perfis do motor primario esgotarem a troca de motor acontece — e o run
+// devolve o perfil do motor de fallback.
+func TestRodarComFallbackTrocaDeMotorAposTodosOsPerfis(t *testing.T) {
+	chamadasClaude := 0
+	claude := stubMotor{nome: "claude", fn: func(motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		chamadasClaude++
+		return &motor.ResultadoRun{LimiteSessao: true, DetalheLimite: "usage limit"}, nil
+	}}
+	codex := stubMotor{nome: "codex", fn: func(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		if op.PerfilDir != "codex-dir" {
+			t.Fatalf("codex sem o perfil isolado dele: %q", op.PerfilDir)
+		}
+		return &motor.ResultadoRun{Resultado: "ok pelo codex"}, nil
+	}}
+	c := &ContextoExec{
+		Config: Config{
+			Fallback: Fallback{Ativo: true, Ordem: []string{"claude", "codex"}},
+			Perfis: map[string][]PerfilMotor{
+				"claude": {{Conta: "p1", Dir: "dir-1"}, {Conta: "p2", Dir: "dir-2"}},
+				"codex":  {{Conta: "x1", Dir: "codex-dir"}},
+			},
+		},
+		Selecionar: seletorStub(claude, codex),
+	}
+	res, usado, conta, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if chamadasClaude != 2 {
+		t.Fatalf("claude chamado %d vezes, esperava 2 (um por perfil)", chamadasClaude)
+	}
+	if usado != "codex" || conta != "x1" {
+		t.Fatalf("usado = %s:%s, esperava codex:x1", usado, conta)
+	}
+	if res == nil || res.Resultado != "ok pelo codex" {
+		t.Fatalf("resultado inesperado: %#v", res)
+	}
+}
+
 // TestRodarComFallbackTrocaDeMotor: motor primario esgota, ha fallback ativo, e
 // o segundo motor conclui — a operacao termina no motor de fallback.
 func TestRodarComFallbackTrocaDeMotor(t *testing.T) {
@@ -46,7 +141,7 @@ func TestRodarComFallbackTrocaDeMotor(t *testing.T) {
 		Config:     Config{Fallback: Fallback{Ativo: true, Ordem: []string{"claude", "codex"}}},
 		Selecionar: seletorStub(primario, fallback),
 	}
-	res, usado, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
+	res, usado, _, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -74,7 +169,7 @@ func TestRodarComFallbackSemFallbackNaoBloqueia(t *testing.T) {
 		Selecionar: seletorStub(m),
 		Agora:      func() time.Time { return base },
 	}
-	_, _, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
+	_, _, _, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
 	var ef *ErroFranquia
 	if err == nil {
 		t.Fatal("esperava ErroFranquia, veio nil")

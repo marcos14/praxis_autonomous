@@ -11,11 +11,40 @@ func motorExemplo() Motor {
 	return Motor{
 		Nome:          "claude",
 		Ativo:         true,
+		Fallback:      true,
 		ModeloExec:    "opus",
 		ModeloAnalise: "sonnet",
 		BudgetFaseUSD: 6.0,
 		TimeoutMin:    45,
 		Params:        json.RawMessage(`{"foo":"bar"}`),
+	}
+}
+
+// TestMotorFallbackRoundTrip: o switch de participação no fallback persiste na
+// criação e na atualização.
+func TestMotorFallbackRoundTrip(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+
+	m, err := d.CriarMotor(ctx, motorExemplo())
+	if err != nil {
+		t.Fatalf("CriarMotor: %v", err)
+	}
+	lido, err := d.ObterMotor(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("ObterMotor: %v", err)
+	}
+	if !lido.Fallback {
+		t.Fatal("fallback deveria vir true")
+	}
+
+	lido.Fallback = false
+	atualizado, err := d.AtualizarMotor(ctx, lido)
+	if err != nil {
+		t.Fatalf("AtualizarMotor: %v", err)
+	}
+	if atualizado.Fallback {
+		t.Fatal("fallback deveria persistir false (motor de uso manual)")
 	}
 }
 
@@ -325,6 +354,24 @@ func TestAliasDuplicadoEmMotoresDiferentesOK(t *testing.T) {
 	}
 	if _, err := d.CriarConta(ctx, Conta{EngineID: m2.ID, Alias: "principal"}); err != nil {
 		t.Fatalf("conta m2 (alias igual, motor diferente) deveria ser OK: %v", err)
+	}
+}
+
+func TestContaAtivaParaDistribuiPorAfinidade(t *testing.T) {
+	m := Motor{Contas: []Conta{
+		{ID: 1, Alias: "inativa", Ativo: false},
+		{ID: 2, Alias: "a", ConfigDir: "perfil-a", Ativo: true},
+		{ID: 3, Alias: "b", ConfigDir: "perfil-b", Ativo: true},
+	}}
+	casos := []struct {
+		afinidade int64
+		quer      int64
+	}{{0, 2}, {1, 2}, {2, 3}, {3, 2}}
+	for _, tc := range casos {
+		got, ok := ContaAtivaPara(m, tc.afinidade)
+		if !ok || got.ID != tc.quer {
+			t.Fatalf("afinidade %d: conta=%+v ok=%v, quero id=%d", tc.afinidade, got, ok, tc.quer)
+		}
 	}
 }
 

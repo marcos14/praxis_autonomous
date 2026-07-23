@@ -260,7 +260,7 @@ func TestExecucaoConsultaCicloCompleto(t *testing.T) {
 	}
 
 	e, err := d.CriarExecucaoConsulta(ctx, ExecucaoConsulta{
-		ConsultaID: &c.ID, Operacao: OperacaoConsultor, Engine: "claude",
+		ConsultaID: &c.ID, Operacao: OperacaoConsultor, Engine: "claude", Conta: "principal",
 	})
 	if err != nil {
 		t.Fatalf("CriarExecucaoConsulta: %v", err)
@@ -280,6 +280,9 @@ func TestExecucaoConsultaCicloCompleto(t *testing.T) {
 	}
 	if fechada.CustoUSD != 0.10 || fechada.LogRef == "" {
 		t.Fatalf("execução fechada = %+v", fechada)
+	}
+	if fechada.Conta != "principal" {
+		t.Fatalf("conta = %q, quero principal", fechada.Conta)
 	}
 
 	alvo, tem, err := d.UltimaExecucaoConsultaComLog(ctx, c.ID)

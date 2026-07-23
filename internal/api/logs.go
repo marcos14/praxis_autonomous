@@ -117,8 +117,9 @@ func metadadosRun(e db.Execucao) string {
 		ID       int64  `json:"id"`
 		Operacao string `json:"operacao"`
 		Engine   string `json:"engine"`
+		Conta    string `json:"conta,omitempty"`
 		Modelo   string `json:"modelo"`
-	}{ID: e.ID, Operacao: e.Operacao, Engine: e.Engine, Modelo: e.Modelo})
+	}{ID: e.ID, Operacao: e.Operacao, Engine: e.Engine, Conta: e.Conta, Modelo: e.Modelo})
 	if err != nil {
 		return "{}"
 	}

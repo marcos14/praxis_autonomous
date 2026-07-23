@@ -97,6 +97,9 @@ func (motorCodex) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 
 	cmd := exec.CommandContext(ctx, "codex", args...)
 	cmd.Dir = op.Dir
+	if err := aplicarPerfil(cmd, "codex", perfilDirDaOp(op)); err != nil {
+		return nil, err
+	}
 	cmd.Stdin = strings.NewReader(op.Prompt)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

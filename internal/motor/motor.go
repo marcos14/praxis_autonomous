@@ -20,14 +20,17 @@ import (
 //   - Raiz virou Dir (o worktree da demanda onde o harness roda);
 //   - DirLogs e a pasta onde o .jsonl da execucao e gravado (antes derivada de
 //     automacao/logs); no serviço aponta para PRAXIS_HOME/logs;
-//   - ClaudeConfigDir vem do banco (engine_accounts.config_dir), nao de arquivo.
+//   - PerfilDir vem do banco (engine_accounts.config_dir), nao de arquivo.
 type OpcoesRun struct {
-	Dir             string // worktree da demanda (cmd.Dir do processo filho)
-	DirLogs         string // pasta onde gravar o .jsonl desta execucao
-	Prompt          string
-	Modelo          string
-	Esforco         string
-	ClaudeConfigDir string // CLAUDE_CONFIG_DIR da conta (engine_accounts.config_dir)
+	Dir       string // worktree da demanda (cmd.Dir do processo filho)
+	DirLogs   string // pasta onde gravar o .jsonl desta execucao
+	Prompt    string
+	Modelo    string
+	Esforco   string
+	PerfilDir string // raiz isolada do perfil: CLAUDE_CONFIG_DIR ou CODEX_HOME
+	// ClaudeConfigDir é mantido temporariamente para compatibilidade com chamadas
+	// externas/testes antigos. Código novo deve preencher PerfilDir.
+	ClaudeConfigDir string
 	AddDirs         []string
 	BudgetUSD       float64
 	TimeoutMin      int

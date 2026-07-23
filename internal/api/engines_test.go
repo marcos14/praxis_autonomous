@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -124,6 +126,34 @@ func TestAutocadastrarMotoresEndpoint(t *testing.T) {
 	criados := decodMotores(t, rec)
 	if criados == nil {
 		t.Fatal("resposta deveria ser uma lista (mesmo que vazia), não nil")
+	}
+}
+
+// TestMotorFallbackDefaultEUpdate: criar sem o campo liga o fallback (default);
+// o PUT com fallback=false transforma o motor em uso manual e um PUT sem o
+// campo preserva o valor atual.
+func TestMotorFallbackDefaultEUpdate(t *testing.T) {
+	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
+	m := criarMotorAPI(t, srv, "claude")
+	if !m.Fallback {
+		t.Fatal("motor criado sem o campo deveria participar do fallback (default)")
+	}
+
+	rec := fazerReq(t, srv, http.MethodPut, "/api/v1/engines/"+itoa(m.ID), map[string]any{"fallback": false})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT fallback=false: status %d (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if atualizado := decodMotor(t, rec); atualizado.Fallback {
+		t.Fatal("fallback deveria ficar false após o PUT")
+	}
+
+	// PUT sem o campo preserva (não volta para true).
+	rec = fazerReq(t, srv, http.MethodPut, "/api/v1/engines/"+itoa(m.ID), map[string]any{"timeout_min": 15})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT sem fallback: status %d (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if atualizado := decodMotor(t, rec); atualizado.Fallback {
+		t.Fatal("PUT sem o campo não deveria religar o fallback")
 	}
 }
 
@@ -334,6 +364,34 @@ func TestContasAPICRUD(t *testing.T) {
 	rec = fazerReq(t, srv, http.MethodGet, "/api/v1/engines/"+itoa(m.ID), nil)
 	if got := decodMotor(t, rec); len(got.Contas) != 0 {
 		t.Fatalf("contas pós-remoção = %d, quero 0", len(got.Contas))
+	}
+}
+
+func TestPerfilCodexGerenciadoEPreservadoNoToggle(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	m := criarMotorAPI(t, srv, "codex")
+	base := "/api/v1/engines/" + itoa(m.ID) + "/accounts"
+
+	rec := fazerReq(t, srv, http.MethodPost, base, map[string]any{"alias": "principal"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("criar perfil: status %d corpo=%s", rec.Code, rec.Body.String())
+	}
+	c := decodConta(t, rec)
+	if !filepath.IsAbs(c.ConfigDir) || filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(c.ConfigDir)))) != filepath.Dir(banco.Caminho) {
+		t.Fatalf("diretório gerenciado inesperado: %q", c.ConfigDir)
+	}
+	if st, err := os.Stat(c.ConfigDir); err != nil || !st.IsDir() {
+		t.Fatalf("diretório do perfil não foi criado: stat=%v erro=%v", st, err)
+	}
+
+	rec = fazerReq(t, srv, http.MethodPut, base+"/"+itoa(c.ID), map[string]any{"ativo": false})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("desativar perfil: status %d corpo=%s", rec.Code, rec.Body.String())
+	}
+	atual := decodConta(t, rec)
+	if atual.ConfigDir != c.ConfigDir || atual.Ativo {
+		t.Fatalf("toggle perdeu o diretório: antes=%+v depois=%+v", c, atual)
 	}
 }
 

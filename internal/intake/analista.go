@@ -57,7 +57,8 @@ type Analista struct {
 	Motor      string   // nome base do motor (claude/codex/opencode)
 	Modelo     string   // modelo de análise; vazio → default do motor
 	Esforco    string   // esforço; vazio → default do motor
-	ConfigDir  string   // CLAUDE_CONFIG_DIR da conta (afinidade); "" = sem conta
+	Conta      string   // alias do perfil usado (registro no run); "" = sem conta
+	ConfigDir  string   // CLAUDE_CONFIG_DIR/CODEX_HOME da conta (afinidade); "" = sem conta
 	Dir        string   // raiz do repo do projeto (cmd.Dir do harness — só leitura)
 	DirLogs    string   // pasta dos .jsonl das execuções
 	AddDirs    []string // diretórios extras liberados ao harness (só leitura)
@@ -149,7 +150,7 @@ func (a *Analista) rodar(ctx context.Context, dem db.Demanda, prd string) (*moto
 	}
 
 	exec, err := a.Store.CriarExecucao(ctx, db.Execucao{
-		DemandID: dem.ID, Operacao: db.OperacaoAnalista, Engine: a.Motor, Modelo: a.Modelo,
+		DemandID: dem.ID, Operacao: db.OperacaoAnalista, Engine: a.Motor, Conta: a.Conta, Modelo: a.Modelo,
 	})
 	if err != nil {
 		return nil, a.Motor, 0, fmt.Errorf("registrar execução: %w", err)
@@ -162,7 +163,7 @@ func (a *Analista) rodar(ctx context.Context, dem db.Demanda, prd string) (*moto
 	}
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: a.Dir, DirLogs: a.DirLogs, Prompt: renderPrompt(tpl, map[string]string{"PRD": prd}),
-		Modelo: a.Modelo, Esforco: a.Esforco, ClaudeConfigDir: a.ConfigDir,
+		Modelo: a.Modelo, Esforco: a.Esforco, PerfilDir: a.ConfigDir,
 		AddDirs: a.AddDirs, BudgetUSD: a.BudgetUSD, TimeoutMin: a.TimeoutMin,
 		Schema: SchemaAnalista, SomenteLeitura: true, ProibirCommit: true,
 		RotuloLog: "analista", Ctx: ctx,

@@ -10,6 +10,7 @@ import (
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
+	"github.com/marcos14/praxis-autonomous/internal/motor"
 )
 
 // intervaloPollLogPadrao é a cadência com que o SSE de log ao vivo relê o .jsonl
@@ -48,6 +49,9 @@ type Opcoes struct {
 	// IDE é o gerente do VS Code Web (edição manual do worktree pelo navegador).
 	// Opcional: nil = recurso desligado (POST /ide/sessao responde 503).
 	IDE IDEWeb
+	// LoginMotores gerencia as sessões efêmeras de autenticação Claude/Codex.
+	// Nil cria um gerente próprio; o seam existe para testes.
+	LoginMotores *motor.GerenteLogin
 }
 
 // ConsultorSvc dispara turnos de consulta e gerações de overview em background
@@ -84,6 +88,7 @@ type Servidor struct {
 	consultor    ConsultorSvc
 	git          *gitops.Ops
 	ideWeb       IDEWeb
+	loginMotores *motor.GerenteLogin
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -125,8 +130,12 @@ func Novo(opts Opcoes) *Servidor {
 	if gitOps == nil {
 		gitOps = gitops.Novo()
 	}
+	loginMotores := opts.LoginMotores
+	if loginMotores == nil {
+		loginMotores = motor.NovoGerenteLogin()
+	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
-		planejamento: opts.Planejamento, consultor: opts.Consultas, git: gitOps, ideWeb: opts.IDE,
+		planejamento: opts.Planejamento, consultor: opts.Consultas, git: gitOps, ideWeb: opts.IDE, loginMotores: loginMotores,
 		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 

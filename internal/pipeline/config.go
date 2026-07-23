@@ -14,14 +14,19 @@ import (
 //
 // Os nomes de motor usados aqui sao os nomes BASE conhecidos pelo pacote motor
 // (claude/codex/opencode); a resolucao de aliases/contas (engine_accounts) para
-// esses nomes base + CLAUDE_CONFIG_DIR ja foi feita pelo scheduler e chega em
+// esses nomes base + diretório isolado do perfil ja foi feita pelo scheduler e chega em
 // ConfigDirs.
 type Config struct {
 	MotorPadrao      string            // motor usado quando a operacao nao especifica um
 	Operacoes        map[string]string // operacao (executar/corrigir/revisar) → motor
 	Modelos          map[string]string // motor → modelo; ausente cai em motor.ModeloPadrao
 	Esforcos         map[string]string // motor → esforco; ausente cai em motor.EsforcoPadrao
-	ConfigDirs       map[string]string // motor → CLAUDE_CONFIG_DIR da conta
+	ConfigDirs       map[string]string // motor → CLAUDE_CONFIG_DIR ou CODEX_HOME do perfil preferido
+	Contas           map[string]string // motor → alias do perfil preferido (registro no run)
+	// Perfis lista TODOS os perfis ativos de cada motor na ordem de uso (o da
+	// afinidade primeiro). O fallback esgota estes perfis um a um antes de trocar
+	// de motor. Ausente/vazio → cai no par ConfigDirs/Contas (um perfil só).
+	Perfis map[string][]PerfilMotor
 	AddDirs          []string          // diretorios extras liberados ao harness
 	BudgetFaseUSD    float64           // teto de custo por fase (0 = sem teto)
 	TimeoutMin       int               // timeout por run do harness
@@ -42,10 +47,20 @@ type Config struct {
 }
 
 // Fallback descreve a ordem de troca de motores quando o motor corrente sinaliza
-// limite de sessao/uso. Portado de Config.Motores.Fallback do Praxis atual.
+// limite de sessao/uso. Portado de Config.Motores.Fallback do Praxis atual. A
+// Ordem so contem motores que participam do fallback (engines.fallback = 1); um
+// motor de uso manual (fallback = 0) pode INICIAR a operacao, mas nunca e alvo
+// de troca automatica.
 type Fallback struct {
 	Ativo bool
 	Ordem []string
+}
+
+// PerfilMotor identifica um perfil isolado de um motor: o alias (registro no
+// run) e o diretorio raiz (CLAUDE_CONFIG_DIR/CODEX_HOME).
+type PerfilMotor struct {
+	Conta string
+	Dir   string
 }
 
 // MotorParaOperacao devolve o motor configurado para a operacao, caindo no motor
@@ -81,11 +96,33 @@ func (c Config) EsforcoParaMotor(nomeMotor string) string {
 	return motor.EsforcoPadrao(nomeMotor)
 }
 
-// ConfigDirDoMotor devolve o CLAUDE_CONFIG_DIR da conta associada ao motor ("" se
-// nenhum).
-func (c Config) ConfigDirDoMotor(nomeMotor string) string {
-	return strings.TrimSpace(c.ConfigDirs[normalizarMotor(nomeMotor)])
+// PerfisDoMotor devolve os perfis do motor na ordem de uso. Sem a lista Perfis,
+// cai no par ConfigDirs/Contas (o perfil unico do desenho anterior); um motor
+// sem perfil cadastrado devolve um perfil vazio (o CLI usa o perfil default do
+// servico), mantendo o laco de fallback com exatamente uma tentativa por motor.
+func (c Config) PerfisDoMotor(nomeMotor string) []PerfilMotor {
+	nomeMotor = normalizarMotor(nomeMotor)
+	if lista := c.Perfis[nomeMotor]; len(lista) > 0 {
+		return lista
+	}
+	return []PerfilMotor{{
+		Conta: strings.TrimSpace(c.Contas[nomeMotor]),
+		Dir:   strings.TrimSpace(c.ConfigDirs[nomeMotor]),
+	}}
 }
+
+// PerfilDirDoMotor devolve o diretório isolado do perfil preferido do motor.
+func (c Config) PerfilDirDoMotor(nomeMotor string) string {
+	return strings.TrimSpace(c.PerfisDoMotor(nomeMotor)[0].Dir)
+}
+
+// ContaDoMotor devolve o alias do perfil preferido do motor ("" sem perfil).
+func (c Config) ContaDoMotor(nomeMotor string) string {
+	return strings.TrimSpace(c.PerfisDoMotor(nomeMotor)[0].Conta)
+}
+
+// ConfigDirDoMotor preserva o nome antigo para consumidores externos.
+func (c Config) ConfigDirDoMotor(nomeMotor string) string { return c.PerfilDirDoMotor(nomeMotor) }
 
 // normalizarMotor deixa o nome do motor em minusculas e sem espacos (mesma
 // normalizacao de normalizarNomeMotor do Praxis atual).

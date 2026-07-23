@@ -26,10 +26,14 @@ var ErrOrdemInvalida = errors.New("ordem inválida: informe exatamente os ids de
 // refletem o modelo de dados do plano (snake_case) e são a forma serializada
 // pela API. Prioridade é a ordem de fallback (menor = tentado antes).
 type Motor struct {
-	ID            int64  `json:"id"`
-	Nome          string `json:"nome"`
-	Prioridade    int    `json:"prioridade"`
-	Ativo         bool   `json:"ativo"`
+	ID         int64  `json:"id"`
+	Nome       string `json:"nome"`
+	Prioridade int    `json:"prioridade"`
+	Ativo      bool   `json:"ativo"`
+	// Fallback indica se o motor participa da cadeia de fallback automático.
+	// false = o motor só roda onde for definido manualmente (motor preferido do
+	// projeto ou motor do grupo de usuários nas consultas).
+	Fallback      bool   `json:"fallback"`
 	ModeloExec    string `json:"modelo_exec"`
 	ModeloAnalise string `json:"modelo_analise"`
 	// ModeloConsulta é o modelo da feature de consultas (chat de produto/
@@ -52,8 +56,28 @@ type Conta struct {
 	Ativo     bool   `json:"ativo"`
 }
 
+// ContaAtivaPara escolhe de forma determinística uma conta ativa do motor.
+// A afinidade faz demandas/consultas diferentes se distribuírem pelos perfis,
+// mantendo a mesma escolha entre etapas do mesmo fluxo. Afinidade <= 0 escolhe
+// a primeira e preserva o comportamento histórico.
+func ContaAtivaPara(m Motor, afinidade int64) (Conta, bool) {
+	ativas := make([]Conta, 0, len(m.Contas))
+	for _, c := range m.Contas {
+		if c.Ativo {
+			ativas = append(ativas, c)
+		}
+	}
+	if len(ativas) == 0 {
+		return Conta{}, false
+	}
+	if afinidade <= 0 {
+		return ativas[0], true
+	}
+	return ativas[(afinidade-1)%int64(len(ativas))], true
+}
+
 // colunasMotor lista as colunas de engines na ordem esperada por scanMotor.
-const colunasMotor = `id, nome, prioridade, ativo, modelo_exec, modelo_analise,
+const colunasMotor = `id, nome, prioridade, ativo, fallback, modelo_exec, modelo_analise,
 	modelo_consulta, budget_fase_usd, timeout_min, params`
 
 // colunasConta lista as colunas de engine_accounts na ordem esperada por
@@ -64,15 +88,17 @@ const colunasConta = `id, engine_id, alias, config_dir, ativo`
 // carrega as contas — os métodos de consulta cuidam disso. Contas nunca fica nil.
 func scanMotor(sc interface{ Scan(...any) error }) (Motor, error) {
 	var (
-		m      Motor
-		ativo  int
-		params string
+		m        Motor
+		ativo    int
+		fallback int
+		params   string
 	)
-	if err := sc.Scan(&m.ID, &m.Nome, &m.Prioridade, &ativo, &m.ModeloExec,
+	if err := sc.Scan(&m.ID, &m.Nome, &m.Prioridade, &ativo, &fallback, &m.ModeloExec,
 		&m.ModeloAnalise, &m.ModeloConsulta, &m.BudgetFaseUSD, &m.TimeoutMin, &params); err != nil {
 		return Motor{}, err
 	}
 	m.Ativo = ativo != 0
+	m.Fallback = fallback != 0
 	m.Params = normalizarParams(params)
 	m.Contas = []Conta{}
 	return m, nil
@@ -113,12 +139,12 @@ func (d *DB) CriarMotor(ctx context.Context, m Motor) (Motor, error) {
 	params := normalizarParams(string(m.Params))
 	row := d.Escritor.QueryRowContext(ctx, `
 		INSERT INTO engines
-			(nome, prioridade, ativo, modelo_exec, modelo_analise, modelo_consulta,
+			(nome, prioridade, ativo, fallback, modelo_exec, modelo_analise, modelo_consulta,
 			 budget_fase_usd, timeout_min, params)
-		VALUES (?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?)
 		RETURNING id`,
-		m.Nome, m.Prioridade, booleanParaInt(m.Ativo), m.ModeloExec, m.ModeloAnalise,
-		m.ModeloConsulta, m.BudgetFaseUSD, m.TimeoutMin, string(params),
+		m.Nome, m.Prioridade, booleanParaInt(m.Ativo), booleanParaInt(m.Fallback), m.ModeloExec,
+		m.ModeloAnalise, m.ModeloConsulta, m.BudgetFaseUSD, m.TimeoutMin, string(params),
 	)
 	if err := row.Scan(&m.ID); err != nil {
 		return Motor{}, traduzirErroMotor(err)
@@ -205,11 +231,11 @@ func (d *DB) AtualizarMotor(ctx context.Context, m Motor) (Motor, error) {
 	params := normalizarParams(string(m.Params))
 	res, err := d.Escritor.ExecContext(ctx, `
 		UPDATE engines SET
-			nome = ?, ativo = ?, modelo_exec = ?, modelo_analise = ?, modelo_consulta = ?,
+			nome = ?, ativo = ?, fallback = ?, modelo_exec = ?, modelo_analise = ?, modelo_consulta = ?,
 			budget_fase_usd = ?, timeout_min = ?, params = ?
 		WHERE id = ?`,
-		m.Nome, booleanParaInt(m.Ativo), m.ModeloExec, m.ModeloAnalise, m.ModeloConsulta,
-		m.BudgetFaseUSD, m.TimeoutMin, string(params), m.ID,
+		m.Nome, booleanParaInt(m.Ativo), booleanParaInt(m.Fallback), m.ModeloExec, m.ModeloAnalise,
+		m.ModeloConsulta, m.BudgetFaseUSD, m.TimeoutMin, string(params), m.ID,
 	)
 	if err != nil {
 		return Motor{}, traduzirErroMotor(err)

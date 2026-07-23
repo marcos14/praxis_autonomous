@@ -341,6 +341,8 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 		Modelos:          map[string]string{},
 		Esforcos:         map[string]string{},
 		ConfigDirs:       map[string]string{},
+		Contas:           map[string]string{},
+		Perfis:           map[string][]pipeline.PerfilMotor{},
 		MaxCorrecoes:     maxCorrecoesDefault,
 		MaxCiclosRevisao: maxCiclosRevisaoDefault,
 		GitSufixoPraxis:  true, // sufixo " - Praxis" no autor: ligado por default
@@ -355,22 +357,37 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 		if !m.Ativo {
 			continue
 		}
-		ordem = append(ordem, m.Nome)
+		// A cadeia de fallback só contém motores que participam dele; um motor
+		// de uso manual (fallback = false) ainda tem modelo/perfis resolvidos
+		// abaixo, para quando o motor preferido do projeto apontar para ele.
+		if m.Fallback {
+			ordem = append(ordem, m.Nome)
+		}
 		if strings.TrimSpace(m.ModeloExec) != "" {
 			cfg.Modelos[m.Nome] = m.ModeloExec
 		}
-		if cfg.MotorPadrao == "" {
-			// o motor de maior prioridade (primeiro ativo) é o padrão; seu
-			// budget/timeout valem para a fase, e sua conta dá o CLAUDE_CONFIG_DIR.
+		// Resolve TODOS os perfis ativos de CADA motor, com o da afinidade na
+		// frente: o fallback esgota os perfis do motor um a um antes de trocar
+		// de motor, e cada um usa seu CODEX_HOME/CLAUDE_CONFIG_DIR isolado.
+		if perfis := perfisDoMotor(m, conta, dem.ID); len(perfis) > 0 {
+			cfg.Perfis[m.Nome] = perfis
+			if strings.TrimSpace(perfis[0].Dir) != "" {
+				cfg.ConfigDirs[m.Nome] = perfis[0].Dir
+			}
+			cfg.Contas[m.Nome] = perfis[0].Conta
+		}
+		if cfg.MotorPadrao == "" && m.Fallback {
+			// o motor de maior prioridade que participa do fallback é o padrão;
+			// seu budget/timeout valem para a fase. Motores de uso manual nunca
+			// são escolhidos automaticamente.
 			cfg.MotorPadrao = m.Nome
 			cfg.BudgetFaseUSD = m.BudgetFaseUSD
 			cfg.TimeoutMin = m.TimeoutMin
-			if dir := configDirDaConta(m, conta); dir != "" {
-				cfg.ConfigDirs[m.Nome] = dir
-			}
 		}
 	}
-	if len(ordem) > 1 {
+	if len(ordem) > 0 {
+		// Ativo mesmo com um único motor na cadeia: um motor preferido de uso
+		// manual (fora da cadeia) ainda precisa cair nela quando esgotar.
 		cfg.Fallback = pipeline.Fallback{Ativo: true, Ordem: ordem}
 	}
 
@@ -403,24 +420,48 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 	return cfg, nil
 }
 
-// configDirDaConta devolve o CLAUDE_CONFIG_DIR da conta do motor: a que casa com
-// o alias `conta` (afinidade do scheduler) ou, na ausência, a primeira conta
-// ativa.
-func configDirDaConta(m db.Motor, conta string) string {
-	conta = strings.TrimSpace(conta)
-	var primeiraAtiva string
+// perfisDoMotor devolve TODOS os perfis ativos do motor na ordem de uso do
+// fallback: primeiro o preferido (o que casa com o alias `conta` da afinidade
+// do scheduler ou, na ausência, o escolhido pela afinidade determinística) e
+// depois os demais, rotacionados. Vazio quando o motor não tem conta ativa.
+func perfisDoMotor(m db.Motor, conta string, afinidade ...int64) []pipeline.PerfilMotor {
+	ativas := make([]db.Conta, 0, len(m.Contas))
 	for _, c := range m.Contas {
-		if !c.Ativo {
-			continue
-		}
-		if primeiraAtiva == "" {
-			primeiraAtiva = c.ConfigDir
-		}
-		if conta != "" && c.Alias == conta {
-			return c.ConfigDir
+		if c.Ativo {
+			ativas = append(ativas, c)
 		}
 	}
-	return primeiraAtiva
+	if len(ativas) == 0 {
+		return nil
+	}
+
+	inicio := -1
+	if conta = strings.TrimSpace(conta); conta != "" {
+		for i, c := range ativas {
+			if c.Alias == conta {
+				inicio = i
+				break
+			}
+		}
+	}
+	if inicio < 0 {
+		seed := int64(0)
+		if len(afinidade) > 0 {
+			seed = afinidade[0]
+		}
+		if seed <= 0 {
+			inicio = 0
+		} else {
+			inicio = int((seed - 1) % int64(len(ativas)))
+		}
+	}
+
+	perfis := make([]pipeline.PerfilMotor, 0, len(ativas))
+	for i := range ativas {
+		c := ativas[(inicio+i)%len(ativas)]
+		perfis = append(perfis, pipeline.PerfilMotor{Conta: c.Alias, Dir: c.ConfigDir})
+	}
+	return perfis
 }
 
 // configString lê uma chave string da config efetiva ("" se ausente/incompatível).

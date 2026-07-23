@@ -81,6 +81,59 @@ func TestMigrarRejeitaVersaoFutura(t *testing.T) {
 	}
 }
 
+// TestMigracaoContaPreservaRunsExistentes garante o critério da migração 11:
+// runs gravados antes dela continuam legíveis (conta = '') — os relatórios
+// atuais não quebram no upgrade.
+func TestMigracaoContaPreservaRunsExistentes(t *testing.T) {
+	db := abrirBruto(t)
+
+	// aplica só até a migração 10 e grava um run "legado" (sem coluna conta).
+	for _, m := range migracoes {
+		if m.versao > 10 {
+			break
+		}
+		if err := aplicarMigracao(db, m); err != nil {
+			t.Fatalf("migração %d: %v", m.versao, err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO projects (nome, slug, pasta) VALUES ('p','p','x')`); err != nil {
+		t.Fatalf("projeto legado: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO demands (project_id, titulo) VALUES (1,'d')`); err != nil {
+		t.Fatalf("demanda legada: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO runs (demand_id, operacao, engine) VALUES (1,'executor','claude')`); err != nil {
+		t.Fatalf("run legado: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO engines (nome) VALUES ('claude')`); err != nil {
+		t.Fatalf("motor legado: %v", err)
+	}
+
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar até a versão corrente: %v", err)
+	}
+
+	var engine, conta string
+	if err := db.QueryRow(`SELECT engine, conta FROM runs WHERE id = 1`).Scan(&engine, &conta); err != nil {
+		t.Fatalf("ler run legado pós-migração: %v", err)
+	}
+	if engine != "claude" || conta != "" {
+		t.Fatalf("run legado = engine %q / conta %q, quero claude / ''", engine, conta)
+	}
+	var contaConsulta string
+	if err := db.QueryRow(`SELECT COALESCE(MAX(conta), '') FROM consulta_runs`).Scan(&contaConsulta); err != nil {
+		t.Fatalf("consulta_runs sem coluna conta: %v", err)
+	}
+	// migração 12: motor criado antes dela continua participando do fallback.
+	var fallback int
+	if err := db.QueryRow(`SELECT fallback FROM engines WHERE nome = 'claude'`).Scan(&fallback); err != nil {
+		t.Fatalf("ler fallback do motor legado: %v", err)
+	}
+	if fallback != 1 {
+		t.Fatalf("fallback do motor legado = %d, quero 1 (default preserva o comportamento)", fallback)
+	}
+}
+
 func TestSchemaNucleoCriaTabelasEIndices(t *testing.T) {
 	db := abrirBruto(t)
 	if _, _, err := Migrar(db); err != nil {

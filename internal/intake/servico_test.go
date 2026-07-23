@@ -19,7 +19,7 @@ func TestResolverMotorPrioridadeEConta(t *testing.T) {
 		t.Fatalf("criar motor: %v", err)
 	}
 	// motor ativo com modelo de análise e uma conta ativa.
-	m, err := d.CriarMotor(ctx, db.Motor{Nome: "claude", Prioridade: 1, Ativo: true,
+	m, err := d.CriarMotor(ctx, db.Motor{Nome: "claude", Prioridade: 1, Ativo: true, Fallback: true,
 		ModeloAnalise: "sonnet", BudgetFaseUSD: 2.5, TimeoutMin: 30})
 	if err != nil {
 		t.Fatalf("criar motor: %v", err)
@@ -29,9 +29,12 @@ func TestResolverMotorPrioridadeEConta(t *testing.T) {
 	}
 
 	svc := NovoServico(OpcoesServico{Store: d})
-	nome, modelo, _, cfg, budget, timeout := svc.resolverMotor(ctx)
+	nome, modelo, _, conta, cfg, budget, timeout := svc.resolverMotor(ctx)
 	if nome != "claude" || modelo != "sonnet" {
 		t.Fatalf("motor/modelo = %q/%q, quero claude/sonnet", nome, modelo)
+	}
+	if conta != "principal" {
+		t.Fatalf("conta = %q, quero o alias da conta ativa", conta)
 	}
 	if cfg != `C:\cfg` {
 		t.Fatalf("config_dir = %q, quero da conta ativa", cfg)
@@ -41,12 +44,35 @@ func TestResolverMotorPrioridadeEConta(t *testing.T) {
 	}
 }
 
+// TestResolverMotorPulaMotorForaDoFallback: um motor de uso manual (fallback
+// desligado) não é escolhido automaticamente pelo intake, mesmo com prioridade
+// menor — a escolha cai no primeiro motor ativo QUE participa do fallback.
+func TestResolverMotorPulaMotorForaDoFallback(t *testing.T) {
+	d := abrirDB(t)
+	ctx := context.Background()
+
+	if _, err := d.CriarMotor(ctx, db.Motor{Nome: "codex", Prioridade: 0, Ativo: true, Fallback: false,
+		ModeloAnalise: "gpt-manual"}); err != nil {
+		t.Fatalf("criar motor manual: %v", err)
+	}
+	if _, err := d.CriarMotor(ctx, db.Motor{Nome: "claude", Prioridade: 1, Ativo: true, Fallback: true,
+		ModeloAnalise: "sonnet"}); err != nil {
+		t.Fatalf("criar motor: %v", err)
+	}
+
+	svc := NovoServico(OpcoesServico{Store: d})
+	nome, modelo, _, _, _, _, _ := svc.resolverMotor(ctx)
+	if nome != "claude" || modelo != "sonnet" {
+		t.Fatalf("motor/modelo = %q/%q, quero claude/sonnet (o manual fica de fora)", nome, modelo)
+	}
+}
+
 func TestResolverMotorSemMotorCaiNoDefault(t *testing.T) {
 	d := abrirDB(t)
 	svc := NovoServico(OpcoesServico{Store: d})
-	nome, modelo, _, cfg, _, _ := svc.resolverMotor(context.Background())
-	if nome != "claude" || modelo != "" || cfg != "" {
-		t.Fatalf("default = %q/%q/%q, quero claude/''/''", nome, modelo, cfg)
+	nome, modelo, _, conta, cfg, _, _ := svc.resolverMotor(context.Background())
+	if nome != "claude" || modelo != "" || conta != "" || cfg != "" {
+		t.Fatalf("default = %q/%q/%q/%q, quero claude/''/''/''", nome, modelo, conta, cfg)
 	}
 }
 

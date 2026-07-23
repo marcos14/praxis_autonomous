@@ -360,3 +360,110 @@ func TestResolverConfigBancoGates(t *testing.T) {
 		t.Fatalf("comando[0] = %q", cfg.Gates[0].Comandos[0])
 	}
 }
+
+func TestResolverConfigBancoSelecionaPerfilParaCadaMotor(t *testing.T) {
+	repo := repoLocal(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "Perfis", Slug: "perfis", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeLocal, Ativo: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude, err := d.CriarMotor(ctx, db.Motor{Nome: "claude", Ativo: true, Fallback: true, Prioridade: 0, Params: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codex, err := d.CriarMotor(ctx, db.Motor{Nome: "codex", Ativo: true, Fallback: true, Prioridade: 1, Params: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, conta := range []db.Conta{
+		{EngineID: claude.ID, Alias: "c1", ConfigDir: "claude-1", Ativo: true},
+		{EngineID: claude.ID, Alias: "c2", ConfigDir: "claude-2", Ativo: true},
+		{EngineID: codex.ID, Alias: "x1", ConfigDir: "codex-1", Ativo: true},
+		{EngineID: codex.ID, Alias: "x2", ConfigDir: "codex-2", Ativo: true},
+	} {
+		if _, err := d.CriarConta(ctx, conta); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dem := db.Demanda{ID: 2, ProjectID: proj.ID}
+	cfg, err := resolverConfigBanco(ctx, d, dem, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.PerfilDirDoMotor("claude"); got != "claude-2" {
+		t.Fatalf("perfil Claude = %q, quero claude-2", got)
+	}
+	if got := cfg.PerfilDirDoMotor("codex"); got != "codex-2" {
+		t.Fatalf("perfil Codex = %q, quero codex-2", got)
+	}
+	// o alias do perfil acompanha o diretório — é ele que fica registrado no run.
+	if got := cfg.ContaDoMotor("claude"); got != "c2" {
+		t.Fatalf("conta Claude = %q, quero c2", got)
+	}
+	if got := cfg.ContaDoMotor("codex"); got != "x2" {
+		t.Fatalf("conta Codex = %q, quero x2", got)
+	}
+	// TODOS os perfis entram na lista, rotacionados a partir do da afinidade:
+	// o fallback esgota c2 e depois c1 antes de trocar para o codex.
+	perfis := cfg.PerfisDoMotor("claude")
+	if len(perfis) != 2 || perfis[0].Conta != "c2" || perfis[1].Conta != "c1" {
+		t.Fatalf("perfis Claude = %+v, quero [c2 c1]", perfis)
+	}
+}
+
+// TestResolverConfigBancoMotorForaDoFallback: um motor com fallback desligado
+// não entra na cadeia nem vira o motor padrão, mas mantém modelo e perfis
+// resolvidos para quando o motor preferido do projeto apontar para ele.
+func TestResolverConfigBancoMotorForaDoFallback(t *testing.T) {
+	repo := repoLocal(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "Exclusivo", Slug: "exclusivo", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeLocal, Ativo: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// prioridade 0, mas fora do fallback: nunca é escolhido automaticamente.
+	exclusivo, err := d.CriarMotor(ctx, db.Motor{Nome: "codex", Ativo: true, Fallback: false,
+		Prioridade: 0, ModeloExec: "gpt-manual", Params: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.CriarConta(ctx, db.Conta{EngineID: exclusivo.ID, Alias: "manual", ConfigDir: "codex-manual", Ativo: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.CriarMotor(ctx, db.Motor{Nome: "claude", Ativo: true, Fallback: true,
+		Prioridade: 1, Params: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+
+	dem := db.Demanda{ID: 1, ProjectID: proj.ID}
+	cfg, err := resolverConfigBanco(ctx, d, dem, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MotorPadrao != "claude" {
+		t.Fatalf("motor padrão = %q, quero claude (o exclusivo é só manual)", cfg.MotorPadrao)
+	}
+	if len(cfg.Fallback.Ordem) != 1 || cfg.Fallback.Ordem[0] != "claude" {
+		t.Fatalf("ordem de fallback = %v, quero só [claude]", cfg.Fallback.Ordem)
+	}
+	if !cfg.Fallback.Ativo {
+		t.Fatal("fallback deveria ficar ativo para o uso manual poder cair na cadeia")
+	}
+	// o motor manual continua utilizável: modelo e perfil resolvidos.
+	if got := cfg.ContaDoMotor("codex"); got != "manual" {
+		t.Fatalf("conta do motor manual = %q, quero manual", got)
+	}
+	if got := cfg.PerfilDirDoMotor("codex"); got != "codex-manual" {
+		t.Fatalf("perfil do motor manual = %q, quero codex-manual", got)
+	}
+}

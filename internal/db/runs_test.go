@@ -161,6 +161,39 @@ func TestUltimaExecucaoComLog(t *testing.T) {
 	}
 }
 
+func TestExecucaoPersisteConta(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	dem := demandaTeste(t, d, "a")
+
+	// a conta chega na criação (perfil resolvido antes do run)…
+	e, err := d.CriarExecucao(ctx, Execucao{
+		DemandID: dem, Operacao: OperacaoExecutor, Engine: "claude", Conta: "principal",
+	})
+	if err != nil {
+		t.Fatalf("CriarExecucao: %v", err)
+	}
+	lida, err := d.ObterExecucao(ctx, e.ID)
+	if err != nil {
+		t.Fatalf("ObterExecucao: %v", err)
+	}
+	if lida.Conta != "principal" {
+		t.Fatalf("conta = %q, quero principal", lida.Conta)
+	}
+
+	// …e pode mudar no fechamento (fallback trocou de motor/perfil).
+	e.Engine = "codex"
+	e.Conta = "reserva"
+	e.TerminadoEm = "2026-07-23T10:00:00.000Z"
+	fechada, err := d.AtualizarExecucao(ctx, e)
+	if err != nil {
+		t.Fatalf("AtualizarExecucao: %v", err)
+	}
+	if fechada.Conta != "reserva" || fechada.Engine != "codex" {
+		t.Fatalf("execução fechada = %+v, quero conta reserva/engine codex", fechada)
+	}
+}
+
 func TestListarExecucoesVazioNaoNil(t *testing.T) {
 	d := abrirTemp(t)
 	dem := demandaTeste(t, d, "a")

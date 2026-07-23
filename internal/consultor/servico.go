@@ -156,12 +156,13 @@ func (s *Servico) GerarOverview(ctx context.Context, projectID int64) error {
 		return fmt.Errorf("consultor: pasta do projeto %q inacessível: %w", proj.Nome, err)
 	}
 	s.prepararRepo(ctx, nil, proj)
-	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotorConsulta(ctx, nil)
+	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotorConsulta(ctx, nil, projectID)
 	g := &GeradorOverview{
 		Store:      s.store,
 		Motor:      motorNome,
 		Modelo:     modelo,
 		Esforco:    esforco,
+		Conta:      conta,
 		ConfigDir:  configDir,
 		Dir:        proj.Pasta,
 		DirLogs:    s.dirLogs,
@@ -201,12 +202,13 @@ func (s *Servico) montarConsultor(ctx context.Context, consultaID int64) (*Consu
 		return nil, err
 	}
 
-	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotorConsulta(ctx, cons.CriadoPor)
+	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotorConsulta(ctx, cons.CriadoPor, consultaID)
 	return &Consultor{
 		Store:         s.store,
 		Motor:         motorNome,
 		Modelo:        modelo,
 		Esforco:       esforco,
+		Conta:         conta,
 		ConfigDir:     configDir,
 		Dir:           dir,
 		DirLogs:       s.dirLogs,
@@ -337,7 +339,11 @@ func (s *Servico) avisar(ctx context.Context, cons db.Consulta, texto string) {
 //
 // criadoPor é o usuário dono da consulta (nil na geração de overview e em
 // consultas criadas no modo bootstrap).
-func (s *Servico) resolverMotorConsulta(ctx context.Context, criadoPor *int64) (nome, modelo, esforco, configDir string, budget float64, timeout int) {
+func (s *Servico) resolverMotorConsulta(ctx context.Context, criadoPor *int64, afinidade ...int64) (nome, modelo, esforco, conta, configDir string, budget float64, timeout int) {
+	seed := int64(0)
+	if len(afinidade) > 0 {
+		seed = afinidade[0]
+	}
 	modeloGrupo := ""
 	if criadoPor != nil {
 		g, ok, err := s.store.GrupoDoUsuario(ctx, *criadoPor)
@@ -347,8 +353,9 @@ func (s *Servico) resolverMotorConsulta(ctx context.Context, criadoPor *int64) (
 			modeloGrupo = strings.TrimSpace(g.Modelo)
 			if g.EngineID != nil {
 				if m, err := s.store.ObterMotor(ctx, *g.EngineID); err == nil && m.Ativo {
+					alias, dir := contaAtiva(m, seed)
 					return m.Nome, escolherModelo(modeloGrupo, m.ModeloConsulta, m.ModeloAnalise),
-						"", contaAtiva(m), m.BudgetFaseUSD, m.TimeoutMin
+						"", alias, dir, m.BudgetFaseUSD, m.TimeoutMin
 				} else if err != nil {
 					s.logf(fmt.Sprintf("consultor: motor do grupo %q: %v", g.Nome, err))
 				}
@@ -361,16 +368,19 @@ func (s *Servico) resolverMotorConsulta(ctx context.Context, criadoPor *int64) (
 	motores, err := s.store.ListarMotores(ctx)
 	if err != nil {
 		s.logf(fmt.Sprintf("consultor: listar motores: %v", err))
-		return "claude", modeloGrupo, "", "", 0, 0
+		return "claude", modeloGrupo, "", "", "", 0, 0
 	}
 	for _, m := range motores {
-		if !m.Ativo {
+		// Motores fora do fallback são de uso manual: valem quando o grupo de
+		// usuários aponta para eles (acima), nunca na escolha automática.
+		if !m.Ativo || !m.Fallback {
 			continue
 		}
+		alias, dir := contaAtiva(m, seed)
 		return m.Nome, escolherModelo(modeloGrupo, m.ModeloConsulta, m.ModeloAnalise),
-			"", contaAtiva(m), m.BudgetFaseUSD, m.TimeoutMin
+			"", alias, dir, m.BudgetFaseUSD, m.TimeoutMin
 	}
-	return "claude", modeloGrupo, "", "", 0, 0
+	return "claude", modeloGrupo, "", "", "", 0, 0
 }
 
 // escolherModelo devolve o primeiro modelo não-vazio da lista de precedência.
@@ -383,13 +393,15 @@ func escolherModelo(candidatos ...string) string {
 	return ""
 }
 
-// contaAtiva devolve o config_dir da primeira conta ativa do motor ("" se não
-// houver — afinidade simples, como no intake).
-func contaAtiva(m db.Motor) string {
-	for _, c := range m.Contas {
-		if c.Ativo {
-			return c.ConfigDir
-		}
+// contaAtiva devolve o alias e o config_dir da conta ativa do motor escolhida
+// pela afinidade ("" se não houver — afinidade simples, como no intake).
+func contaAtiva(m db.Motor, afinidade ...int64) (alias, configDir string) {
+	seed := int64(0)
+	if len(afinidade) > 0 {
+		seed = afinidade[0]
 	}
-	return ""
+	if c, ok := db.ContaAtivaPara(m, seed); ok {
+		return c.Alias, c.ConfigDir
+	}
+	return "", ""
 }

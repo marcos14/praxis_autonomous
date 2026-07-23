@@ -125,6 +125,7 @@ func motorHappy(nome string) stubMotor {
 // commit (criterio da Fase 2b).
 func TestExecutarFaseAteOCommit(t *testing.T) {
 	c, _ := contexto(t, seletorStub(motorHappy("claude")))
+	c.Config.Contas = map[string]string{"claude": "principal"}
 	res, err := c.ExecutarFase()
 	if err != nil {
 		t.Fatalf("ExecutarFase: %v", err)
@@ -170,6 +171,11 @@ func TestExecutarFaseAteOCommit(t *testing.T) {
 	}
 	if len(execs) != 2 {
 		t.Fatalf("execucoes = %d, esperava 2 (%+v)", len(execs), execs)
+	}
+	for _, e := range execs {
+		if e.Conta != "principal" {
+			t.Fatalf("execucao %s com conta %q, esperava principal", e.Operacao, e.Conta)
+		}
 	}
 }
 

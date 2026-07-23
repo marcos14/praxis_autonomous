@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,7 @@ type reqMotor struct {
 	Nome           string          `json:"nome"`
 	Prioridade     *int            `json:"prioridade"`
 	Ativo          *bool           `json:"ativo"`
+	Fallback       *bool           `json:"fallback"`
 	ModeloExec     string          `json:"modelo_exec"`
 	ModeloAnalise  string          `json:"modelo_analise"`
 	ModeloConsulta string          `json:"modelo_consulta"`
@@ -35,9 +37,9 @@ type reqOrdem struct {
 
 // reqConta é o corpo aceito em POST/PUT de contas de um motor.
 type reqConta struct {
-	Alias     string `json:"alias"`
-	ConfigDir string `json:"config_dir"`
-	Ativo     *bool  `json:"ativo"`
+	Alias     string  `json:"alias"`
+	ConfigDir *string `json:"config_dir"`
+	Ativo     *bool   `json:"ativo"`
 }
 
 // registrarRotasMotores registra as rotas de CRUD de motores e contas no mux.
@@ -54,6 +56,11 @@ func (s *Servidor) registrarRotasMotores(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/engines/{id}/accounts", s.handleCriarConta)
 	mux.HandleFunc("PUT /api/v1/engines/{id}/accounts/{contaId}", s.handleAtualizarConta)
 	mux.HandleFunc("DELETE /api/v1/engines/{id}/accounts/{contaId}", s.handleRemoverConta)
+	mux.HandleFunc("GET /api/v1/engines/{id}/accounts/{contaId}/auth", s.handleEstadoAuthMotor)
+	mux.HandleFunc("POST /api/v1/engines/{id}/accounts/{contaId}/login", s.handleIniciarLoginMotor)
+	mux.HandleFunc("GET /api/v1/engine-auth-sessions/{sessionId}", s.handleObterLoginMotor)
+	mux.HandleFunc("DELETE /api/v1/engine-auth-sessions/{sessionId}", s.handleCancelarLoginMotor)
+	mux.HandleFunc("POST /api/v1/engine-auth-sessions/{sessionId}/code", s.handleCodigoLoginMotor)
 }
 
 // handleCriarMotor cria um motor a partir do corpo, aplicando defaults e
@@ -132,6 +139,7 @@ func (s *Servidor) handleAutocadastrarMotores(w http.ResponseWriter, r *http.Req
 			Nome:           sug.Nome,
 			Prioridade:     prox,
 			Ativo:          true,
+			Fallback:       true,
 			ModeloExec:     sug.ModeloExec,
 			ModeloAnalise:  sug.ModeloAnalise,
 			ModeloConsulta: sug.ModeloConsulta,
@@ -144,7 +152,8 @@ func (s *Servidor) handleAutocadastrarMotores(w http.ResponseWriter, r *http.Req
 			return
 		}
 		for _, c := range sug.Contas {
-			conta, msg := montarConta(reqConta{Alias: c.Alias, ConfigDir: c.ConfigDir}, db.Conta{EngineID: m.ID}, true)
+			configDir := c.ConfigDir
+			conta, msg := montarConta(reqConta{Alias: c.Alias, ConfigDir: &configDir}, db.Conta{EngineID: m.ID}, true)
 			if msg != "" {
 				continue
 			}
@@ -248,7 +257,8 @@ func (s *Servidor) handleCriarConta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Confirma que o motor existe para devolver 404 (em vez de erro de FK).
-	if _, err := s.banco.ObterMotor(r.Context(), engineID); err != nil {
+	m, err := s.banco.ObterMotor(r.Context(), engineID)
+	if err != nil {
 		s.responderErroMotor(w, err)
 		return
 	}
@@ -265,6 +275,21 @@ func (s *Servidor) handleCriarConta(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.responderErroMotor(w, err)
 		return
+	}
+	// Claude/Codex recebem um perfil isolado, gerenciado quando o caminho foi
+	// omitido. O id mantém o caminho estável mesmo após renomear o alias.
+	if motor.VendorComPerfilIsolado(m.Nome) {
+		criada, err = s.prepararContaPerfil(m, criada)
+		if err == nil {
+			criada, err = s.banco.AtualizarConta(r.Context(), criada)
+		}
+		if err != nil {
+			// Não deixa no banco um perfil que não pode ser isolado/preparado.
+			_ = s.banco.RemoverConta(r.Context(), engineID, criada.ID)
+			s.log.Error("preparar diretório do perfil", "motor", m.Nome, "conta", criada.ID, "erro", err)
+			responderErro(w, http.StatusInternalServerError, "perfil_indisponivel", "não foi possível preparar o diretório isolado do perfil")
+			return
+		}
 	}
 	responderJSON(w, http.StatusCreated, criada)
 }
@@ -306,6 +331,13 @@ func (s *Servidor) handleAtualizarConta(w http.ResponseWriter, r *http.Request) 
 	}
 	c.ID = contaID
 	c.EngineID = engineID
+	if motor.VendorComPerfilIsolado(atual.Nome) {
+		c, err = s.prepararContaPerfil(atual, c)
+		if err != nil {
+			responderErro(w, http.StatusBadRequest, "perfil_indisponivel", "não foi possível preparar o diretório isolado do perfil")
+			return
+		}
+	}
 	atualizada, err := s.banco.AtualizarConta(r.Context(), c)
 	if err != nil {
 		s.responderErroMotor(w, err)
@@ -385,6 +417,14 @@ func montarMotor(req reqMotor, base db.Motor, criando bool) (db.Motor, string) {
 		m.Ativo = true
 	}
 
+	// Participação no fallback automático: default ligado — desligado, o motor
+	// só roda onde for definido manualmente.
+	if req.Fallback != nil {
+		m.Fallback = *req.Fallback
+	} else if criando {
+		m.Fallback = true
+	}
+
 	if req.Params != nil {
 		if msg := validarParams(req.Params); msg != "" {
 			return db.Motor{}, msg
@@ -412,7 +452,11 @@ func montarConta(req reqConta, base db.Conta, criando bool) (db.Conta, string) {
 		return db.Conta{}, "alias é obrigatório"
 	}
 
-	c.ConfigDir = strings.TrimSpace(req.ConfigDir)
+	if req.ConfigDir != nil {
+		c.ConfigDir = strings.TrimSpace(*req.ConfigDir)
+	} else if criando {
+		c.ConfigDir = ""
+	}
 
 	if req.Ativo != nil {
 		c.Ativo = *req.Ativo
@@ -421,6 +465,32 @@ func montarConta(req reqConta, base db.Conta, criando bool) (db.Conta, string) {
 	}
 
 	return c, ""
+}
+
+func (s *Servidor) prepararContaPerfil(m db.Motor, c db.Conta) (db.Conta, error) {
+	if !motor.VendorComPerfilIsolado(m.Nome) {
+		return c, nil
+	}
+	if strings.TrimSpace(c.ConfigDir) == "" {
+		home := ""
+		if s.banco != nil && strings.TrimSpace(s.banco.Caminho) != "" {
+			home = filepath.Dir(s.banco.Caminho)
+		}
+		var err error
+		if home == "" {
+			home, err = db.PraxisHome()
+			if err != nil {
+				return db.Conta{}, err
+			}
+		}
+		c.ConfigDir = motor.DiretorioPerfilGerenciado(home, m.Nome, c.EngineID, c.ID)
+	}
+	dir, err := motor.PrepararPerfil(m.Nome, c.ConfigDir)
+	if err != nil {
+		return db.Conta{}, err
+	}
+	c.ConfigDir = dir
+	return c, nil
 }
 
 // validarParams confirma que params é um objeto JSON. Devolve "" se válido.

@@ -69,6 +69,16 @@ var migracoes = []migracao{
 		nome:   "autoria git: usuário criador da demanda (demands.criado_por)",
 		sql:    schemaAutoriaGit,
 	},
+	{
+		versao: 11,
+		nome:   "perfil usado em cada execução (runs.conta, consulta_runs.conta)",
+		sql:    schemaContaPorRun,
+	},
+	{
+		versao: 12,
+		nome:   "participação do motor no fallback automático (engines.fallback)",
+		sql:    schemaMotorFallback,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -560,4 +570,21 @@ CREATE TABLE api_tokens (
 const schemaAutoriaGit = `
 ALTER TABLE demands ADD COLUMN criado_por INTEGER REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX ix_demands_criado_por ON demands (criado_por);
+`
+
+// schemaContaPorRun é a migração 11: registra qual perfil (engine_accounts.alias)
+// executou cada run. É o alias vigente no momento da execução — denormalizado de
+// propósito: renomear/remover o perfil depois não reescreve o histórico. Default
+// '' preserva as linhas existentes e os relatórios atuais (a coluna é aditiva).
+const schemaContaPorRun = `
+ALTER TABLE runs          ADD COLUMN conta TEXT NOT NULL DEFAULT '';
+ALTER TABLE consulta_runs ADD COLUMN conta TEXT NOT NULL DEFAULT '';
+`
+
+// schemaMotorFallback é a migração 12: o switch que diz se o motor participa da
+// cadeia de fallback automático. Default 1 preserva o comportamento dos motores
+// existentes; com 0 o motor só roda onde for definido manualmente (motor
+// preferido do projeto ou motor do grupo de usuários nas consultas).
+const schemaMotorFallback = `
+ALTER TABLE engines ADD COLUMN fallback INTEGER NOT NULL DEFAULT 1 CHECK (fallback IN (0,1));
 `

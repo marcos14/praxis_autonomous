@@ -170,7 +170,8 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 		faseID := f.ID
 		exec := db.Execucao{
 			DemandID: c.Demanda.ID, PhaseID: &faseID,
-			Operacao: operacaoDB(operacao), Engine: motorPrimario, Modelo: modelo,
+			Operacao: operacaoDB(operacao), Engine: motorPrimario,
+			Conta: c.Config.ContaDoMotor(motorPrimario), Modelo: modelo,
 		}
 		exec, err = c.Store.CriarExecucao(ctx, exec)
 		if err != nil {
@@ -185,10 +186,11 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 			Ctx:       ctx, PausaCh: c.PausaCh,
 			RegistrarProcesso: c.RegistrarProcesso,
 		}
-		res, motorUsado, runErr := c.rodarComFallback(operacao, motorPrimario, op, estadoFallback)
+		res, motorUsado, contaUsada, runErr := c.rodarComFallback(operacao, motorPrimario, op, estadoFallback)
 
 		// fecha o registro da execucao (best-effort — nao mascara runErr).
 		exec.Engine = motorUsado
+		exec.Conta = contaUsada
 		exec.TerminadoEm = c.agoraISO()
 		if res != nil {
 			exec.CustoUSD = res.CustoUSD

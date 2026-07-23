@@ -29,6 +29,7 @@ type GeradorOverview struct {
 	Motor      string
 	Modelo     string
 	Esforco    string
+	Conta      string // alias do perfil usado (registro no run); "" = sem conta
 	ConfigDir  string
 	Dir        string
 	DirLogs    string
@@ -58,7 +59,7 @@ func (g *GeradorOverview) Gerar(ctx context.Context, projectID int64) error {
 	}
 
 	exec, err := g.Store.CriarExecucaoConsulta(ctx, db.ExecucaoConsulta{
-		ProjectID: &proj.ID, Operacao: db.OperacaoOverview, Engine: g.Motor, Modelo: g.Modelo,
+		ProjectID: &proj.ID, Operacao: db.OperacaoOverview, Engine: g.Motor, Conta: g.Conta, Modelo: g.Modelo,
 	})
 	if err != nil {
 		return g.falhar(proj, fmt.Errorf("overview: registrar execução: %w", err))
@@ -72,7 +73,7 @@ func (g *GeradorOverview) Gerar(ctx context.Context, projectID int64) error {
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: g.Dir, DirLogs: g.DirLogs,
 		Prompt: renderPrompt(tpl, map[string]string{"PROJETO": proj.Nome}),
-		Modelo: g.Modelo, Esforco: g.Esforco, ClaudeConfigDir: g.ConfigDir,
+		Modelo: g.Modelo, Esforco: g.Esforco, PerfilDir: g.ConfigDir,
 		AddDirs: g.AddDirs, BudgetUSD: g.BudgetUSD, TimeoutMin: g.TimeoutMin,
 		Schema: SchemaOverview, SomenteLeitura: true, ProibirCommit: true,
 		RotuloLog: fmt.Sprintf("overview-p%d", proj.ID), Ctx: ctx,

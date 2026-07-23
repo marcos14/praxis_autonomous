@@ -45,7 +45,8 @@ function linhaMotor(m, i) {
     m.modelo_consulta ? `${m.modelo_consulta} (consultas)` : null,
     m.budget_fase_usd > 0 ? `budget US$ ${m.budget_fase_usd.toFixed(2)}/fase` : "sem budget",
     m.timeout_min > 0 ? `timeout ${m.timeout_min}min` : null,
-    `${nContas} ${nContas === 1 ? "conta" : "contas"}`,
+    `${nContas} ${nContas === 1 ? "perfil" : "perfis"}`,
+    m.fallback === false ? "fora do fallback (uso manual)" : null,
   ].filter(Boolean).join(" · ");
 
   const sw = el("button", { class: "switch" + (m.ativo ? " on" : ""), title: m.ativo ? "ativo" : "inativo",
@@ -222,6 +223,8 @@ function renderPainel(m) {
   const modeloConsulta = el("input", { value: m ? (m.modelo_consulta || "") : "", placeholder: "vazio = usa o de análise" });
   const budget = el("input", { type: "number", step: "0.5", value: m ? m.budget_fase_usd : 0 });
   const timeout = el("input", { type: "number", value: m ? m.timeout_min : 0 });
+  const fallback = el("input", { type: "checkbox" });
+  fallback.checked = criando ? true : m.fallback !== false;
   const params = el("textarea", {}, m && m.params ? prettyJSON(m.params) : "{}");
 
   const form = el("div", { class: "form" },
@@ -236,18 +239,22 @@ function renderPainel(m) {
       el("div", {}, el("label", {}, "Budget por fase (US$)"), budget),
       el("div", {}, el("label", {}, "Timeout por fase (min)"), timeout),
     ),
+    el("div", {},
+      el("label", { style: "display:flex;align-items:center;gap:8px;cursor:pointer" }, fallback, "Participa do fallback automático"),
+      el("div", { class: "hint", text: "Ligado, o motor entra na cadeia de troca automática quando a franquia esgota (todos os perfis do motor anterior são esgotados antes). Desligado, o motor só roda onde for escolhido manualmente — motor preferido do projeto ou motor do grupo de usuários nas consultas." })),
     el("div", {}, el("label", {}, "Params ", el("span", { class: "opt" }, "(JSON)")), params,
       el("div", { class: "hint", text: "Objeto JSON com parâmetros específicos do motor." })),
   );
 
   const btn = el("button", { class: "btn", style: "width:fit-content" }, criando ? "Cadastrar" : "Salvar");
-  btn.onclick = () => salvar(m, { nome, modeloExec, modeloAnalise, modeloConsulta, budget, timeout, params }, btn);
+  btn.onclick = () => salvar(m, { nome, modeloExec, modeloAnalise, modeloConsulta, budget, timeout, fallback, params }, btn);
   form.append(btn);
   painel.append(form);
 
   if (!criando) {
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 8px" }));
-    painel.append(el("h3", {}, "Contas ", el("small", {}, "CLAUDE_CONFIG_DIR")));
+    const variavel = m.nome.toLowerCase() === "codex" ? "CODEX_HOME" : m.nome.toLowerCase() === "claude" ? "CLAUDE_CONFIG_DIR" : "config_dir";
+    painel.append(el("h3", {}, "Perfis ", el("small", {}, variavel)));
     renderContas(painel, m);
   }
 }
@@ -274,6 +281,7 @@ async function salvar(m, campos, btn) {
     modelo_consulta: campos.modeloConsulta.value.trim(),
     budget_fase_usd: Number(campos.budget.value) || 0,
     timeout_min: Number(campos.timeout.value) || 0,
+    fallback: campos.fallback.checked,
     params,
   };
   bannerErro("");
@@ -301,48 +309,172 @@ async function salvar(m, campos, btn) {
 
 function renderContas(painel, m) {
   const contas = m.contas || [];
+  const suportaLogin = ["claude", "codex"].includes((m.nome || "").trim().toLowerCase());
   const corpo = el("tbody", {});
   if (contas.length === 0) {
-    corpo.append(el("tr", {}, el("td", { colspan: "4", class: "sub", text: "Nenhuma conta." })));
+    corpo.append(el("tr", {}, el("td", { colspan: "5", class: "sub", text: "Nenhum perfil." })));
   }
   for (const c of contas) {
     const sw = el("button", { class: "switch" + (c.ativo ? " on" : ""), onclick: () => toggleConta(m, c) });
+    const estado = el("span", { class: "sub", style: "margin:0", text: suportaLogin ? "não verificado" : "indisponível" });
+    const acoes = el("div", { class: "acoes", style: "margin:0;gap:5px;flex-wrap:wrap" });
+    if (suportaLogin) {
+      let btnLogin;
+      const btnVerificar = el("button", { class: "btn sm ghost", onclick: () => verificarLogin(m, c, estado, btnVerificar, btnLogin) }, "Verificar");
+      btnLogin = el("button", { class: "btn sm", onclick: () => iniciarLogin(m, c, estado, acoes, btnLogin) }, "Entrar pelo navegador");
+      acoes.append(btnVerificar, btnLogin);
+      queueMicrotask(() => verificarLogin(m, c, estado, btnVerificar, btnLogin));
+    }
+    acoes.append(el("button", { class: "btn sm ghost", onclick: () => removerConta(m, c) }, "remover"));
     corpo.append(el("tr", {},
       el("td", { text: c.alias }),
       el("td", { text: c.config_dir || "—" }),
       el("td", {}, sw),
-      el("td", {}, el("button", { class: "btn sm ghost", onclick: () => removerConta(m, c) }, "remover")),
+      el("td", {}, estado),
+      el("td", {}, acoes),
     ));
   }
   const tabela = el("table", { class: "plain" },
-    el("thead", {}, el("tr", {}, el("th", {}, "Alias"), el("th", {}, "config_dir"), el("th", {}, "Ativo"), el("th", {}))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Perfil"), el("th", {}, "Diretório isolado"), el("th", {}, "Ativo"), el("th", {}, "Login"), el("th", {}))),
     corpo);
 
-  const alias = el("input", { placeholder: "alias (ex.: principal)" });
-  const configDir = el("input", { placeholder: "config_dir (opcional)" });
-  const btnAdd = el("button", { class: "btn sm" }, "Adicionar conta");
+  const alias = el("input", { placeholder: "nome do perfil (ex.: principal)" });
+  const configDir = el("input", { placeholder: "diretório opcional; vazio = gerenciado pelo Praxis" });
+  const btnAdd = el("button", { class: "btn sm" }, "Adicionar perfil");
   btnAdd.onclick = () => adicionarConta(m, alias, configDir, btnAdd);
 
   painel.append(el("div", { class: "form" },
     tabela,
     el("div", { class: "row" }, el("div", {}, alias), el("div", {}, configDir)),
     el("div", { class: "acoes" }, btnAdd),
-    el("div", { class: "hint", text: "Com N execuções paralelas, o Praxis distribui as demandas entre as contas ativas (afinidade conta↔demanda)." }),
+    el("div", { class: "hint", text: suportaLogin
+      ? "Cada perfil mantém credenciais próprias. O Praxis distribui os fluxos de forma determinística entre os perfis ativos e aplica o mesmo diretório no login e nas execuções."
+      : "Login assistido e isolamento completo estão disponíveis neste incremento apenas para Claude e Codex." }),
   ));
+}
+
+async function verificarLogin(m, c, estado, btn, btnLogin) {
+  if (btn) btn.disabled = true;
+  estado.textContent = "verificando…";
+  try {
+    const d = await api.estadoAuthMotor(m.id, c.id);
+    if (d.autenticado) {
+      estado.textContent = "autenticado" + (d.metodo ? ` (${d.metodo})` : "");
+      if (btnLogin) btnLogin.textContent = "Trocar login";
+    } else if (d.estado === "deslogado") {
+      estado.textContent = "deslogado";
+      if (btnLogin) btnLogin.textContent = "Entrar pelo navegador";
+    } else {
+      estado.textContent = d.mensagem || "estado desconhecido";
+    }
+  } catch {
+    estado.textContent = "falha ao verificar";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function iniciarLogin(m, c, estado, acoes, btn) {
+  // Abre a aba durante o clique para não ser bloqueada; ela só navega quando o
+  // backend receber a URL emitida pelo vendor.
+  let aba = null;
+  try { aba = window.open("about:blank", "_blank"); } catch { /* o link também aparece na tela */ }
+  btn.disabled = true;
+  estado.textContent = "iniciando login…";
+  const detalhe = el("div", { style: "width:100%;min-width:260px" });
+  acoes.append(detalhe);
+  try {
+    let sessao = await api.iniciarLoginMotor(m.id, c.id);
+    let abriuURL = false;
+    while (detalhe.isConnected) {
+      renderSessaoLogin(sessao, detalhe);
+      if (sessao.url && !abriuURL) {
+        abriuURL = true;
+        if (aba && !aba.closed) {
+          try { aba.location.href = sessao.url; aba.opener = null; } catch { /* usa o link visível */ }
+        }
+      }
+      estado.textContent = rotuloSessaoLogin(sessao);
+      if (["concluido", "erro", "cancelado", "expirado"].includes(sessao.estado)) {
+        if (sessao.estado === "concluido") {
+          toast(`Perfil ${c.alias} autenticado.`, "ok");
+          await verificarLogin(m, c, estado, null, btn);
+        } else if (aba && !aba.closed && !abriuURL) {
+          aba.close();
+        }
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      sessao = await api.obterLoginMotor(sessao.id);
+    }
+  } catch (e) {
+    estado.textContent = "login indisponível";
+    detalhe.replaceChildren(el("span", { class: "sub", text: e.message }));
+    if (aba && !aba.closed) aba.close();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function rotuloSessaoLogin(sessao) {
+  const rotulos = {
+    iniciando: "preparando login…",
+    aguardando_navegador: "aguardando navegador",
+    concluido: "autenticado",
+    erro: "falha no login",
+    cancelado: "login cancelado",
+    expirado: "login expirado",
+  };
+  return rotulos[sessao.estado] || sessao.estado;
+}
+
+function renderSessaoLogin(sessao, alvo) {
+  limpar(alvo);
+  alvo.append(el("div", { class: "sub", style: "margin:4px 0", text: sessao.mensagem || rotuloSessaoLogin(sessao) }));
+  if (sessao.url) {
+    alvo.append(el("a", { href: sessao.url, target: "_blank", rel: "noopener noreferrer", text: "Abrir página de autenticação ↗" }));
+  }
+  if (sessao.codigo) {
+    const codigo = el("code", { style: "font-size:1.05em", text: sessao.codigo });
+    const copiar = el("button", { class: "btn sm ghost", onclick: async () => {
+      try { await navigator.clipboard.writeText(sessao.codigo); toast("Código copiado.", "ok"); } catch { toast("Copie o código exibido.", "err"); }
+    } }, "Copiar código");
+    alvo.append(el("div", { class: "acoes", style: "margin:5px 0" }, codigo, copiar));
+  }
+  if (sessao.requer_codigo && !["concluido", "erro", "cancelado", "expirado"].includes(sessao.estado)) {
+    const entrada = el("input", { placeholder: "cole aqui o código mostrado pelo Claude", autocomplete: "off" });
+    const enviar = el("button", { class: "btn sm", onclick: async () => {
+      if (!entrada.value.trim()) return;
+      enviar.disabled = true;
+      try {
+        await api.enviarCodigoLoginMotor(sessao.id, entrada.value.trim());
+        entrada.value = "";
+        toast("Código enviado ao Claude.", "ok");
+      } catch (e) {
+        toast(e.message, "err");
+      } finally { enviar.disabled = false; }
+    } }, "Enviar código");
+    alvo.append(el("div", { class: "acoes", style: "margin:5px 0" }, entrada, enviar));
+  }
+  if (!["concluido", "erro", "cancelado", "expirado"].includes(sessao.estado)) {
+    alvo.append(el("button", { class: "btn sm ghost", onclick: async () => {
+      try { await api.cancelarLoginMotor(sessao.id); } catch (e) { toast(e.message, "err"); }
+    } }, "Cancelar login"));
+  }
 }
 
 async function adicionarConta(m, alias, configDir, btn) {
   const a = alias.value.trim();
-  if (!a) { bannerErro("Alias da conta é obrigatório."); return; }
+  if (!a) { bannerErro("Nome do perfil é obrigatório."); return; }
   bannerErro("");
   btn.disabled = true;
   try {
     await api.criarConta(m.id, { alias: a, config_dir: configDir.value.trim() });
-    toast("Conta adicionada.", "ok");
+    toast("Perfil adicionado.", "ok");
     await recarregar();
     renderPainel(motores.find((x) => x.id === m.id));
   } catch (e) {
-    bannerErro("Falha ao adicionar conta: " + e.message);
+    bannerErro("Falha ao adicionar perfil: " + e.message);
   } finally {
     btn.disabled = false;
   }
@@ -361,10 +493,10 @@ async function toggleConta(m, c) {
 async function removerConta(m, c) {
   try {
     await api.removerConta(m.id, c.id);
-    toast("Conta removida.", "ok");
+    toast("Perfil removido. O diretório e as credenciais foram preservados no servidor.", "ok");
     await recarregar();
     renderPainel(motores.find((x) => x.id === m.id));
   } catch (e) {
-    bannerErro("Falha ao remover conta: " + e.message);
+    bannerErro("Falha ao remover perfil: " + e.message);
   }
 }

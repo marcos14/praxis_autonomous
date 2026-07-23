@@ -134,13 +134,14 @@ func (s *Servico) montarPlanejador(ctx context.Context, demandaID int64) (*Plane
 		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
 	}
 	s.prepararRepo(ctx, dem, proj)
-	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotor(ctx)
+	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotor(ctx, demandaID)
 
 	return &Planejador{
 		Store:      s.store,
 		Motor:      motorNome,
 		Modelo:     modelo,
 		Esforco:    esforco,
+		Conta:      conta,
 		ConfigDir:  configDir,
 		Dir:        proj.Pasta,
 		DirLogs:    s.dirLogs,
@@ -173,13 +174,14 @@ func (s *Servico) montarAnalista(ctx context.Context, demandaID int64) (*Analist
 		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
 	}
 	s.prepararRepo(ctx, dem, proj)
-	motorNome, modelo, esforco, configDir, budget, timeout := s.resolverMotor(ctx)
+	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotor(ctx, demandaID)
 
 	return &Analista{
 		Store:      s.store,
 		Motor:      motorNome,
 		Modelo:     modelo,
 		Esforco:    esforco,
+		Conta:      conta,
 		ConfigDir:  configDir,
 		Dir:        proj.Pasta,
 		DirLogs:    s.dirLogs,
@@ -216,29 +218,32 @@ func (s *Servico) prepararRepo(ctx context.Context, dem db.Demanda, proj db.Proj
 
 // resolverMotor escolhe o motor de ANÁLISE: o primeiro motor ativo por
 // prioridade (a ordem de fallback), com seu modelo_analise, budget e timeout, e o
-// config_dir da primeira conta ativa (afinidade simples). Sem motor cadastrado,
-// cai no default "claude" com modelo default — o analista funciona out-of-the-box.
+// perfil (alias + config_dir) escolhido pela afinidade simples. Motores fora do
+// fallback (engines.fallback = 0) são de uso manual e não entram na escolha
+// automática. Sem motor cadastrado, cai no default "claude" com modelo default —
+// o analista funciona out-of-the-box.
 //
 // É a resolução mínima que o analista precisa; a resolução completa (motor por
 // operação, fallback, contas com afinidade) é do wiring do scheduler (2g.n1).
-func (s *Servico) resolverMotor(ctx context.Context) (nome, modelo, esforco, configDir string, budget float64, timeout int) {
+func (s *Servico) resolverMotor(ctx context.Context, afinidade ...int64) (nome, modelo, esforco, conta, configDir string, budget float64, timeout int) {
 	motores, err := s.store.ListarMotores(ctx)
 	if err != nil {
 		s.logf(fmt.Sprintf("intake: listar motores: %v", err))
-		return "claude", "", "", "", 0, 0
+		return "claude", "", "", "", "", 0, 0
 	}
 	for _, m := range motores {
-		if !m.Ativo {
+		if !m.Ativo || !m.Fallback {
 			continue
 		}
-		cfg := ""
-		for _, c := range m.Contas {
-			if c.Ativo {
-				cfg = c.ConfigDir
-				break
-			}
+		seed := int64(0)
+		if len(afinidade) > 0 {
+			seed = afinidade[0]
 		}
-		return m.Nome, m.ModeloAnalise, "", cfg, m.BudgetFaseUSD, m.TimeoutMin
+		alias, cfg := "", ""
+		if c, ok := db.ContaAtivaPara(m, seed); ok {
+			alias, cfg = c.Alias, c.ConfigDir
+		}
+		return m.Nome, m.ModeloAnalise, "", alias, cfg, m.BudgetFaseUSD, m.TimeoutMin
 	}
-	return "claude", "", "", "", 0, 0
+	return "claude", "", "", "", "", 0, 0
 }

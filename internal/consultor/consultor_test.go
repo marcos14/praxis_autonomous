@@ -381,14 +381,14 @@ func TestResolverMotorConsultaPorGrupoDeUsuarios(t *testing.T) {
 	proj := criarProjetoComOverview(t, d, "ERPG", "")
 
 	motorPadrao, err := d.CriarMotor(ctx, db.Motor{
-		Nome: "claude", Prioridade: 0, Ativo: true,
+		Nome: "claude", Prioridade: 0, Ativo: true, Fallback: true,
 		ModeloAnalise: "sonnet", ModeloConsulta: "haiku", BudgetFaseUSD: 2, TimeoutMin: 10,
 	})
 	if err != nil {
 		t.Fatalf("motor padrão: %v", err)
 	}
 	motorGrupo, err := d.CriarMotor(ctx, db.Motor{
-		Nome: "codex", Prioridade: 1, Ativo: true, ModeloAnalise: "gpt-5", BudgetFaseUSD: 1,
+		Nome: "codex", Prioridade: 1, Ativo: true, Fallback: true, ModeloAnalise: "gpt-5", BudgetFaseUSD: 1,
 	})
 	if err != nil {
 		t.Fatalf("motor do grupo: %v", err)

@@ -54,7 +54,8 @@ type Planejador struct {
 	Motor      string   // nome base do motor (claude/codex/opencode)
 	Modelo     string   // modelo de planejamento; vazio → default do motor
 	Esforco    string   // esforço; vazio → default do motor
-	ConfigDir  string   // CLAUDE_CONFIG_DIR da conta (afinidade); "" = sem conta
+	Conta      string   // alias do perfil usado (registro no run); "" = sem conta
+	ConfigDir  string   // CLAUDE_CONFIG_DIR/CODEX_HOME da conta (afinidade); "" = sem conta
 	Dir        string   // raiz do repo do projeto (cmd.Dir do harness — só leitura)
 	DirLogs    string   // pasta dos .jsonl das execuções
 	AddDirs    []string // diretórios extras liberados ao harness (só leitura)
@@ -191,7 +192,7 @@ func (p *Planejador) rodar(ctx context.Context, dem db.Demanda, prd, qa string) 
 	}
 
 	exec, err := p.Store.CriarExecucao(ctx, db.Execucao{
-		DemandID: dem.ID, Operacao: db.OperacaoPlanejador, Engine: p.Motor, Modelo: p.Modelo,
+		DemandID: dem.ID, Operacao: db.OperacaoPlanejador, Engine: p.Motor, Conta: p.Conta, Modelo: p.Modelo,
 	})
 	if err != nil {
 		return nil, p.Motor, 0, fmt.Errorf("registrar execução: %w", err)
@@ -205,7 +206,7 @@ func (p *Planejador) rodar(ctx context.Context, dem db.Demanda, prd, qa string) 
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: p.Dir, DirLogs: p.DirLogs,
 		Prompt: renderPrompt(tpl, map[string]string{"PRD": prd, "QA": qa}),
-		Modelo: p.Modelo, Esforco: p.Esforco, ClaudeConfigDir: p.ConfigDir,
+		Modelo: p.Modelo, Esforco: p.Esforco, PerfilDir: p.ConfigDir,
 		AddDirs: p.AddDirs, BudgetUSD: p.BudgetUSD, TimeoutMin: p.TimeoutMin,
 		Schema: SchemaPlanejador, SomenteLeitura: true, ProibirCommit: true,
 		RotuloLog: "planejador", Ctx: ctx,

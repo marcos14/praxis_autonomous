@@ -32,15 +32,18 @@ func (e *ErroFranquia) Error() string {
 		e.Motor, e.RetomarEm.Format(time.RFC3339), e.Detalhe)
 }
 
-// EstadoFallback lembra quais motores ja esgotaram a franquia dentro de uma
-// rodada, para nao voltar a eles antes de um reset. Portado de fallback.go.
+// EstadoFallback lembra quais motores e perfis ja esgotaram a franquia dentro
+// de uma rodada, para nao voltar a eles antes de um reset. Portado de
+// fallback.go; os perfis entraram com o fallback intra-motor (esgotar todos os
+// perfis do motor prioritario antes de trocar de motor).
 type EstadoFallback struct {
-	Esgotados map[string]bool
+	Esgotados       map[string]bool // motor → todos os perfis esgotados
+	PerfisEsgotados map[string]bool // "motor\x00conta" → perfil esgotado
 }
 
 // NovoEstadoFallback cria um estado de fallback vazio.
 func NovoEstadoFallback() *EstadoFallback {
-	return &EstadoFallback{Esgotados: map[string]bool{}}
+	return &EstadoFallback{Esgotados: map[string]bool{}, PerfisEsgotados: map[string]bool{}}
 }
 
 func (e *EstadoFallback) marcarEsgotado(m string) {
@@ -60,13 +63,35 @@ func (e *EstadoFallback) esgotado(m string) bool {
 	return e.Esgotados[normalizarMotor(m)]
 }
 
+// chavePerfil compoe a chave de um perfil no estado. O alias pode se repetir
+// entre motores, entao a chave carrega os dois.
+func chavePerfil(m, conta string) string { return normalizarMotor(m) + "\x00" + conta }
+
+func (e *EstadoFallback) marcarPerfilEsgotado(m, conta string) {
+	if e == nil {
+		return
+	}
+	if e.PerfisEsgotados == nil {
+		e.PerfisEsgotados = map[string]bool{}
+	}
+	e.PerfisEsgotados[chavePerfil(m, conta)] = true
+}
+
+func (e *EstadoFallback) perfilEsgotado(m, conta string) bool {
+	if e == nil || e.PerfisEsgotados == nil {
+		return false
+	}
+	return e.PerfisEsgotados[chavePerfil(m, conta)]
+}
+
 // rodarComFallback executa uma operacao no motor primario e, se ele sinalizar
-// limite de sessao/uso, troca para o proximo motor disponivel na ordem
-// configurada. Quando nao ha fallback possivel, NAO bloqueia esperando o reset
-// (como fazia o Praxis atual): devolve *ErroFranquia com o horario de retomada
-// para o scheduler reagendar. Portado de rodarComFallback (fallback.go),
-// adaptado ao ContextoExec (config resolvida, sem releitura de arquivo).
-func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor.OpcoesRun, estado *EstadoFallback) (*motor.ResultadoRun, string, error) {
+// limite de sessao/uso, esgota primeiro os DEMAIS PERFIS do mesmo motor (na
+// ordem de Config.Perfis) e so entao troca para o proximo motor disponivel na
+// ordem configurada. Quando nao ha fallback possivel, NAO bloqueia esperando o
+// reset: devolve *ErroFranquia com o horario de retomada para o scheduler
+// reagendar. Alem do resultado e do motor usado, devolve o alias do perfil que
+// executou (registro no run).
+func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor.OpcoesRun, estado *EstadoFallback) (*motor.ResultadoRun, string, string, error) {
 	if estado == nil {
 		estado = NovoEstadoFallback()
 	}
@@ -77,7 +102,7 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 	for {
 		m, err := c.selecionar(motorAtual)
 		if err != nil {
-			return nil, motorAtual, err
+			return nil, motorAtual, "", err
 		}
 		if op.Modelo == "" {
 			op.Modelo = c.Config.ModeloParaMotor(motorAtual)
@@ -85,41 +110,63 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 		if op.Esforco == "" {
 			op.Esforco = c.Config.EsforcoParaMotor(motorAtual)
 		}
-		op.ClaudeConfigDir = c.Config.ConfigDirDoMotor(motorAtual)
+		perfil, temPerfil := c.perfilLivre(motorAtual, estado)
+		if !temPerfil {
+			// todos os perfis do motor ja esgotaram nesta rodada (so acontece
+			// quando o fallback volta a um motor ja usado); trata como esgotado.
+			estado.marcarEsgotado(motorAtual)
+			if prox := c.proximoMotorLivre(motorAtual, estado); prox != "" {
+				motorAtual = prox
+				op.Modelo, op.Esforco = "", ""
+				continue
+			}
+			return nil, motorAtual, "", &ErroFranquia{
+				Motor:     motorAtual,
+				Detalhe:   "todos os perfis disponiveis esgotaram a franquia",
+				RetomarEm: c.agora().Add(EsperaResetFranquia),
+			}
+		}
+		op.PerfilDir = perfil.Dir
 
 		res, err := m.Rodar(op)
 		if err != nil || res == nil || !res.LimiteSessao {
-			return res, motorAtual, err
+			return res, motorAtual, perfil.Conta, err
 		}
 
+		// franquia DESTE PERFIL esgotou.
+		estado.marcarPerfilEsgotado(motorAtual, perfil.Conta)
+		detalhe := strings.TrimSpace(res.DetalheLimite)
+		if detalhe == "" {
+			detalhe = "limite de sessao/uso atingido"
+		}
+
+		// primeiro tenta outro perfil do MESMO motor (prioridade do motor vale
+		// mais que a ordem de fallback).
+		if prox, ok := c.perfilLivre(motorAtual, estado); ok {
+			c.registrarEvento("troca_de_perfil",
+				fmt.Sprintf("Praxis: troca de perfil (%s:%s → %s:%s)", motorAtual, rotuloConta(perfil.Conta), motorAtual, rotuloConta(prox.Conta)),
+				fmt.Sprintf("Operacao: %s\nMotivo: %s", operacao, detalhe))
+			continue
+		}
+
+		// perfis do motor esgotados: agora sim troca de motor.
 		estado.marcarEsgotado(motorAtual)
-		if c.Config.Fallback.Ativo {
-			if prox := proximoMotorFallback(c.Config.Fallback.Ordem, motorAtual, estado); prox != "" {
-				detalhe := strings.TrimSpace(res.DetalheLimite)
-				if detalhe == "" {
-					detalhe = "limite de sessao/uso atingido"
-				}
-				c.registrarEvento("troca_de_harness",
-					fmt.Sprintf("Praxis: troca de harness (%s → %s)", motorAtual, prox),
-					fmt.Sprintf("Operacao: %s\nMotivo: %s", operacao, detalhe))
-				motorAtual = prox
-				// zera modelo/esforco/config-dir para reresolver no proximo laco.
-				op.Modelo = ""
-				op.Esforco = ""
-				op.ClaudeConfigDir = ""
-				continue
-			}
+		if prox := c.proximoMotorLivre(motorAtual, estado); prox != "" {
+			c.registrarEvento("troca_de_harness",
+				fmt.Sprintf("Praxis: troca de harness (%s → %s)", motorAtual, prox),
+				fmt.Sprintf("Operacao: %s\nMotivo: %s", operacao, detalhe))
+			motorAtual = prox
+			// zera modelo/esforco para reresolver no proximo laco.
+			op.Modelo = ""
+			op.Esforco = ""
+			continue
 		}
 
 		// sem fallback: NAO dorme. Devolve o horario de retomada para o scheduler.
-		detalhe := strings.TrimSpace(res.DetalheLimite)
-		if detalhe == "" {
-			detalhe = "franquia de tokens esgotada (limite de sessao)"
-		}
 		if op.OnEspera != nil {
 			op.OnEspera(detalhe)
 		}
-		return res, motorAtual, &ErroFranquia{
+		return res, motorAtual, perfil.Conta, &ErroFranquia{
 			Motor:     motorAtual,
 			Detalhe:   detalhe,
 			RetomarEm: c.agora().Add(EsperaResetFranquia),
@@ -127,11 +174,49 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 	}
 }
 
+// perfilLivre devolve o primeiro perfil do motor ainda nao esgotado nesta
+// rodada, na ordem de uso (afinidade primeiro). ok=false quando todos esgotaram.
+func (c *ContextoExec) perfilLivre(nomeMotor string, estado *EstadoFallback) (PerfilMotor, bool) {
+	for _, p := range c.Config.PerfisDoMotor(nomeMotor) {
+		if !estado.perfilEsgotado(nomeMotor, p.Conta) {
+			return p, true
+		}
+	}
+	return PerfilMotor{}, false
+}
+
+// proximoMotorLivre resolve o proximo motor da cadeia de fallback ("" quando o
+// fallback esta inativo ou nao ha motor livre).
+func (c *ContextoExec) proximoMotorLivre(atual string, estado *EstadoFallback) string {
+	if !c.Config.Fallback.Ativo {
+		return ""
+	}
+	return proximoMotorFallback(c.Config.Fallback.Ordem, atual, estado)
+}
+
+// rotuloConta da um nome legivel ao perfil vazio (motor sem conta cadastrada
+// usa o perfil default do CLI) nos eventos de troca.
+func rotuloConta(conta string) string {
+	if strings.TrimSpace(conta) == "" {
+		return "(perfil padrao)"
+	}
+	return conta
+}
+
 // proximoMotorFallback devolve o proximo motor da ordem apos `atual` que ainda
-// nao esgotou (segundo o estado). "" quando nao ha. Portado de fallback.go.
+// nao esgotou (segundo o estado). "" quando nao ha. Um `atual` que NAO esta na
+// ordem (motor de uso manual, fora da cadeia) cai no primeiro motor livre da
+// cadeia — o uso manual tem fallback, so nao e alvo dele.
 func proximoMotorFallback(ordem []string, atual string, estado *EstadoFallback) string {
 	atual = normalizarMotor(atual)
-	viuAtual := false
+	naCadeia := false
+	for _, nome := range ordem {
+		if normalizarMotor(nome) == atual {
+			naCadeia = true
+			break
+		}
+	}
+	viuAtual := !naCadeia
 	for _, nome := range ordem {
 		nome = normalizarMotor(nome)
 		if nome == "" {

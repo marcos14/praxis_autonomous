@@ -301,6 +301,13 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 	switch seg[0] {
 	case "users", "roles", "user-groups", "tokens", "permissions":
 		return false, db.PermUsuariosGerir
+	case "engine-auth-sessions":
+		// A URL e o código temporário do vendor só podem ser lidos por quem
+		// também pode gerenciar os perfis dos motores.
+		return false, db.PermConfigGerir
+	}
+	if seg[0] == "engines" && len(seg) >= 5 && seg[2] == "accounts" && seg[4] == "auth" {
+		return false, db.PermConfigGerir
 	}
 
 	// ACL do projeto (projects/{id}/access): leitura e escrita exigem
@@ -349,6 +356,8 @@ func permissaoMutacao(seg []string, resto string) string {
 	case "config":
 		return db.PermConfigGerir
 	case "engines":
+		return db.PermConfigGerir
+	case "engine-auth-sessions":
 		return db.PermConfigGerir
 	case "groups":
 		// Grupos de repositórios (feature de consultas): gestão junto de projetos.

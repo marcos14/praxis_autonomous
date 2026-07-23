@@ -118,6 +118,11 @@ export const api = {
   criarConta: (engineID, c) => req("POST", `/api/v1/engines/${engineID}/accounts`, c),
   atualizarConta: (engineID, contaID, c) => req("PUT", `/api/v1/engines/${engineID}/accounts/${contaID}`, c),
   removerConta: (engineID, contaID) => req("DELETE", `/api/v1/engines/${engineID}/accounts/${contaID}`),
+  estadoAuthMotor: (engineID, contaID) => req("GET", `/api/v1/engines/${engineID}/accounts/${contaID}/auth`),
+  iniciarLoginMotor: (engineID, contaID) => req("POST", `/api/v1/engines/${engineID}/accounts/${contaID}/login`),
+  obterLoginMotor: (sessionID) => req("GET", `/api/v1/engine-auth-sessions/${sessionID}`),
+  cancelarLoginMotor: (sessionID) => req("DELETE", `/api/v1/engine-auth-sessions/${sessionID}`),
+  enviarCodigoLoginMotor: (sessionID, codigo) => req("POST", `/api/v1/engine-auth-sessions/${sessionID}/code`, { codigo }),
 
   // demandas (Fases 2g/2h)
   listarDemandas: (q = {}) => {
