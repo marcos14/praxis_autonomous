@@ -92,8 +92,10 @@ func (e *ExecutorDemanda) Executar(ctx context.Context, item Item, conta string)
 	case filaBloqueada:
 		// só restam fases que exigem humano (ou presas por dependência de uma
 		// dessas): pausa a demanda aguardando intervenção. `pausada` não é
-		// agendável, então o scheduler não fica em laço.
-		e.marcarDemanda(ctx, dem, db.StatusDemandaPausada, "aguardando intervenção humana em uma fase (requer_humano)")
+		// agendável, então o scheduler não fica em laço. Aguardar humano NÃO é
+		// erro — o campo erro fica limpo (o evento abaixo e o banner da aba de
+		// fases explicam a pausa); escrever aqui acendia o badge de erro da UI.
+		e.marcarDemanda(ctx, dem, db.StatusDemandaPausada, "")
 		e.registrarEvento(ctx, dem, "aguardando_humano",
 			"Praxis: demanda aguardando intervenção humana",
 			"A próxima fase exige um humano (requer_humano) e não pode ser executada automaticamente.")
@@ -126,6 +128,7 @@ func (e *ExecutorDemanda) Executar(ctx context.Context, item Item, conta string)
 		return Desfecho{Concluido: true}, nil
 	default: // SituacaoConcluida
 		e.acumularCusto(ctx, dem, res.CustoUSD)
+		e.limparErro(ctx, dem)
 		e.enfileirarFasesNovas(ctx, dem, fases, res.FasesNovas)
 		// há mais trabalho? o próximo despacho reavalia a fila (pode concluir a
 		// demanda ou rodar a próxima fase).
@@ -236,6 +239,9 @@ func pausadoOuHumano(status string) bool {
 }
 
 // marcarDemanda atualiza status/erro da demanda (best-effort — erro vira log).
+// O erro é atribuído SEMPRE: não-vazio registra a falha corrente; vazio LIMPA
+// uma falha antiga (a demanda concluiu/voltou a progredir) — sem isso o badge
+// de erro da UI ficava aceso para sempre depois de uma recuperação.
 func (e *ExecutorDemanda) marcarDemanda(ctx context.Context, dem db.Demanda, status, erro string) {
 	atual, err := e.Store.ObterDemanda(ctx, dem.ID)
 	if err != nil {
@@ -243,11 +249,23 @@ func (e *ExecutorDemanda) marcarDemanda(ctx context.Context, dem db.Demanda, sta
 		return
 	}
 	atual.Status = status
-	if erro != "" {
-		atual.Erro = erro
-	}
+	atual.Erro = erro
 	if _, err := e.Store.AtualizarDemanda(ctx, atual); err != nil {
 		e.logf("executor: atualizar status da demanda: " + err.Error())
+	}
+}
+
+// limparErro apaga o texto de falha da demanda depois de uma fase concluída com
+// sucesso: a demanda voltou a progredir, e o erro antigo (que acende o badge da
+// UI) não descreve mais o estado atual. Best-effort; no-op sem erro gravado.
+func (e *ExecutorDemanda) limparErro(ctx context.Context, dem db.Demanda) {
+	atual, err := e.Store.ObterDemanda(ctx, dem.ID)
+	if err != nil || atual.Erro == "" {
+		return
+	}
+	atual.Erro = ""
+	if _, err := e.Store.AtualizarDemanda(ctx, atual); err != nil {
+		e.logf("executor: limpar erro da demanda: " + err.Error())
 	}
 }
 

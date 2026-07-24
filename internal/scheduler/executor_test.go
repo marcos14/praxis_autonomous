@@ -473,3 +473,58 @@ func TestResolverConfigBancoMotorForaDoFallback(t *testing.T) {
 		t.Fatalf("perfil do motor manual = %q, quero codex-manual", got)
 	}
 }
+
+// TestErroAntigoLimpaAoProgredir: uma demanda que carrega o texto de uma falha
+// anterior (badge "erro" na UI) tem o campo limpo ao voltar a progredir — pela
+// fase concluída (limparErro) e pela pausa aguardando humano, que NÃO é erro
+// (marcarDemanda grava erro vazio).
+func TestErroAntigoLimpaAoProgredir(t *testing.T) {
+	repo := repoLocal(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "ErroAntigo", Slug: "erro-antigo", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeLocal, Ativo: true,
+	})
+	if err != nil {
+		t.Fatalf("criar projeto: %v", err)
+	}
+	dem, _, err := d.CriarDemandaComFases(ctx,
+		db.Demanda{ProjectID: proj.ID, Titulo: "Recuperada", Status: db.StatusDemandaPronta, PlanoMD: "# plano"},
+		[]db.Fase{
+			{Codigo: "1", Titulo: "Automática", Status: db.StatusFasePendente},
+			{Codigo: "2", Titulo: "Homologação", Status: db.StatusFasePendente, RequerHumano: true, DependeDe: []string{"1"}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("criar demanda: %v", err)
+	}
+	// falha antiga registrada (ex.: run que caiu antes da recuperação).
+	dem.Erro = "executor terminou com erro (falha antiga)"
+	if dem, err = d.AtualizarDemanda(ctx, dem); err != nil {
+		t.Fatalf("gravar erro antigo: %v", err)
+	}
+
+	exec := &ExecutorDemanda{Store: d, Runner: novoRunnerStub(t, d)}
+	s := Novo(Opcoes{Fonte: NovaFonteBanco(d), Executor: exec, MaxGlobal: 1, Store: d, Intervalo: 2 * time.Millisecond})
+	// roda até pausar aguardando humano (a fase 1 conclui no caminho).
+	rodarPor(t, s, func() bool {
+		a, err := d.ObterDemanda(ctx, dem.ID)
+		return err == nil && a.Status == db.StatusDemandaPausada
+	}, 20*time.Second)
+
+	a, _ := d.ObterDemanda(ctx, dem.ID)
+	if a.Status != db.StatusDemandaPausada {
+		t.Fatalf("status = %q, quero pausada (aguardando humano)", a.Status)
+	}
+	if a.Erro != "" {
+		t.Fatalf("erro antigo deveria ter sido limpo ao progredir: %q", a.Erro)
+	}
+	fases, _ := d.ListarFases(ctx, dem.ID)
+	for _, f := range fases {
+		if f.Codigo == "1" && f.Status != db.StatusFaseConcluida {
+			t.Fatalf("fase 1 = %q, quero concluida", f.Status)
+		}
+	}
+}

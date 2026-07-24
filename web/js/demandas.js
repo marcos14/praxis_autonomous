@@ -253,7 +253,7 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
       el("div", { class: "modal-actions" },
         pillStatus(dados.status),
         el("span", { class: "pill", text: dinheiro(dados.custo_usd) + (dados.budget_usd ? " de " + dinheiro(dados.budget_usd) : "") }),
-        dados.erro ? el("span", { class: "pill", style: "color:var(--critical)", text: "erro" }) : null,
+        dados.erro ? el("span", { class: "pill", style: "color:var(--critical)", text: "erro", title: dados.erro }) : null,
         ...botoesAcao(dados, overlay),
       ),
     ),
