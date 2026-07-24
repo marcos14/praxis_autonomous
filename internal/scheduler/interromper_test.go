@@ -178,9 +178,11 @@ func (f *fakeKiller) MatarOrfaos() (int, error) {
 	return f.n, nil
 }
 
-// TestRecuperarPosRestart: prune do projeto ativo, morte de órfãos e a transição
+// TestRecuperarPosRestart: prune do projeto ativo, morte de órfãos, reset das
+// fases presas em `executando` (→ pausada, retomáveis) e a transição
 // executando → pausada → refila (pronta), com evento de recuperação. Demandas em
-// outros estados ficam intactas.
+// outros estados ficam intactas — mas suas fases órfãs também são resetadas
+// (uma demanda pausada pode ter caído no meio de uma fase).
 func TestRecuperarPosRestart(t *testing.T) {
 	repo, _ := repoComOrigin(t)
 	d := abrirTempDB(t)
@@ -194,7 +196,12 @@ func TestRecuperarPosRestart(t *testing.T) {
 		t.Fatalf("criar projeto: %v", err)
 	}
 
-	orfa, _ := d.CriarDemanda(ctx, db.Demanda{ProjectID: proj.ID, Titulo: "orfa", Status: db.StatusDemandaExecutando})
+	orfa, fasesOrfa, _ := d.CriarDemandaComFases(ctx,
+		db.Demanda{ProjectID: proj.ID, Titulo: "orfa", Status: db.StatusDemandaExecutando},
+		[]db.Fase{{Codigo: "1", Titulo: "presa na queda", Status: db.StatusFaseExecutando}})
+	pausadaComFasePresa, fasesPausada, _ := d.CriarDemandaComFases(ctx,
+		db.Demanda{ProjectID: proj.ID, Titulo: "pausada", Status: db.StatusDemandaPausada},
+		[]db.Fase{{Codigo: "1", Titulo: "presa tambem", Status: db.StatusFaseExecutando}})
 	intacta, _ := d.CriarDemanda(ctx, db.Demanda{ProjectID: proj.ID, Titulo: "pronta", Status: db.StatusDemandaPronta})
 
 	killer := &fakeKiller{n: 3}
@@ -208,14 +215,26 @@ func TestRecuperarPosRestart(t *testing.T) {
 	if !killer.chamado || rec.OrfaosMortos != 3 {
 		t.Fatalf("órfãos: chamado=%v mortos=%d (quero 3)", killer.chamado, rec.OrfaosMortos)
 	}
+	if rec.FasesResetadas != 2 {
+		t.Fatalf("FasesResetadas=%d, quero 2", rec.FasesResetadas)
+	}
 	if rec.DemandasRefiladas != 1 {
 		t.Fatalf("DemandasRefiladas=%d, quero 1", rec.DemandasRefiladas)
 	}
 	if cur, _ := d.ObterDemanda(ctx, orfa.ID); cur.Status != db.StatusDemandaPronta {
 		t.Fatalf("órfã: status=%q, quero pronta", cur.Status)
 	}
+	if cur, _ := d.ObterDemanda(ctx, pausadaComFasePresa.ID); cur.Status != db.StatusDemandaPausada {
+		t.Fatalf("demanda pausada mudou de status: %q (o reset da fase não deve refilar)", cur.Status)
+	}
 	if cur, _ := d.ObterDemanda(ctx, intacta.ID); cur.Status != db.StatusDemandaPronta {
 		t.Fatalf("demanda intacta mudou de status: %q", cur.Status)
+	}
+	if f, _ := d.ObterFase(ctx, fasesOrfa[0].ID); f.Status != db.StatusFasePausada {
+		t.Fatalf("fase da órfã: status=%q, quero pausada (retomável)", f.Status)
+	}
+	if f, _ := d.ObterFase(ctx, fasesPausada[0].ID); f.Status != db.StatusFasePausada {
+		t.Fatalf("fase da demanda pausada: status=%q, quero pausada (retomável)", f.Status)
 	}
 	evs, _ := d.ListarEventos(ctx, db.FiltroEventos{DemandID: &orfa.ID})
 	achou := false

@@ -488,3 +488,40 @@ func TestNormalizarBranch(t *testing.T) {
 		})
 	}
 }
+
+// TestDescartarMudancas: descarta modificações em arquivos rastreados E arquivos
+// novos (untracked), preservando o que está commitado; em árvore limpa é no-op.
+func TestDescartarMudancas(t *testing.T) {
+	repo, _ := repoComRemote(t)
+	ops := Novo()
+
+	escrever(t, repo, "a.txt", "modificado\n") // rastreado, alterado
+	escrever(t, repo, "novo.txt", "sobra\n")   // untracked
+
+	if err := ops.DescartarMudancas(repo); err != nil {
+		t.Fatalf("DescartarMudancas: %v", err)
+	}
+	limpo, err := Limpo(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !limpo {
+		t.Fatal("árvore deveria estar limpa após o descarte")
+	}
+	conteudo, err := os.ReadFile(filepath.Join(repo, "a.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// autocrlf pode reescrever o arquivo com CRLF no Windows; compara normalizado.
+	if strings.ReplaceAll(string(conteudo), "\r\n", "\n") != "v0\n" {
+		t.Fatalf("a.txt = %q, esperava o conteúdo commitado v0", conteudo)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "novo.txt")); !os.IsNotExist(err) {
+		t.Fatalf("novo.txt deveria ter sido removido (err=%v)", err)
+	}
+
+	// árvore limpa: no-op sem erro.
+	if err := ops.DescartarMudancas(repo); err != nil {
+		t.Fatalf("DescartarMudancas em árvore limpa: %v", err)
+	}
+}

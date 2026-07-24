@@ -66,6 +66,9 @@ func (motorOpencode) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 		return nil, err
 	}
 	defer logFile.Close()
+	if op.OnLogPath != nil {
+		op.OnLogPath(logPath)
+	}
 
 	ctx, cancel, timeout := contextoTimeout(op.Ctx, op.TimeoutMin)
 	defer cancel()

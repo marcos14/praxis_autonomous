@@ -42,6 +42,12 @@ type OpcoesRun struct {
 	PausaCh         <-chan struct{}
 	OnEspera        func(detalhe string)
 
+	// OnLogPath, quando != nil, e chamado assim que o .jsonl do run e criado
+	// (antes de o harness comecar a emitir). Permite ao chamador gravar o
+	// log_ref da execucao NO INICIO do run — e o que faz o "log ao vivo" (SSE)
+	// acompanhar a execucao em andamento, nao apenas a ja encerrada.
+	OnLogPath func(caminho string)
+
 	// RegistrarProcesso, quando != nil, e chamado logo apos o processo do harness
 	// iniciar (com o PID) e devolve uma funcao de desregistro chamada quando o
 	// processo termina. Alimenta o registro de PIDs da recuperacao pos-restart
@@ -62,6 +68,10 @@ type ResultadoRun struct {
 	LogPath       string
 	LimiteSessao  bool
 	DetalheLimite string
+	// FalhaAutenticacao indica perfil deslogado/credencial invalida (ex.: "Not
+	// logged in · Please run /login"). Diferente de LimiteSessao, nao se resolve
+	// esperando: o fallback deve pular o perfil e um humano precisa relogar.
+	FalhaAutenticacao bool
 }
 
 // Capacidades declara o que um motor faz nativamente.

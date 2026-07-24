@@ -155,12 +155,12 @@ func proximaFase(fases []db.Fase) (db.Fase, situacaoFila) {
 	concluidas := map[string]bool{}
 	pendentes := 0
 	for _, f := range fases {
-		switch f.Status {
-		case db.StatusFaseConcluida:
+		switch {
+		case f.Status == db.StatusFaseConcluida:
 			concluidas[f.Codigo] = true
-		case db.StatusFaseFalhou:
+		case f.Status == db.StatusFaseFalhou:
 			return db.Fase{}, filaFalhou
-		case db.StatusFasePendente, db.StatusFasePausada:
+		case faseRetomavel(f.Status):
 			pendentes++
 		}
 	}
@@ -168,7 +168,7 @@ func proximaFase(fases []db.Fase) (db.Fase, situacaoFila) {
 		return db.Fase{}, filaConcluida
 	}
 	for _, f := range fases {
-		if f.Status != db.StatusFasePendente && f.Status != db.StatusFasePausada {
+		if !faseRetomavel(f.Status) {
 			continue
 		}
 		if f.RequerHumano {
@@ -180,6 +180,22 @@ func proximaFase(fases []db.Fase) (db.Fase, situacaoFila) {
 	}
 	// há pendentes, mas nenhuma elegível agora: bloqueada por humano/dependência.
 	return db.Fase{}, filaBloqueada
+}
+
+// faseRetomavel informa se a fase pode ser (re)executada agora: pendente,
+// pausada (pausa/franquia) ou presa em `executando`. O scheduler roda no máximo
+// um worker por demanda, então quando proximaFase avalia a fila NÃO há run vivo
+// desta demanda — uma fase `executando` aqui é órfã de uma queda do serviço em
+// que o pipeline não chegou a persistir o desfecho. A recuperação pós-restart
+// normalmente já a resetou para `pausada`; tratá-la como retomável é a rede de
+// segurança que impede a demanda de travar (invisível, ela bloqueava as fases
+// dependentes e a fila era dada como "aguardando humano").
+func faseRetomavel(status string) bool {
+	switch status {
+	case db.StatusFasePendente, db.StatusFasePausada, db.StatusFaseExecutando:
+		return true
+	}
+	return false
 }
 
 // depsSatisfeitas informa se todos os códigos em deps estão entre as concluídas.

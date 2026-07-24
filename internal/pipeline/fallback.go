@@ -89,8 +89,11 @@ func (e *EstadoFallback) perfilEsgotado(m, conta string) bool {
 // ordem de Config.Perfis) e so entao troca para o proximo motor disponivel na
 // ordem configurada. Quando nao ha fallback possivel, NAO bloqueia esperando o
 // reset: devolve *ErroFranquia com o horario de retomada para o scheduler
-// reagendar. Alem do resultado e do motor usado, devolve o alias do perfil que
-// executou (registro no run).
+// reagendar. Uma FALHA DE AUTENTICACAO (conta deslogada) gira perfil/motor da
+// mesma forma — mas, esgotada a cadeia, devolve o resultado em vez de
+// *ErroFranquia: esperar nao resolve, um humano precisa relogar o perfil. Alem
+// do resultado e do motor usado, devolve o alias do perfil que executou
+// (registro no run).
 func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor.OpcoesRun, estado *EstadoFallback) (*motor.ResultadoRun, string, string, error) {
 	if estado == nil {
 		estado = NovoEstadoFallback()
@@ -129,15 +132,29 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 		op.PerfilDir = perfil.Dir
 
 		res, err := m.Rodar(op)
-		if err != nil || res == nil || !res.LimiteSessao {
+		if err != nil || res == nil || (!res.LimiteSessao && !res.FalhaAutenticacao) {
 			return res, motorAtual, perfil.Conta, err
 		}
 
-		// franquia DESTE PERFIL esgotou.
+		// ESTE PERFIL nao serve nesta rodada: franquia esgotada ou conta
+		// deslogada. Nos dois casos o perfil e marcado esgotado e o laco tenta o
+		// proximo (perfil do mesmo motor, depois motor de fallback).
 		estado.marcarPerfilEsgotado(motorAtual, perfil.Conta)
-		detalhe := strings.TrimSpace(res.DetalheLimite)
-		if detalhe == "" {
-			detalhe = "limite de sessao/uso atingido"
+		var detalhe string
+		if res.FalhaAutenticacao {
+			detalhe = strings.TrimSpace(res.Resultado)
+			if detalhe == "" {
+				detalhe = "conta deslogada/credencial invalida"
+			}
+			c.registrarEvento("conta_deslogada",
+				fmt.Sprintf("Praxis: conta %s:%s deslogada", motorAtual, rotuloConta(perfil.Conta)),
+				fmt.Sprintf("Operacao: %s\n%s\nRefaça o login do perfil (config dir: %s) para reativar a conta.",
+					operacao, detalhe, rotuloDir(perfil.Dir)))
+		} else {
+			detalhe = strings.TrimSpace(res.DetalheLimite)
+			if detalhe == "" {
+				detalhe = "limite de sessao/uso atingido"
+			}
 		}
 
 		// primeiro tenta outro perfil do MESMO motor (prioridade do motor vale
@@ -160,6 +177,13 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 			op.Modelo = ""
 			op.Esforco = ""
 			continue
+		}
+
+		// sem fallback e a ultima falha foi de autenticacao: esperar nao resolve
+		// (um humano precisa relogar o perfil). Devolve o resultado como esta —
+		// a fase falha com a mensagem real em vez de reagendar em silencio.
+		if res.FalhaAutenticacao {
+			return res, motorAtual, perfil.Conta, nil
 		}
 
 		// sem fallback: NAO dorme. Devolve o horario de retomada para o scheduler.
@@ -201,6 +225,15 @@ func rotuloConta(conta string) string {
 		return "(perfil padrao)"
 	}
 	return conta
+}
+
+// rotuloDir da um nome legivel ao config dir vazio (perfil default do CLI) nos
+// eventos de conta deslogada.
+func rotuloDir(dir string) string {
+	if strings.TrimSpace(dir) == "" {
+		return "perfil default do CLI"
+	}
+	return dir
 }
 
 // proximoMotorFallback devolve o proximo motor da ordem apos `atual` que ainda

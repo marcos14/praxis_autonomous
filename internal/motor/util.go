@@ -29,6 +29,32 @@ func primeirasLinhas(s string, n int) string {
 	return strings.Join(linhas, "\n")
 }
 
+// ResumoErro resume um ResultadoRun que terminou com IsError para compor
+// mensagens de falha: o subtipo do harness sozinho ("success",
+// "error_during_execution") esconde a causa; a primeira linha do texto do
+// resultado costuma traze-la (ex.: "Not logged in · Please run /login").
+func ResumoErro(res *ResultadoRun) string {
+	if res == nil {
+		return ""
+	}
+	sub := strings.TrimSpace(res.Subtipo)
+	linha := strings.TrimSpace(res.Resultado)
+	if i := strings.IndexByte(linha, '\n'); i >= 0 {
+		linha = strings.TrimSpace(linha[:i]) + " (...)"
+	}
+	if r := []rune(linha); len(r) > 200 {
+		linha = string(r[:200]) + " (...)"
+	}
+	switch {
+	case linha == "":
+		return sub
+	case sub == "":
+		return linha
+	default:
+		return sub + ": " + linha
+	}
+}
+
 // indentar prefixa cada linha de s com prefixo (para o eco ao vivo no console).
 func indentar(s, prefixo string) string {
 	return prefixo + strings.ReplaceAll(s, "\n", "\n"+prefixo)

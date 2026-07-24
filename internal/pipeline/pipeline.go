@@ -119,10 +119,12 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 	}
 	f := c.Fase // copia local; persistimos as transicoes via Store
 
-	// retomada: uma fase `pausada` foi interrompida no meio e pode ter trabalho
-	// nao commitado que pertence a ela mesma — nao exigimos arvore limpa. Nos
-	// demais casos, a arvore do worktree deve estar limpa antes de comecar.
-	retomando := f.Status == db.StatusFasePausada
+	// retomada: uma fase `pausada` — ou presa em `executando` por uma queda do
+	// servico que impediu o pipeline de persistir o desfecho — foi interrompida
+	// no meio e pode ter trabalho nao commitado que pertence a ela mesma — nao
+	// exigimos arvore limpa. Nos demais casos, a arvore do worktree deve estar
+	// limpa antes de comecar.
+	retomando := f.Status == db.StatusFasePausada || f.Status == db.StatusFaseExecutando
 	if !retomando {
 		limpo, err := gitops.Limpo(c.Worktree)
 		if err != nil {
@@ -185,6 +187,16 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 			RotuloLog: fmt.Sprintf("fase-%s-%s", f.Codigo, rotulo),
 			Ctx:       ctx, PausaCh: c.PausaCh,
 			RegistrarProcesso: c.RegistrarProcesso,
+			// grava o log_ref assim que o .jsonl nasce (best-effort): o log ao
+			// vivo (SSE) segue runs.log_ref, e sem isso ele so mostraria o run
+			// ANTERIOR enquanto este roda. No fallback, cada tentativa atualiza
+			// o caminho para o log do perfil/motor corrente.
+			OnLogPath: func(caminho string) {
+				exec.LogRef = caminho
+				if _, err := c.Store.AtualizarExecucao(ctx, exec); err != nil {
+					c.registrarEvento("aviso", "Praxis: falha ao registrar log da execucao", err.Error())
+				}
+			},
 		}
 		res, motorUsado, contaUsada, runErr := c.rodarComFallback(operacao, motorPrimario, op, estadoFallback)
 
@@ -239,7 +251,7 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 			return err
 		}
 		if res.IsError {
-			return fmt.Errorf("corretor terminou com erro (%s) — log: %s", res.Subtipo, res.LogPath)
+			return fmt.Errorf("corretor terminou com erro (%s) — log: %s", motor.ResumoErro(res), res.LogPath)
 		}
 		return nil
 	}
@@ -281,7 +293,7 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 	motorExecutor = motorExec
 	if resExec.IsError {
 		return c.finalizarFalha(&f, custo, motorExecutor,
-			fmt.Sprintf("executor terminou com erro (%s) — log: %s", resExec.Subtipo, resExec.LogPath), nil)
+			fmt.Sprintf("executor terminou com erro (%s) — log: %s", motor.ResumoErro(resExec), resExec.LogPath), nil)
 	}
 
 	// 2) gates + correcoes
@@ -297,7 +309,11 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 			return tratarErro("revisor", err)
 		}
 		var ver Veredito
-		if resRev.IsError || motor.DecodificarEstruturado(resRev, &ver) != nil {
+		if resRev.IsError {
+			return c.finalizarFalha(&f, custo, motorExecutor,
+				fmt.Sprintf("revisor terminou com erro (%s) — log: %s", motor.ResumoErro(resRev), resRev.LogPath), nil)
+		}
+		if motor.DecodificarEstruturado(resRev, &ver) != nil {
 			return c.finalizarFalha(&f, custo, motorExecutor,
 				fmt.Sprintf("revisor nao devolveu veredito valido — log: %s", resRev.LogPath), nil)
 		}

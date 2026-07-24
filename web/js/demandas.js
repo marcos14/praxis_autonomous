@@ -839,10 +839,38 @@ function renderFases(cont, dados, overlay) {
         } });
     }
 
+    // Botão de reinício forçado: fase automática executando/pausada/falhou.
+    // Interrompe o run em andamento, descarta o trabalho não commitado do
+    // worktree e devolve a fase a pendente (recomeça do zero) — a saída para
+    // uma fase travada sem mexer no banco à mão.
+    let botaoReiniciar = null;
+    const reiniciavel = !f.requer_humano && ["executando", "pausada", "falhou"].includes(f.status);
+    if (reiniciavel && !TERMINAIS.includes(dados.status)) {
+      botaoReiniciar = el("button", { class: "btn sm", text: "Reiniciar ↻",
+        title: "Interrompe o run em andamento, descarta o trabalho não commitado desta fase e a recomeça do zero.",
+        onclick: async (ev) => {
+          if (!confirm(`Reiniciar a fase ${f.codigo} do zero? O run em andamento é interrompido e o trabalho não commitado desta fase é descartado.`)) return;
+          const b = ev.currentTarget;
+          b.disabled = true;
+          try {
+            await api.reiniciarFase(dados.id, f.codigo);
+          } catch (e) {
+            bannerErro("Falha ao reiniciar a fase: " + e.message);
+            b.disabled = false;
+            return;
+          }
+          bannerErro("");
+          fecharCard(overlay);
+          await recarregarLista();
+          await abrirCard(dados.id);
+        } });
+    }
+
     cont.append(el("div", { class: "fase-row " + classe },
       iconeFase(f),
       el("span", { class: "nm", text: `${f.codigo}. ${f.titulo}` }),
       botaoFeito,
+      botaoReiniciar,
       el("span", { class: "cost", text: custo }),
     ));
   }

@@ -68,10 +68,13 @@ func (s *Servidor) transmitirLog(ctx context.Context, w io.Writer, flusher http.
 		offset   int64  // bytes já lidos (só linhas completas) do arquivo atual
 	)
 	for {
-		// Alvo = execução mais recente da demanda que já gravou log. Enquanto a
-		// fase roda, o log_ref só existe quando a etapa fecha; entre etapas o
-		// alvo avança e emitimos o separador.
-		if run, temLog, err := s.banco.UltimaExecucaoComLog(ctx, demandID); err == nil && temLog && run.ID != runAtual {
+		// Alvo = execução mais recente da demanda que já gravou log. O log_ref é
+		// preenchido no INÍCIO do run (OnLogPath), então o alvo acompanha a
+		// execução em andamento; quando um novo run começa (ou o fallback troca
+		// de perfil/motor no MESMO run, mudando o arquivo), o alvo avança e
+		// emitimos o separador.
+		if run, temLog, err := s.banco.UltimaExecucaoComLog(ctx, demandID); err == nil && temLog &&
+			(run.ID != runAtual || run.LogRef != caminho) {
 			runAtual = run.ID
 			caminho = run.LogRef
 			offset = 0

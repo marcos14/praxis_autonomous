@@ -20,6 +20,7 @@ type KillerOrfaos interface {
 type Recuperacao struct {
 	ProjetosPreparados int // repos que passaram por PrepararRepoNoBoot (prune)
 	OrfaosMortos       int // arvores de processos orfaos mortas
+	FasesResetadas     int // fases presas em executando → pausada (retomaveis)
 	DemandasRefiladas  int // demandas executando→pausada→refila (pronta)
 }
 
@@ -30,11 +31,17 @@ type Recuperacao struct {
 //     via gitops.PrepararRepoNoBoot — descarta registros de worktrees orfaos;
 //  2. mata as arvores de processos de harness orfaos (killer.MatarOrfaos), para
 //     nenhum processo sobrevivente segurar arquivos do worktree (Risco 5);
-//  3. reconcilia as demandas presas em `executando` (cuja goroutine morreu com o
+//  3. reconcilia as FASES presas em `executando` (o run morreu com o processo,
+//     antes de o pipeline persistir o desfecho): executando → pausada. Sem isso
+//     a fase fica invisivel para proximaFase (nao e pendente/pausada nem
+//     concluida) e trava para sempre as fases que dependem dela. Vale para toda
+//     fase orfa, nao so as das demandas refiladas no passo 4 — uma demanda
+//     pausada/aguardando tambem pode ter caido no meio de uma fase;
+//  4. reconcilia as demandas presas em `executando` (cuja goroutine morreu com o
 //     processo): executando → pausada → refila (pronta). O scheduler entao as
-//     retoma automaticamente, do ponto onde pararam (a fase em andamento ficou
-//     `pausada`/`pendente`; Preparar reaproveita o worktree; fases concluidas sao
-//     puladas por proximaFase).
+//     retoma automaticamente, do ponto onde pararam (a fase em andamento voltou
+//     a `pausada` no passo 3; Preparar reaproveita o worktree; fases concluidas
+//     sao puladas por proximaFase).
 //
 // Todos os passos sao best-effort: uma falha num projeto/demanda vira log e a
 // recuperacao segue (nao vale abortar o boot inteiro por um repo problematico).
@@ -76,7 +83,14 @@ func RecuperarPosRestart(ctx context.Context, store *db.DB, git *gitops.Ops, kil
 		rec.OrfaosMortos = mortos
 	}
 
-	// 3) executando → pausada → refila (pronta).
+	// 3) fases orfas: executando → pausada (retomaveis).
+	fases, err := store.ResetarFasesExecutando(ctx, "interrompida por queda/reinicio do servico — retomavel")
+	if err != nil {
+		log("recuperacao: resetar fases executando falhou: " + err.Error())
+	}
+	rec.FasesResetadas = int(fases)
+
+	// 4) demandas orfas: executando → pausada → refila (pronta).
 	dems, err := store.ListarDemandas(ctx, db.FiltroDemandas{Status: db.StatusDemandaExecutando})
 	if err != nil {
 		return rec, fmt.Errorf("listar demandas executando: %w", err)
@@ -89,8 +103,8 @@ func RecuperarPosRestart(ctx context.Context, store *db.DB, git *gitops.Ops, kil
 		rec.DemandasRefiladas++
 	}
 
-	log(fmt.Sprintf("recuperacao pos-restart: %d projeto(s) preparado(s), %d orfao(s) morto(s), %d demanda(s) refilada(s)",
-		rec.ProjetosPreparados, rec.OrfaosMortos, rec.DemandasRefiladas))
+	log(fmt.Sprintf("recuperacao pos-restart: %d projeto(s) preparado(s), %d orfao(s) morto(s), %d fase(s) resetada(s), %d demanda(s) refilada(s)",
+		rec.ProjetosPreparados, rec.OrfaosMortos, rec.FasesResetadas, rec.DemandasRefiladas))
 	return rec, nil
 }
 

@@ -47,6 +47,12 @@ func TestProximaFase(t *testing.T) {
 			[]db.Fase{fz("1", db.StatusFasePendente, true), fz("2", db.StatusFasePendente, false, "1")}, filaBloqueada, ""},
 		{"pausada (franquia) e retomavel",
 			[]db.Fase{fz("1", db.StatusFasePausada, false)}, filaProntaParaRodar, "1"},
+		{"executando orfa (queda do servico) e retomavel",
+			[]db.Fase{fz("1", db.StatusFaseConcluida, false), fz("2", db.StatusFaseExecutando, false, "1")}, filaProntaParaRodar, "2"},
+		// regressão: fase presa em executando + dependente + requer_humano no fim
+		// NÃO pode virar filaBloqueada ("aguardando humano") — a órfã é retomada.
+		{"executando orfa antes de requer_humano nao bloqueia",
+			[]db.Fase{fz("6", db.StatusFaseExecutando, false), fz("7", db.StatusFasePendente, false, "6"), fz("8", db.StatusFasePendente, true, "7")}, filaProntaParaRodar, "6"},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {

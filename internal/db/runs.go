@@ -104,10 +104,11 @@ func (d *DB) ListarExecucoes(ctx context.Context, demandID int64) ([]Execucao, e
 }
 
 // UltimaExecucaoComLog devolve a execução mais recente (maior id) da demanda que
-// já tem um log_ref gravado — o alvo do "log ao vivo" (SSE) do card. Enquanto uma
-// fase roda, o log_ref só é preenchido ao FECHAR a execução (AtualizarExecucao);
-// por isso o alvo é sempre a última execução JÁ com log. Devolve ok=false quando
-// a demanda ainda não tem nenhuma execução com log.
+// já tem um log_ref gravado — o alvo do "log ao vivo" (SSE) do card. O log_ref é
+// preenchido no INÍCIO do run (motor.OpcoesRun.OnLogPath), então uma execução em
+// andamento já é alvo; execuções sem log (criadas mas abortadas antes de abrir o
+// .jsonl) são ignoradas. Devolve ok=false quando a demanda ainda não tem nenhuma
+// execução com log.
 func (d *DB) UltimaExecucaoComLog(ctx context.Context, demandID int64) (Execucao, bool, error) {
 	row := d.Leitor.QueryRowContext(ctx,
 		`SELECT `+colunasExecucao+` FROM runs

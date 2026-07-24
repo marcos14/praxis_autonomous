@@ -167,6 +167,12 @@ func (a *Analista) rodar(ctx context.Context, dem db.Demanda, prd string) (*moto
 		AddDirs: a.AddDirs, BudgetUSD: a.BudgetUSD, TimeoutMin: a.TimeoutMin,
 		Schema: SchemaAnalista, SomenteLeitura: true, ProibirCommit: true,
 		RotuloLog: "analista", Ctx: ctx,
+		// log_ref no início do run: o log ao vivo (SSE) acompanha a análise em
+		// andamento em vez de esperar o run fechar.
+		OnLogPath: func(caminho string) {
+			exec.LogRef = caminho
+			_, _ = a.Store.AtualizarExecucao(ctx, exec)
+		},
 	})
 
 	custo := 0.0
@@ -321,7 +327,7 @@ func limparStrings(itens []string) []string {
 // (subtipos como error_max_budget_usd): o usuário pode aumentar o budget do
 // motor e usar "Tentar novamente" no card — o novo run relê a config do banco.
 func motivoRunErro(etapa string, res *motor.ResultadoRun) string {
-	motivo := fmt.Sprintf("%s terminou com erro (%s) — log: %s", etapa, res.Subtipo, res.LogPath)
+	motivo := fmt.Sprintf("%s terminou com erro (%s) — log: %s", etapa, motor.ResumoErro(res), res.LogPath)
 	if strings.Contains(res.Subtipo, "max_budget") {
 		motivo += ` · o run atingiu o teto de custo (budget): aumente o budget do motor na tela Motores e clique em "Tentar novamente" no card da demanda`
 	}

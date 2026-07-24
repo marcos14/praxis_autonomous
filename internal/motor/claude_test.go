@@ -188,3 +188,63 @@ func TestMotorClaudeGravaLogEmDirLogs(t *testing.T) {
 		t.Fatalf("nome do log deveria comecar pelo rotulo: %s", filepath.Base(res.LogPath))
 	}
 }
+
+// TestAutenticacaoFalhouClaude: reconhece as mensagens de perfil deslogado sem
+// confundir com limite de sessao ou saida normal.
+func TestAutenticacaoFalhouClaude(t *testing.T) {
+	casos := []struct {
+		texto string
+		want  bool
+	}{
+		{"Not logged in · Please run /login", true},
+		{"error: authentication_failed", true},
+		{"Invalid API key", true},
+		{"OAuth token has expired", true},
+		{"You've hit your session limit · resets 2:20pm", false},
+		{"implementei a fase com sucesso", false},
+		{"", false},
+	}
+	for _, c := range casos {
+		if got := autenticacaoFalhou(c.texto); got != c.want {
+			t.Fatalf("autenticacaoFalhou(%q) = %v, quero %v", c.texto, got, c.want)
+		}
+	}
+}
+
+// TestMotorClaudeOnLogPathEFalhaAutenticacao: OnLogPath é chamado com o caminho
+// do .jsonl assim que o run começa (é o que liga o log ao vivo à execução em
+// andamento); um result com is_error e "Not logged in" liga FalhaAutenticacao.
+func TestMotorClaudeOnLogPathEFalhaAutenticacao(t *testing.T) {
+	dir := t.TempDir()
+	linha := `{"type":"result","subtype":"success","is_error":true,"result":"Not logged in - Please run /login","total_cost_usd":0,"num_turns":1}`
+	nome := "claude"
+	conteudo := "#!/bin/sh\necho '" + linha + "'\nexit 0\n"
+	if runtime.GOOS == "windows" {
+		nome = "claude.bat"
+		conteudo = "@echo off\r\necho " + linha + "\r\nexit /b 0\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(dir, nome), []byte(conteudo), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	worktree := t.TempDir()
+	var aoVivo string
+	res, err := motorClaude{}.Rodar(OpcoesRun{
+		Dir: worktree, DirLogs: filepath.Join(worktree, "logs"), Prompt: "teste",
+		RotuloLog: "auth", TimeoutMin: 1,
+		OnLogPath: func(p string) { aoVivo = p },
+	})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if aoVivo == "" || aoVivo != res.LogPath {
+		t.Fatalf("OnLogPath = %q, esperava o LogPath do run (%q)", aoVivo, res.LogPath)
+	}
+	if !res.IsError || !res.FalhaAutenticacao {
+		t.Fatalf("FalhaAutenticacao não detectada: %+v", res)
+	}
+	if res.LimiteSessao {
+		t.Fatalf("não deveria marcar LimiteSessao: %+v", res)
+	}
+}

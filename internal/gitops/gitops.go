@@ -171,6 +171,22 @@ func (o *Ops) Commit(dir, msg string, autor Identidade) error {
 	return nil
 }
 
+// DescartarMudancas descarta TODAS as mudancas nao commitadas da arvore de
+// trabalho em dir (git reset --hard HEAD + git clean -fd), inclusive arquivos
+// novos. Usado pelo "reiniciar fase": a sobra de um run interrompido pertence a
+// fase que sera reexecutada do zero — sem o descarte, a pre-checagem de arvore
+// limpa barraria a fase reiniciada. Serializado pelo mutex do repo.
+func (o *Ops) DescartarMudancas(dir string) error {
+	defer o.trava(dir)()
+	if out, err := git(dir, "reset", "--hard", "HEAD"); err != nil {
+		return fmt.Errorf("git reset --hard em %s: %w — %s", dir, err, out)
+	}
+	if out, err := git(dir, "clean", "-fd"); err != nil {
+		return fmt.Errorf("git clean em %s: %w — %s", dir, err, out)
+	}
+	return nil
+}
+
 // validarBranchPraxis rejeita nomes de branch fora do prefixo praxis/ (e o
 // prefixo sozinho, sem sufixo).
 func validarBranchPraxis(branch string) error {

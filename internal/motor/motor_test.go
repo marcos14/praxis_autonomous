@@ -84,3 +84,28 @@ func TestPrimeirasEUltimasLinhas(t *testing.T) {
 		t.Fatalf("primeirasLinhas sem corte: %q", got)
 	}
 }
+
+// TestResumoErro: o resumo junta o subtipo do harness com a primeira linha do
+// resultado — o subtipo sozinho ("success") esconde a causa real da falha.
+func TestResumoErro(t *testing.T) {
+	casos := []struct {
+		nome string
+		res  *ResultadoRun
+		want string
+	}{
+		{"nil", nil, ""},
+		{"so subtipo", &ResultadoRun{Subtipo: "error_during_execution"}, "error_during_execution"},
+		{"subtipo enganoso + causa real",
+			&ResultadoRun{Subtipo: "success", Resultado: "Not logged in · Please run /login"},
+			"success: Not logged in · Please run /login"},
+		{"so resultado", &ResultadoRun{Resultado: "deu ruim"}, "deu ruim"},
+		{"multilinha corta na primeira",
+			&ResultadoRun{Subtipo: "erro", Resultado: "linha 1\nlinha 2"},
+			"erro: linha 1 (...)"},
+	}
+	for _, c := range casos {
+		if got := ResumoErro(c.res); got != c.want {
+			t.Fatalf("%s: ResumoErro = %q, quero %q", c.nome, got, c.want)
+		}
+	}
+}

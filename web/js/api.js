@@ -151,6 +151,10 @@ export const api = {
   // devolve à fila do scheduler para seguir com as próximas fases.
   concluirFaseHumana: (id, codigo) =>
     req("POST", `/api/v1/demands/${id}/phases/${encodeURIComponent(codigo)}/complete`),
+  // reiniciar uma fase automática travada: interrompe o run em andamento,
+  // descarta o trabalho não commitado do worktree e devolve a fase a pendente.
+  reiniciarFase: (id, codigo) =>
+    req("POST", `/api/v1/demands/${id}/phases/${encodeURIComponent(codigo)}/restart`),
   aprovarPlano: (id) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: true }),
   rejeitarPlano: (id, comentario) => req("POST", `/api/v1/demands/${id}/approve-plan`, { aprovar: false, comentario }),
   // ações de controle de execução (Fase 2i/4c/4d): pausar | retomar | cancelar |

@@ -247,3 +247,51 @@ func TestRemoverFaseInexistente(t *testing.T) {
 		t.Fatalf("erro = %v, quero ErrNaoEncontrado", err)
 	}
 }
+
+// TestResetarFasesExecutando: fases presas em `executando` (órfãs de uma queda
+// do serviço) voltam a `pausada` com a observação dada; os demais status ficam
+// intactos, e a segunda chamada é no-op.
+func TestResetarFasesExecutando(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	dem := demandaTeste(t, d, "reset")
+
+	presa, err := d.CriarFase(ctx, Fase{DemandID: dem, Codigo: "1", Titulo: "presa",
+		Status: StatusFaseExecutando, Observacao: "aguardando franquia"})
+	if err != nil {
+		t.Fatalf("CriarFase presa: %v", err)
+	}
+	feita, err := d.CriarFase(ctx, Fase{DemandID: dem, Codigo: "2", Titulo: "feita", Status: StatusFaseConcluida})
+	if err != nil {
+		t.Fatalf("CriarFase feita: %v", err)
+	}
+	pend, err := d.CriarFase(ctx, Fase{DemandID: dem, Codigo: "3", Titulo: "pendente", Status: StatusFasePendente})
+	if err != nil {
+		t.Fatalf("CriarFase pendente: %v", err)
+	}
+
+	n, err := d.ResetarFasesExecutando(ctx, "interrompida por reinicio")
+	if err != nil {
+		t.Fatalf("ResetarFasesExecutando: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("resetadas = %d, quero 1", n)
+	}
+	if f, _ := d.ObterFase(ctx, presa.ID); f.Status != StatusFasePausada || f.Observacao != "interrompida por reinicio" {
+		t.Fatalf("presa: status=%q obs=%q, quero pausada/interrompida por reinicio", f.Status, f.Observacao)
+	}
+	if f, _ := d.ObterFase(ctx, feita.ID); f.Status != StatusFaseConcluida {
+		t.Fatalf("feita mudou de status: %q", f.Status)
+	}
+	if f, _ := d.ObterFase(ctx, pend.ID); f.Status != StatusFasePendente {
+		t.Fatalf("pendente mudou de status: %q", f.Status)
+	}
+
+	n, err = d.ResetarFasesExecutando(ctx, "outra")
+	if err != nil {
+		t.Fatalf("ResetarFasesExecutando (2ª): %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("segunda chamada resetou %d, quero 0", n)
+	}
+}

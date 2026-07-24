@@ -240,6 +240,37 @@ func TestExecutarFaseFranquiaNaoBloqueia(t *testing.T) {
 	}
 }
 
+// TestExecutarFaseRetomaExecutandoOrfaComWorktreeSujo: uma fase presa em
+// `executando` (o serviço caiu no meio do run, sem persistir o desfecho) é
+// retomada como uma pausada: o trabalho não commitado no worktree pertence a
+// ela mesma, então a pré-checagem de árvore limpa não se aplica e a fase
+// conclui normalmente (a sobra entra no commit da fase).
+func TestExecutarFaseRetomaExecutandoOrfaComWorktreeSujo(t *testing.T) {
+	c, fase := contexto(t, seletorStub(motorHappy("claude")))
+	fase.Status = db.StatusFaseExecutando
+	fase, err := c.Store.AtualizarFase(c.Ctx, fase)
+	if err != nil {
+		t.Fatalf("AtualizarFase: %v", err)
+	}
+	c.Fase = fase
+	// sobra não commitada do run interrompido.
+	if err := os.WriteFile(filepath.Join(c.Worktree, "sobra.txt"), []byte("parcial\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.ExecutarFase()
+	if err != nil {
+		t.Fatalf("ExecutarFase: %v", err)
+	}
+	if res.Situacao != SituacaoConcluida {
+		t.Fatalf("situacao = %q (erro %s), esperava concluida", res.Situacao, res.Erro)
+	}
+	relida, _ := c.Store.ObterFase(c.Ctx, fase.ID)
+	if relida.Status != db.StatusFaseConcluida {
+		t.Fatalf("fase = %q, esperava concluida", relida.Status)
+	}
+}
+
 // TestExecutarFaseExecutorErro: executor com is_error → fase falhou.
 func TestExecutarFaseExecutorErro(t *testing.T) {
 	m := stubMotor{nome: "claude", fn: func(motor.OpcoesRun) (*motor.ResultadoRun, error) {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -238,6 +239,153 @@ func (s *Servidor) handleConcluirFaseHumana(w http.ResponseWriter, r *http.Reque
 	}
 
 	s.responderDemandaComFases(w, r, atual)
+}
+
+// handleReiniciarFase força o reinício de uma fase automática travada:
+// interrompe o run em andamento da demanda (se houver), DESCARTA as mudanças não
+// commitadas do worktree (sobra do run interrompido) e devolve a fase a
+// `pendente` — ela recomeça do zero na próxima passada do scheduler. É a saída
+// pela UI para uma fase presa (ex.: `executando` órfã após uma queda, ou um run
+// que não progride) sem mexer no banco à mão.
+//
+// Regras: a demanda precisa estar num estado de execução (pronta, executando,
+// pausada, aguardando franquia ou falhou); a fase precisa existir, ser
+// automática (fase requer_humano não é executada pelo scheduler — use "Marcar
+// como feito") e estar executando/pausada/falhou. Fase pendente é no-op
+// idempotente (já vai rodar); concluída → 409 (as seguintes podem ter construído
+// sobre o resultado dela). Exige demandas.operar.
+func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
+	dem, ok := s.obterDemandaOu404(w, r)
+	if !ok {
+		return
+	}
+	if !exigirPermissao(w, r, db.PermDemandasOperar) {
+		return
+	}
+	switch dem.Status {
+	case db.StatusDemandaPronta, db.StatusDemandaExecutando, db.StatusDemandaPausada,
+		db.StatusDemandaAguardandoFranquia, db.StatusDemandaFalhou:
+		// ok: estados de execução, dá para reiniciar uma fase.
+	default:
+		responderErro(w, http.StatusConflict, "estado_invalido",
+			"só é possível reiniciar uma fase com a demanda em execução, pausada ou falhada (status atual: "+dem.Status+")")
+		return
+	}
+
+	codigo := strings.TrimSpace(r.PathValue("codigo"))
+	if codigo == "" {
+		responderErro(w, http.StatusBadRequest, "invalido", "informe o código da fase")
+		return
+	}
+	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	var alvo *db.Fase
+	for i := range fases {
+		if fases[i].Codigo == codigo {
+			alvo = &fases[i]
+			break
+		}
+	}
+	if alvo == nil {
+		responderErro(w, http.StatusNotFound, "nao_encontrado", "fase não encontrada nesta demanda")
+		return
+	}
+	if alvo.RequerHumano {
+		responderErro(w, http.StatusConflict, "estado_invalido",
+			"esta fase exige um humano e não é executada pelo scheduler; use \"Marcar como feito\"")
+		return
+	}
+	switch alvo.Status {
+	case db.StatusFasePendente:
+		// idempotente: já está na fila para rodar.
+		s.responderDemandaComFases(w, r, dem)
+		return
+	case db.StatusFaseConcluida:
+		responderErro(w, http.StatusConflict, "estado_invalido",
+			"não é possível reiniciar uma fase concluída — as fases seguintes podem depender do resultado dela")
+		return
+	}
+
+	// 1) tira a demanda da fila (pausada) ANTES de mexer no worktree: o scheduler
+	// não despacha demanda pausada, então nenhum run novo começa no meio do
+	// descarte. O status final (pronta) é gravado no passo 4.
+	dem.Status = db.StatusDemandaPausada
+	if dem, err = s.banco.AtualizarDemanda(r.Context(), dem); err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+
+	// 2) aborta o run em andamento, se houver (o pipeline trata como pausa).
+	interrompido := false
+	if s.exec != nil {
+		interrompido = s.exec.Interromper(dem.ID)
+	}
+
+	// 3) descarta a sobra não commitada do run interrompido — a fase recomeça do
+	// zero. Uma falha aqui não bloqueia o reinício (a pré-checagem de árvore
+	// limpa da fase dá um erro claro e o usuário pode reiniciar de novo).
+	descarte := ""
+	if dir := strings.TrimSpace(dem.WorktreePath); dir != "" {
+		if _, statErr := os.Stat(dir); statErr == nil {
+			descarte = "Sobras não commitadas do worktree foram descartadas."
+			if err := s.descartarComRetentativas(dir); err != nil {
+				descarte = "Não consegui descartar as mudanças não commitadas do worktree: " + err.Error()
+				s.log.Warn("reiniciar fase: descartar mudanças do worktree", "erro", err, "demanda", dem.ID)
+			}
+		}
+	}
+
+	// 4) fase volta ao zero (pendente) e a demanda à fila (pronta).
+	alvo.Status = db.StatusFasePendente
+	alvo.Observacao = "reiniciada manualmente pelo usuário"
+	if _, err := s.banco.AtualizarFase(r.Context(), *alvo); err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	dem.Status = db.StatusDemandaPronta
+	dem.Erro = ""
+	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
+	if err != nil {
+		s.responderErroDemanda(w, err)
+		return
+	}
+	if s.exec != nil {
+		// se a demanda tinha falhado, a marca em memória do scheduler impediria o
+		// redespacho; reenfileirar é no-op nos demais casos.
+		s.exec.Reenfileirar(dem.ID)
+	}
+
+	detalhe := "Fase " + codigo + " (" + alvo.Titulo + ") devolvida a pendente pelo usuário; ela recomeça do zero."
+	if interrompido {
+		detalhe += " O run em andamento foi interrompido."
+	}
+	if descarte != "" {
+		detalhe += " " + descarte
+	}
+	s.registrarEventoDemanda(r, atual, "fase_reiniciada", "Praxis: fase reiniciada", detalhe)
+	s.responderDemandaComFases(w, r, atual)
+}
+
+// descartarComRetentativas descarta as mudanças não commitadas do worktree
+// tolerando o processo do harness recém-interrompido ainda segurar arquivos
+// (locks do Windows): tenta algumas vezes com uma pausa curta entre elas.
+func (s *Servidor) descartarComRetentativas(dir string) error {
+	if s.git == nil {
+		return nil
+	}
+	var err error
+	for tent := 0; tent < 4; tent++ {
+		if tent > 0 {
+			time.Sleep(500 * time.Millisecond)
+		}
+		if err = s.git.DescartarMudancas(dir); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // registrarEventoDemanda grava um evento associado à demanda (best-effort: uma

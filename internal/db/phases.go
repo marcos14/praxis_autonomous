@@ -215,6 +215,26 @@ func (d *DB) AtualizarFase(ctx context.Context, f Fase) (Fase, error) {
 	return d.ObterFase(ctx, f.ID)
 }
 
+// ResetarFasesExecutando devolve a `pausada` (retomável) TODA fase presa em
+// `executando`, gravando a observação dada. É a reconciliação de boot: com o
+// serviço recém-iniciado nenhum run está vivo, então qualquer fase `executando`
+// é órfã de uma queda — e sem o reset ela fica invisível para o scheduler (não
+// é pendente/pausada nem concluída), bloqueando para sempre as fases que
+// dependem dela. Devolve quantas fases foram resetadas.
+func (d *DB) ResetarFasesExecutando(ctx context.Context, observacao string) (int64, error) {
+	res, err := d.Escritor.ExecContext(ctx,
+		`UPDATE phases SET status = ?, observacao = ? WHERE status = ?`,
+		StatusFasePausada, observacao, StatusFaseExecutando)
+	if err != nil {
+		return 0, fmt.Errorf("resetar fases executando: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("resetar fases executando: %w", err)
+	}
+	return n, nil
+}
+
 // RemoverFase apaga a fase de id. Fase inexistente vira ErrNaoEncontrado. As
 // execuções que apontavam para ela ficam com phase_id NULL (ON DELETE SET NULL).
 func (d *DB) RemoverFase(ctx context.Context, id int64) error {

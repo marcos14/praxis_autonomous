@@ -63,6 +63,18 @@ func linhaLimite(texto string) string {
 	return strings.TrimSpace(texto)
 }
 
+// autenticacaoFalhou reconhece as mensagens do claude quando o perfil esta
+// deslogado ou com credencial invalida (ex.: "Not logged in · Please run
+// /login" com error "authentication_failed" no stream-json).
+func autenticacaoFalhou(texto string) bool {
+	t := strings.ToLower(texto)
+	return strings.Contains(t, "not logged in") ||
+		strings.Contains(t, "please run /login") ||
+		strings.Contains(t, "authentication_failed") ||
+		strings.Contains(t, "invalid api key") ||
+		strings.Contains(t, "oauth token has expired")
+}
+
 // Rodar faz uma unica execucao de `claude -p` com stream-json: mostra o
 // progresso ao vivo no console, grava cada evento em um .jsonl e devolve o
 // resultado final.
@@ -93,6 +105,9 @@ func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 		return nil, err
 	}
 	defer logFile.Close()
+	if op.OnLogPath != nil {
+		op.OnLogPath(logPath)
+	}
 
 	ctx, cancel, timeout := contextoTimeout(op.Ctx, op.TimeoutMin)
 	defer cancel()
@@ -189,6 +204,9 @@ func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 		if res.Resultado == "" {
 			res.Resultado = texto
 		}
+	}
+	if res.IsError && (autenticacaoFalhou(res.Resultado) || autenticacaoFalhou(stderr.String())) {
+		res.FalhaAutenticacao = true
 	}
 	return res, nil
 }

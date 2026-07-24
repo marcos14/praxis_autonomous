@@ -97,7 +97,7 @@ func (g *GeradorOverview) Gerar(ctx context.Context, projectID int64) error {
 		return g.falhar(proj, runErr)
 	}
 	if res.IsError {
-		return g.falhar(proj, fmt.Errorf("geração terminou com erro (%s)", res.Subtipo))
+		return g.falhar(proj, fmt.Errorf("geração terminou com erro (%s)", motor.ResumoErro(res)))
 	}
 
 	var saida SaidaOverview

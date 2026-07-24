@@ -153,6 +153,59 @@ func TestRodarComFallbackTrocaDeMotor(t *testing.T) {
 	}
 }
 
+// TestRodarComFallbackContaDeslogadaGiraPerfil: uma conta deslogada ("Not
+// logged in") nao derruba a fase de imediato — o fallback pula para o proximo
+// perfil do mesmo motor, como faz com a franquia esgotada.
+func TestRodarComFallbackContaDeslogadaGiraPerfil(t *testing.T) {
+	claude := stubMotor{nome: "claude", fn: func(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		if op.PerfilDir == "dir-1" {
+			return &motor.ResultadoRun{IsError: true, Subtipo: "success",
+				Resultado: "Not logged in · Please run /login", FalhaAutenticacao: true}, nil
+		}
+		return &motor.ResultadoRun{Resultado: "ok pelo segundo perfil"}, nil
+	}}
+	c := &ContextoExec{
+		Config: Config{
+			Perfis: map[string][]PerfilMotor{
+				"claude": {{Conta: "p1", Dir: "dir-1"}, {Conta: "p2", Dir: "dir-2"}},
+			},
+		},
+		Selecionar: seletorStub(claude),
+	}
+	res, usado, conta, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if usado != "claude" || conta != "p2" {
+		t.Fatalf("usado = %s:%s, esperava claude:p2", usado, conta)
+	}
+	if res == nil || res.Resultado != "ok pelo segundo perfil" {
+		t.Fatalf("resultado inesperado: %#v", res)
+	}
+}
+
+// TestRodarComFallbackContaDeslogadaSemFallbackDevolveResultado: esgotada a
+// cadeia com uma falha de autenticacao, o resultado volta como esta (SEM
+// *ErroFranquia): esperar nao resolve conta deslogada — a fase falha com a
+// mensagem real e um humano reloga o perfil.
+func TestRodarComFallbackContaDeslogadaSemFallbackDevolveResultado(t *testing.T) {
+	m := stubMotor{nome: "claude", fn: func(motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		return &motor.ResultadoRun{IsError: true, Subtipo: "success",
+			Resultado: "Not logged in · Please run /login", FalhaAutenticacao: true}, nil
+	}}
+	c := &ContextoExec{
+		Config:     Config{Fallback: Fallback{Ativo: false}},
+		Selecionar: seletorStub(m),
+	}
+	res, _, _, err := c.rodarComFallback("executar", "claude", motor.OpcoesRun{}, NovoEstadoFallback())
+	if err != nil {
+		t.Fatalf("esperava err nil (resultado devolvido como esta), veio: %v", err)
+	}
+	if res == nil || !res.IsError || !res.FalhaAutenticacao {
+		t.Fatalf("resultado inesperado: %#v", res)
+	}
+}
+
 // TestRodarComFallbackSemFallbackNaoBloqueia: franquia esgota e NAO ha fallback
 // — em vez de dormir, devolve *ErroFranquia com o horario de retomada.
 func TestRodarComFallbackSemFallbackNaoBloqueia(t *testing.T) {

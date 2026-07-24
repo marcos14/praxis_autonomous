@@ -210,6 +210,12 @@ func (p *Planejador) rodar(ctx context.Context, dem db.Demanda, prd, qa string) 
 		AddDirs: p.AddDirs, BudgetUSD: p.BudgetUSD, TimeoutMin: p.TimeoutMin,
 		Schema: SchemaPlanejador, SomenteLeitura: true, ProibirCommit: true,
 		RotuloLog: "planejador", Ctx: ctx,
+		// log_ref no início do run: o log ao vivo (SSE) acompanha o planejamento
+		// em andamento em vez de esperar o run fechar.
+		OnLogPath: func(caminho string) {
+			exec.LogRef = caminho
+			_, _ = p.Store.AtualizarExecucao(ctx, exec)
+		},
 	})
 
 	custo := 0.0

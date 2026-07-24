@@ -3,7 +3,10 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -329,4 +332,144 @@ func temEvento(evs []db.Evento, tipo string) bool {
 		}
 	}
 	return false
+}
+
+// seedDemandaFaseTravada cria projeto + demanda com worktree real (repo git com
+// commit inicial e uma sobra NÃO commitada) e fases: 1 presa em `executando`
+// (órfã de uma queda) e 2 pendente dependendo dela. É o cenário do "Reiniciar ↻".
+func seedDemandaFaseTravada(t *testing.T, banco *db.DB, status string) (int64, string) {
+	t.Helper()
+	ctx := context.Background()
+
+	wt := t.TempDir()
+	gitTeste(t, wt, "init", "-q", "-b", "main")
+	gitTeste(t, wt, "config", "user.email", "t@praxis.local")
+	gitTeste(t, wt, "config", "user.name", "Praxis Teste")
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("v0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, wt, "add", "-A")
+	gitTeste(t, wt, "commit", "-q", "-m", "inicial")
+	// sobra do run interrompido (não commitada).
+	if err := os.WriteFile(filepath.Join(wt, "sobra.txt"), []byte("parcial\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	proj, err := banco.CriarProjeto(ctx, db.Projeto{Nome: "P", Slug: "p-travada-" + status, Pasta: wt,
+		BranchPrincipal: "main", ModoIntegracao: "merge_request", Ativo: true})
+	if err != nil {
+		t.Fatalf("criar projeto: %v", err)
+	}
+	dem, err := banco.CriarDemanda(ctx, db.Demanda{ProjectID: proj.ID, Titulo: "D",
+		Status: status, WorktreePath: wt})
+	if err != nil {
+		t.Fatalf("criar demanda: %v", err)
+	}
+	if _, err := banco.SubstituirFases(ctx, dem.ID, []db.Fase{
+		{Codigo: "1", Titulo: "Presa", Status: db.StatusFaseExecutando},
+		{Codigo: "2", Titulo: "Dependente", DependeDe: []string{"1"}},
+		{Codigo: "3", Titulo: "Homologação", RequerHumano: true},
+	}); err != nil {
+		t.Fatalf("substituir fases: %v", err)
+	}
+	return dem.ID, wt
+}
+
+// TestReiniciarFaseDestravaEExecutaDoZero: o reinício forçado interrompe o run,
+// descarta a sobra não commitada do worktree, devolve a fase a `pendente` e a
+// demanda a `pronta` (com Reenfileirar), registrando o evento.
+func TestReiniciarFaseDestravaEExecutaDoZero(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	ctl := &ctlFake{rodando: map[int64]bool{}}
+	srv := Novo(Opcoes{Banco: banco, Exec: ctl})
+	dem, wt := seedDemandaFaseTravada(t, banco, db.StatusDemandaExecutando)
+	ctl.rodando[dem] = true
+
+	rec := fazerReq(t, srv, http.MethodPost,
+		"/api/v1/demands/"+strconv.FormatInt(dem, 10)+"/phases/1/restart", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	d := decodDemanda(t, rec)
+	if d.Status != db.StatusDemandaPronta {
+		t.Fatalf("demanda = %q, quero pronta", d.Status)
+	}
+	for _, f := range d.Fases {
+		if f.Codigo == "1" {
+			if f.Status != db.StatusFasePendente {
+				t.Fatalf("fase 1 = %q, quero pendente", f.Status)
+			}
+			if !strings.Contains(f.Observacao, "reiniciada manualmente") {
+				t.Fatalf("observação da fase 1 = %q", f.Observacao)
+			}
+		}
+	}
+	// o run em andamento foi interrompido e a demanda reenfileirada.
+	if len(ctl.interrompidas) != 1 || ctl.interrompidas[0] != dem {
+		t.Fatalf("Interromper não foi chamado: %v", ctl.interrompidas)
+	}
+	if len(ctl.reenfileiradas) != 1 || ctl.reenfileiradas[0] != dem {
+		t.Fatalf("Reenfileirar não foi chamado: %v", ctl.reenfileiradas)
+	}
+	// a sobra não commitada foi descartada; o commit inicial permanece.
+	if _, err := os.Stat(filepath.Join(wt, "sobra.txt")); !os.IsNotExist(err) {
+		t.Fatalf("sobra.txt deveria ter sido descartada (err=%v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, "a.txt")); err != nil {
+		t.Fatalf("a.txt (commitado) não deveria sumir: %v", err)
+	}
+	evs, _ := banco.ListarEventos(context.Background(), db.FiltroEventos{DemandID: &dem})
+	if !temEvento(evs, "fase_reiniciada") {
+		t.Fatalf("evento fase_reiniciada não registrado: %+v", evs)
+	}
+}
+
+// TestReiniciarFaseRegras: requer_humano e concluída → 409; pendente → 200
+// idempotente; inexistente → 404; demanda fora dos estados de execução → 409.
+func TestReiniciarFaseRegras(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco})
+	dem, _ := seedDemandaFaseTravada(t, banco, db.StatusDemandaPausada)
+	base := "/api/v1/demands/" + strconv.FormatInt(dem, 10) + "/phases/"
+
+	// fase requer_humano não é reiniciável (não roda sozinha).
+	if rec := fazerReq(t, srv, http.MethodPost, base+"3/restart", nil); rec.Code != http.StatusConflict {
+		t.Fatalf("requer_humano: status = %d, quero 409", rec.Code)
+	}
+	// fase pendente: no-op idempotente.
+	if rec := fazerReq(t, srv, http.MethodPost, base+"2/restart", nil); rec.Code != http.StatusOK {
+		t.Fatalf("pendente: status = %d, quero 200 (corpo=%q)", rec.Code, rec.Body.String())
+	}
+	// pendente é no-op: a demanda NÃO deve ter sido refilada.
+	if cur, _ := banco.ObterDemanda(context.Background(), dem); cur.Status != db.StatusDemandaPausada {
+		t.Fatalf("no-op não deveria mudar a demanda: %q", cur.Status)
+	}
+	// fase inexistente.
+	if rec := fazerReq(t, srv, http.MethodPost, base+"99/restart", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("inexistente: status = %d, quero 404", rec.Code)
+	}
+	// fase concluída não se reinicia.
+	ctx := context.Background()
+	fases, _ := banco.ListarFases(ctx, dem)
+	for _, f := range fases {
+		if f.Codigo == "1" {
+			f.Status = db.StatusFaseConcluida
+			if _, err := banco.AtualizarFase(ctx, f); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if rec := fazerReq(t, srv, http.MethodPost, base+"1/restart", nil); rec.Code != http.StatusConflict {
+		t.Fatalf("concluída: status = %d, quero 409", rec.Code)
+	}
+	// demanda fora dos estados de execução.
+	demAprov, err := banco.CriarDemanda(ctx, db.Demanda{ProjectID: 1, Titulo: "aprov",
+		Status: db.StatusDemandaAguardandoAprovacao})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := fazerReq(t, srv, http.MethodPost,
+		"/api/v1/demands/"+strconv.FormatInt(demAprov.ID, 10)+"/phases/1/restart", nil); rec.Code != http.StatusConflict {
+		t.Fatalf("aguardando_aprovacao: status = %d, quero 409", rec.Code)
+	}
 }

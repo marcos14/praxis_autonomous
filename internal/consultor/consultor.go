@@ -111,7 +111,7 @@ func (c *Consultor) Responder(ctx context.Context, consultaID int64) error {
 		return c.falhar(ctx, cons, fmt.Sprintf("turno do consultor falhou: %v", err))
 	}
 	if res.IsError {
-		return c.falhar(ctx, cons, fmt.Sprintf("turno terminou com erro (%s)", res.Subtipo))
+		return c.falhar(ctx, cons, fmt.Sprintf("turno terminou com erro (%s)", motor.ResumoErro(res)))
 	}
 
 	var saida SaidaConsultor
