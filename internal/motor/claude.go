@@ -33,8 +33,10 @@ type eventoStreamClaude struct {
 	Subtype          string          `json:"subtype"`
 	IsError          bool            `json:"is_error"`
 	Result           string          `json:"result"`
+	Errors           []string        `json:"errors"`
 	TotalCostUSD     float64         `json:"total_cost_usd"`
 	NumTurns         int             `json:"num_turns"`
+	SessionID        string          `json:"session_id"`
 	StructuredOutput json.RawMessage `json:"structured_output"`
 	Message          struct {
 		Content []struct {
@@ -44,6 +46,24 @@ type eventoStreamClaude struct {
 		} `json:"content"`
 	} `json:"message"`
 }
+
+// subtipoSaidaEstruturada e o subtype do result quando o claude esgota as
+// tentativas de emitir a saida estruturada (StructuredOutput invalido 5x).
+const subtipoSaidaEstruturada = "error_max_structured_output_retries"
+
+// promptResgateEstruturado retoma uma sessao que morreu em
+// error_max_structured_output_retries apenas para reemitir a saida estruturada.
+// O padrao observado (logs analista-20260722/24) e o modelo corromper a tag de
+// um parametro da ferramenta quando o payload e grande: o harness descarta o
+// parametro malformado e a validacao acusa campo obrigatorio ausente, 5x na
+// mesma sessao. Um turno novo, curto e explicito costuma destravar — e com o
+// contexto em cache custa centavos, contra refazer o run inteiro.
+const promptResgateEstruturado = "Sua execucao anterior terminou sem conseguir emitir a saida estruturada: " +
+	"as chamadas da ferramenta StructuredOutput chegaram sem todos os campos obrigatorios " +
+	"(parametros com tag malformada sao descartados pelo harness). O trabalho ja esta feito acima — " +
+	"NAO o refaca e nao use outras ferramentas. Chame a ferramenta StructuredOutput UMA unica vez agora, " +
+	"com o objeto completo que satisfaz o schema: inclua TODOS os campos obrigatorios, um por parametro, " +
+	"e seja conciso nos campos de texto (frases curtas, sem markdown pesado)."
 
 // limiteSessaoAtingido reconhece a mensagem que o claude imprime quando a
 // franquia de tokens acaba.
@@ -75,11 +95,51 @@ func autenticacaoFalhou(texto string) bool {
 		strings.Contains(t, "oauth token has expired")
 }
 
-// Rodar faz uma unica execucao de `claude -p` com stream-json: mostra o
+// Rodar executa `claude -p` com stream-json e devolve o resultado final. Se o
+// run terminar em error_max_structured_output_retries (trabalho feito, mas a
+// saida estruturada nunca validou), faz UM resgate: retoma a mesma sessao com
+// --resume e um prompt que pede apenas a reemissao do StructuredOutput. O
+// resgate reaproveita o contexto (cache) — custa centavos contra refazer o run.
+func (m motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
+	res, err := m.rodarUma(op, "")
+	if err != nil || res == nil || !res.IsError || res.Subtipo != subtipoSaidaEstruturada ||
+		op.Schema == "" || res.SessionID == "" {
+		return res, err
+	}
+
+	fmt.Println("  Saida estruturada nao validou; resgatando a sessao com --resume para reemiti-la.")
+	opResgate := op
+	opResgate.Prompt = promptResgateEstruturado
+	opResgate.RotuloLog = op.RotuloLog + "-resgate"
+	resgate, errResgate := m.rodarUma(opResgate, res.SessionID)
+	if errResgate != nil || resgate == nil {
+		// Cancelamento/pausa precisa subir para o chamador (vira pausa, nao falha).
+		if op.Ctx != nil && op.Ctx.Err() != nil {
+			return nil, errResgate
+		}
+		// Falha de infraestrutura do resgate: fica o desfecho do run original.
+		return res, nil
+	}
+	// O resgate e a continuacao do MESMO trabalho: soma custo/turnos/tokens do
+	// run original para o registro da execucao refletir o gasto total.
+	resgate.CustoUSD += res.CustoUSD
+	resgate.NumTurns += res.NumTurns
+	resgate.TokensIn += res.TokensIn
+	resgate.TokensOut += res.TokensOut
+	if resgate.IsError && strings.TrimSpace(resgate.Resultado) == "" {
+		resgate.Resultado = res.Resultado
+	}
+	return resgate, nil
+}
+
+// rodarUma faz uma unica execucao de `claude -p` com stream-json: mostra o
 // progresso ao vivo no console, grava cada evento em um .jsonl e devolve o
-// resultado final.
-func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
+// resultado final. resumeID != "" retoma a sessao correspondente (--resume).
+func (motorClaude) rodarUma(op OpcoesRun, resumeID string) (*ResultadoRun, error) {
 	args := []string{"-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"}
+	if resumeID != "" {
+		args = append(args, "--resume", resumeID)
+	}
 	if op.Modelo != "" {
 		args = append(args, "--model", op.Modelo)
 	}
@@ -132,6 +192,7 @@ func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	defer registrarProcessoFilho(op, cmd)()
 
 	var res *ResultadoRun
+	var sessionID string
 	var textoAcc strings.Builder
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 1024*1024), 64*1024*1024)
@@ -142,6 +203,9 @@ func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 		var ev eventoStreamClaude
 		if json.Unmarshal(linha, &ev) != nil {
 			continue
+		}
+		if ev.SessionID != "" {
+			sessionID = ev.SessionID
 		}
 		switch ev.Type {
 		case "assistant":
@@ -157,14 +221,22 @@ func (motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 				}
 			}
 		case "result":
-			textoAcc.WriteString(ev.Result + "\n")
+			resultado := ev.Result
+			// Em erros como error_max_structured_output_retries o campo result vem
+			// vazio e a causa fica no array errors — sem isto a falha apareceria so
+			// como o subtype, escondendo a mensagem do harness.
+			if strings.TrimSpace(resultado) == "" && len(ev.Errors) > 0 {
+				resultado = strings.Join(ev.Errors, "; ")
+			}
+			textoAcc.WriteString(resultado + "\n")
 			res = &ResultadoRun{
 				IsError:     ev.IsError,
 				Subtipo:     ev.Subtype,
-				Resultado:   ev.Result,
+				Resultado:   resultado,
 				Estruturado: ev.StructuredOutput,
 				CustoUSD:    ev.TotalCostUSD,
 				NumTurns:    ev.NumTurns,
+				SessionID:   sessionID,
 				LogPath:     logPath,
 			}
 		}

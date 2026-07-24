@@ -66,6 +66,10 @@ type ResultadoRun struct {
 	TokensIn      int
 	TokensOut     int
 	LogPath       string
+	// SessionID identifica a sessao do harness (quando o motor a expoe). Permite
+	// retomar a MESMA conversa (ex.: `claude -p --resume`) — usado no resgate de
+	// saida estruturada do motor claude.
+	SessionID     string
 	LimiteSessao  bool
 	DetalheLimite string
 	// FalhaAutenticacao indica perfil deslogado/credencial invalida (ex.: "Not

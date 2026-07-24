@@ -331,6 +331,9 @@ func motivoRunErro(etapa string, res *motor.ResultadoRun) string {
 	if strings.Contains(res.Subtipo, "max_budget") {
 		motivo += ` · o run atingiu o teto de custo (budget): aumente o budget do motor na tela Motores e clique em "Tentar novamente" no card da demanda`
 	}
+	if strings.Contains(res.Subtipo, "structured_output") {
+		motivo += ` · o motor concluiu o trabalho mas não conseguiu formatar a resposta estruturada, mesmo após o resgate automático da sessão — falha transitória do harness: clique em "Tentar novamente" no card da demanda`
+	}
 	return motivo
 }
 

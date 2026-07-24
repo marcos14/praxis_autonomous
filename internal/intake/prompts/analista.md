@@ -10,7 +10,7 @@ Antes de perguntar, **leia o código do projeto** para entender como a área afe
 
 Produza:
 
-1. **resumo** — 2 a 5 frases explicando, com base no código, como a funcionalidade afetada funciona hoje e o que a demanda pede. Cite arquivos/funções concretos quando ajudar (ex.: `financeiro/baixa.go`). É o que o card mostra como "o analista entendeu isto".
+1. **resumo** — 2 a 5 frases explicando, com base no código, como a funcionalidade afetada funciona hoje e o que a demanda pede. Cite arquivos/funções concretos quando ajudar (ex.: `financeiro/baixa.go`). É o que o card mostra como "o analista entendeu isto". Seja conciso: no máximo ~900 caracteres, sem listas nem markdown pesado — detalhes específicos pertencem ao `contexto` de cada pergunta, não ao resumo.
 
 2. **arquivos_provaveis** — a lista dos caminhos (relativos à raiz do projeto) que a implementação provavelmente vai tocar. Serve para detectar sobreposição entre demandas; seja específico (arquivos, não só pastas), mas não invente caminhos que você não viu.
 

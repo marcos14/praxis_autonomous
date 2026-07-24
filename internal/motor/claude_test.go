@@ -189,6 +189,163 @@ func TestMotorClaudeGravaLogEmDirLogs(t *testing.T) {
 	}
 }
 
+const (
+	jsonErroEstruturado = `{"type":"result","subtype":"error_max_structured_output_retries","is_error":true,"result":"","errors":["Failed to provide valid structured output after 5 attempts"],"total_cost_usd":3.0,"num_turns":23,"session_id":"sess-abc"}`
+	jsonSucessoResgate  = `{"type":"result","subtype":"success","is_error":false,"result":"ok","structured_output":{"veredito":"APROVADO","problemas":[]},"total_cost_usd":0.5,"num_turns":1,"session_id":"sess-abc"}`
+)
+
+// claudeFalsoResgate instala um `claude` falso que na 1a chamada devolve
+// error_max_structured_output_retries e nas seguintes grava os argumentos em
+// argsPath e devolve o JSON de resgate informado. Toda chamada acrescenta uma
+// linha em contadorPath.
+func claudeFalsoResgate(t *testing.T, jsonResgate, argsPath, contadorPath string) {
+	t.Helper()
+	dirBin := t.TempDir()
+	marcador := filepath.Join(t.TempDir(), "marcador.txt")
+	nome := "claude"
+	conteudo := "#!/bin/sh\n" +
+		"echo x >> \"" + contadorPath + "\"\n" +
+		"if [ -f \"" + marcador + "\" ]; then\n" +
+		"  printf '%s' \"$*\" > \"" + argsPath + "\"\n" +
+		"  echo '" + jsonResgate + "'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"echo m > \"" + marcador + "\"\n" +
+		"echo '" + jsonErroEstruturado + "'\n" +
+		"exit 1\n"
+	if runtime.GOOS == "windows" {
+		nome = "claude.bat"
+		conteudo = "@echo off\r\n" +
+			">>\"" + contadorPath + "\" echo x\r\n" +
+			"if exist \"" + marcador + "\" goto resgate\r\n" +
+			">\"" + marcador + "\" echo m\r\n" +
+			"echo " + jsonErroEstruturado + "\r\n" +
+			"exit /b 1\r\n" +
+			":resgate\r\n" +
+			">\"" + argsPath + "\" echo %*\r\n" +
+			"echo " + jsonResgate + "\r\n" +
+			"exit /b 0\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(dirBin, nome), []byte(conteudo), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dirBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func contarLinhas(t *testing.T, caminho string) int {
+	t.Helper()
+	b, err := os.ReadFile(caminho)
+	if err != nil {
+		return 0
+	}
+	return len(strings.Fields(string(b)))
+}
+
+// TestMotorClaudeResgataSaidaEstruturada: um run com schema que morre em
+// error_max_structured_output_retries e resgatado retomando a MESMA sessao
+// (--resume <session_id>); o resultado final e o do resgate, com custo/turnos
+// somados aos do run original.
+func TestMotorClaudeResgataSaidaEstruturada(t *testing.T) {
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	contadorPath := filepath.Join(t.TempDir(), "contador.txt")
+	claudeFalsoResgate(t, jsonSucessoResgate, argsPath, contadorPath)
+
+	worktree := t.TempDir()
+	var logsAoVivo []string
+	res, err := motorClaude{}.Rodar(OpcoesRun{
+		Dir: worktree, DirLogs: filepath.Join(worktree, "logs"), Prompt: "analise",
+		RotuloLog: "analista", TimeoutMin: 1,
+		Schema:    `{"type":"object","required":["veredito"]}`,
+		OnLogPath: func(p string) { logsAoVivo = append(logsAoVivo, p) },
+	})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if res == nil || res.IsError || res.Subtipo != "success" {
+		t.Fatalf("resgate deveria devolver sucesso: %+v", res)
+	}
+	var v vereditoTeste
+	if err := DecodificarEstruturado(res, &v); err != nil || v.Veredito != "APROVADO" {
+		t.Fatalf("saida estruturada do resgate nao decodificou: %v / %+v", err, v)
+	}
+	if dif := res.CustoUSD - 3.5; dif > 1e-9 || dif < -1e-9 {
+		t.Fatalf("custo deveria somar run original + resgate (3.5), veio %v", res.CustoUSD)
+	}
+	if res.NumTurns != 24 {
+		t.Fatalf("turnos deveriam somar (24), veio %d", res.NumTurns)
+	}
+	b, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("resgate nao registrou argumentos: %v", err)
+	}
+	if args := string(b); !strings.Contains(args, "--resume sess-abc") {
+		t.Fatalf("resgate deveria retomar a sessao com --resume sess-abc: %q", args)
+	}
+	if !strings.HasPrefix(filepath.Base(res.LogPath), "analista-resgate-") {
+		t.Fatalf("log do resgate deveria usar o rotulo -resgate: %s", res.LogPath)
+	}
+	if len(logsAoVivo) != 2 || logsAoVivo[1] != res.LogPath {
+		t.Fatalf("OnLogPath deveria acompanhar os dois runs (original e resgate): %+v", logsAoVivo)
+	}
+	if n := contarLinhas(t, contadorPath); n != 2 {
+		t.Fatalf("esperava exatamente 2 execucoes do claude (run + resgate), veio %d", n)
+	}
+}
+
+// TestMotorClaudeResgateFalhaMantemErro: se o resgate tambem morrer no mesmo
+// subtipo, o desfecho de erro e mantido (com custos somados) e NAO ha um
+// terceiro run — o resgate acontece uma unica vez.
+func TestMotorClaudeResgateFalhaMantemErro(t *testing.T) {
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	contadorPath := filepath.Join(t.TempDir(), "contador.txt")
+	claudeFalsoResgate(t, jsonErroEstruturado, argsPath, contadorPath)
+
+	worktree := t.TempDir()
+	res, err := motorClaude{}.Rodar(OpcoesRun{
+		Dir: worktree, DirLogs: filepath.Join(worktree, "logs"), Prompt: "analise",
+		RotuloLog: "analista", TimeoutMin: 1,
+		Schema: `{"type":"object","required":["veredito"]}`,
+	})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if res == nil || !res.IsError || res.Subtipo != subtipoSaidaEstruturada {
+		t.Fatalf("erro do resgate deveria manter o subtipo original: %+v", res)
+	}
+	if dif := res.CustoUSD - 6.0; dif > 1e-9 || dif < -1e-9 {
+		t.Fatalf("custo deveria somar os dois runs (6.0), veio %v", res.CustoUSD)
+	}
+	if !strings.Contains(res.Resultado, "Failed to provide valid structured output") {
+		t.Fatalf("resultado deveria carregar a causa (array errors): %q", res.Resultado)
+	}
+	if n := contarLinhas(t, contadorPath); n != 2 {
+		t.Fatalf("resgate deve rodar UMA vez (2 execucoes no total), veio %d", n)
+	}
+}
+
+// TestMotorClaudeNaoResgataSemSchema: sem schema nao ha saida estruturada a
+// resgatar — o erro e devolvido direto, com um unico run.
+func TestMotorClaudeNaoResgataSemSchema(t *testing.T) {
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	contadorPath := filepath.Join(t.TempDir(), "contador.txt")
+	claudeFalsoResgate(t, jsonSucessoResgate, argsPath, contadorPath)
+
+	worktree := t.TempDir()
+	res, err := motorClaude{}.Rodar(OpcoesRun{
+		Dir: worktree, DirLogs: filepath.Join(worktree, "logs"), Prompt: "analise",
+		RotuloLog: "analista", TimeoutMin: 1,
+	})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if res == nil || !res.IsError || res.Subtipo != subtipoSaidaEstruturada {
+		t.Fatalf("sem schema o erro deveria ser devolvido direto: %+v", res)
+	}
+	if n := contarLinhas(t, contadorPath); n != 1 {
+		t.Fatalf("sem schema deveria haver um unico run, veio %d", n)
+	}
+}
+
 // TestAutenticacaoFalhouClaude: reconhece as mensagens de perfil deslogado sem
 // confundir com limite de sessao ou saida normal.
 func TestAutenticacaoFalhouClaude(t *testing.T) {
