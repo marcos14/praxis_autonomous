@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -292,6 +293,18 @@ func proibidosClaude(op OpcoesRun) []string {
 	}
 	if op.SomenteLeitura {
 		p = append(p, "Edit", "Write", "NotebookEdit")
+		return p
+	}
+	// Escrita liberada com raizes protegidas: nega edicao dentro de cada raiz
+	// (padrao //<abs> = caminho absoluto nas regras de permissao do claude).
+	for _, d := range op.DirsProtegidos {
+		abs := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(d)), "/")
+		if abs == "" {
+			continue
+		}
+		for _, tool := range []string{"Edit", "Write", "NotebookEdit"} {
+			p = append(p, fmt.Sprintf("%s(//%s/**)", tool, abs))
+		}
 	}
 	return p
 }

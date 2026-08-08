@@ -44,6 +44,11 @@ type Opcoes struct {
 	// geração de overview de projeto em background. Opcional: nil = criar
 	// consulta/gerar overview não dispara nada (mecanismo antes do wiring).
 	Consultas ConsultorSvc
+	// Planejamentos dispara os turnos do estrategista (feature de planejamentos:
+	// PRD/ADR iterativos) e localiza a pasta de trabalho de cada planejamento.
+	// Opcional: nil = criar planejamento/conversar não dispara nada e os
+	// artefatos respondem 503 (mecanismo antes do wiring).
+	Planejamentos EstrategistaSvc
 	// Git executa as operações de integração (merge-preview, push, merge --no-ff,
 	// remoção de worktree) das Fases 4c/4d/4e. Se nil, o Novo usa gitops.Novo().
 	Git *gitops.Ops
@@ -63,6 +68,14 @@ type Opcoes struct {
 type ConsultorSvc interface {
 	DispararResposta(consultaID int64)
 	DispararOverview(projectID int64)
+}
+
+// EstrategistaSvc dispara turnos de planejamento em background e resolve a
+// pasta de trabalho (documentos e artefatos) de cada planejamento. É um seam:
+// em produção o *estrategista.Servico o satisfaz.
+type EstrategistaSvc interface {
+	DispararResposta(planejamentoID int64)
+	Pasta(planejamentoID int64) string
 }
 
 // Analisador dispara a análise readonly de uma demanda em background (Fase 3b). É
@@ -90,6 +103,7 @@ type Servidor struct {
 	intake       Analisador
 	planejamento Planejador
 	consultor    ConsultorSvc
+	estrategista EstrategistaSvc
 	git          *gitops.Ops
 	ideWeb       IDEWeb
 	loginMotores *motor.GerenteLogin
@@ -140,7 +154,8 @@ func Novo(opts Opcoes) *Servidor {
 		loginMotores = motor.NovoGerenteLogin()
 	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
-		planejamento: opts.Planejamento, consultor: opts.Consultas, git: gitOps, ideWeb: opts.IDE, loginMotores: loginMotores,
+		planejamento: opts.Planejamento, consultor: opts.Consultas, estrategista: opts.Planejamentos,
+		git: gitOps, ideWeb: opts.IDE, loginMotores: loginMotores,
 		uso:                  opts.Uso,
 		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
@@ -150,6 +165,7 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasProjetos(mux)
 	s.registrarRotasGrupos(mux)
 	s.registrarRotasConsultas(mux)
+	s.registrarRotasPlanejamentos(mux)
 	s.registrarRotasDemandas(mux)
 	s.registrarRotasBoard(mux)
 	s.registrarRotasEventos(mux)

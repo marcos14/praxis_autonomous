@@ -24,6 +24,7 @@ import (
 
 	"github.com/marcos14/praxis-autonomous/internal/api"
 	"github.com/marcos14/praxis-autonomous/internal/consultor"
+	"github.com/marcos14/praxis-autonomous/internal/estrategista"
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/ide"
@@ -161,6 +162,11 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	consultorSvc := novoConsultor(ctx, banco, git, logger)
 	defer consultorSvc.Aguardar()
 
+	// Planejamentos: dispara o estrategista (PRD/ADR iterativos com artefatos
+	// visuais em PRAXIS_HOME/planejamentos) em background — mesma vida do intake.
+	estrategistaSvc := novoEstrategista(ctx, banco, git, logger)
+	defer estrategistaSvc.Aguardar()
+
 	// Scheduler (fecha 2g.n1): executa as demandas em background — a demanda
 	// aprovada "anda sozinha" (executor→gates→corretor→revisor→commit por fase).
 	// É passado à API como ControladorExecucao para pausar/cancelar interromperem
@@ -182,7 +188,8 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	go monitorUso.Rodar(ctx)
 
 	opts := api.Opcoes{Banco: banco, Log: logger, Git: git, Intake: intakeSvc,
-		Planejamento: intakeSvc, Consultas: consultorSvc, Uso: monitorUso}
+		Planejamento: intakeSvc, Consultas: consultorSvc, Planejamentos: estrategistaSvc,
+		Uso: monitorUso}
 	if sched != nil {
 		opts.Exec = sched
 	}
@@ -286,6 +293,28 @@ func novoConsultor(ctx context.Context, banco *db.DB, git *gitops.Ops, logger *s
 		Ctx:     ctx,
 		Log:     func(msg string) { logger.Info(msg) },
 		Git:     git,
+	})
+}
+
+// novoEstrategista monta o serviço de planejamentos (PRD/ADR iterativos do
+// estrategista) com a mesma pasta de logs e ctx de vida do intake; as pastas de
+// trabalho (documentos + artefatos) vivem em PRAXIS_HOME/planejamentos. O Ops
+// de git é o mesmo do scheduler — o mutex por projeto serializa pull e worktree.
+func novoEstrategista(ctx context.Context, banco *db.DB, git *gitops.Ops, logger *slog.Logger) *estrategista.Servico {
+	dirLogs, dirPlanejamentos := "", ""
+	if home, err := db.PraxisHome(); err == nil {
+		dirLogs = filepath.Join(home, "logs")
+		dirPlanejamentos = filepath.Join(home, "planejamentos")
+	} else {
+		logger.Warn("estrategista: resolver PRAXIS_HOME", "erro", err)
+	}
+	return estrategista.NovoServico(estrategista.OpcoesServico{
+		Store:            banco,
+		DirLogs:          dirLogs,
+		DirPlanejamentos: dirPlanejamentos,
+		Ctx:              ctx,
+		Log:              func(msg string) { logger.Info(msg) },
+		Git:              git,
 	})
 }
 

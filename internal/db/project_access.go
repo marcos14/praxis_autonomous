@@ -202,6 +202,30 @@ func (d *DB) UsuarioVeConsulta(ctx context.Context, userID, consultaID int64) (b
 	return true, nil
 }
 
+// UsuarioVePlanejamento informa se o planejamento é visível ao usuário:
+// planejamento de projeto segue a ACL do projeto; planejamento de grupo segue
+// UsuarioVeGrupoProjetos. Planejamento inexistente devolve TRUE (o handler
+// responde 404).
+func (d *DB) UsuarioVePlanejamento(ctx context.Context, userID, planejamentoID int64) (bool, error) {
+	var projectID, groupID sql.NullInt64
+	err := d.Leitor.QueryRowContext(ctx,
+		`SELECT project_id, group_id FROM planejamentos WHERE id = ?`, planejamentoID).
+		Scan(&projectID, &groupID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("visibilidade do planejamento %d para usuário %d: %w", planejamentoID, userID, err)
+	}
+	switch {
+	case projectID.Valid:
+		return d.UsuarioVeProjeto(ctx, userID, projectID.Int64)
+	case groupID.Valid:
+		return d.UsuarioVeGrupoProjetos(ctx, userID, groupID.Int64)
+	}
+	return true, nil
+}
+
 // ListarProjetosVisiveis devolve os projetos visíveis ao usuário pela ACL, na
 // mesma ordem de ListarProjetos (nome case-insensitive, id). Slice não-nil.
 func (d *DB) ListarProjetosVisiveis(ctx context.Context, userID int64) ([]Projeto, error) {

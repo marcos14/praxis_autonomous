@@ -66,6 +66,8 @@ export const GRUPOS_EVENTOS = [
     itens: [
       { tipo: "consulta_respondida", rotulo: "Consulta respondida", padrao: false },
       { tipo: "consulta_falhou", rotulo: "Consulta falhou", padrao: false },
+      { tipo: "estrategia_respondida", rotulo: "Planejamento (estrategista) respondido", padrao: false },
+      { tipo: "estrategia_falhou", rotulo: "Planejamento (estrategista) falhou", padrao: false },
       { tipo: "overview_gerado", rotulo: "Overview gerado", padrao: false },
       { tipo: "overview_falhou", rotulo: "Overview falhou", padrao: false },
       { tipo: "projeto_criado", rotulo: "Projeto criado", padrao: false },

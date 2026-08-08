@@ -9,6 +9,7 @@
 import { montarDemandas } from "./demandas.js";
 import { montarNovaDemanda } from "./nova.js";
 import { montarConsultas, desmontarConsultas } from "./consultas.js";
+import { montarPlanejamentos, desmontarPlanejamentos } from "./planejamentos.js";
 import { montarProjetos } from "./projetos.js";
 import { montarGrupos } from "./grupos.js";
 import { montarMotores } from "./motores.js";
@@ -29,6 +30,7 @@ const views = {
   demandas: montarDemandas,
   nova: montarNovaDemanda,
   consultas: montarConsultas,
+  planejamentos: montarPlanejamentos,
   projetos: montarProjetos,
   grupos: montarGrupos,
   motores: montarMotores,
@@ -45,6 +47,7 @@ const desmontar = {
   kanban: desmontarKanban,
   home: desmontarHome,
   consultas: desmontarConsultas,
+  planejamentos: desmontarPlanejamentos,
 };
 
 // permView mapeia a view à permissão exigida para acessá-la (ausente = livre a
@@ -53,6 +56,7 @@ const desmontar = {
 const permView = {
   nova: "demandas.criar",
   consultas: "consultas.usar",
+  planejamentos: "planejamentos.usar",
   projetos: "projetos.gerir",
   grupos: "projetos.gerir",
   motores: "config.gerir",

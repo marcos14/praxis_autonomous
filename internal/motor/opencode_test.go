@@ -59,6 +59,29 @@ func TestPermissoesOpencode(t *testing.T) {
 	if got := permissoesOpencode(OpcoesRun{}); got != "{}" {
 		t.Fatalf("esperava {} sem restricoes, veio %q", got)
 	}
+
+	// Estrategista: edicao liberada em geral, negada dentro dos repos protegidos.
+	est := permissoesOpencode(OpcoesRun{DirsProtegidos: []string{`C:\repos\alfa`}})
+	var pe map[string]any
+	if err := json.Unmarshal([]byte(est), &pe); err != nil {
+		t.Fatalf("json invalido: %v (%s)", err, est)
+	}
+	edit, ok := pe["edit"].(map[string]any)
+	if !ok {
+		t.Fatalf("edit deveria ser um mapa de padroes: %s", est)
+	}
+	if edit["*"] != "allow" || edit["C:/repos/alfa/**"] != "deny" {
+		t.Fatalf("padroes de edit incorretos: %s", est)
+	}
+	// SomenteLeitura prevalece sobre as raizes protegidas.
+	sl := permissoesOpencode(OpcoesRun{SomenteLeitura: true, DirsProtegidos: []string{`C:\repos\alfa`}})
+	var ps map[string]any
+	if err := json.Unmarshal([]byte(sl), &ps); err != nil {
+		t.Fatalf("json invalido: %v (%s)", err, sl)
+	}
+	if ps["edit"] != "deny" {
+		t.Fatalf("somente leitura deveria negar edit globalmente: %s", sl)
+	}
 }
 
 func TestParseEventoOpencodeTexto(t *testing.T) {

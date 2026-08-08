@@ -18,6 +18,7 @@ const (
 	PermConfigGerir       = "config.gerir"       // motores/contas e config global (configurações avançadas)
 	PermUsuariosGerir     = "usuarios.gerir"     // usuários, papéis e tokens de API
 	PermConsultasUsar     = "consultas.usar"     // abrir consultas e conversar com o consultor (produto/suporte)
+	PermPlanejamentosUsar = "planejamentos.usar" // abrir planejamentos e lapidar PRDs/ADRs com o estrategista
 	PermCodigoEditar      = "codigo.editar"      // abrir o IDE web (VS Code) no worktree de uma demanda
 	PermCuringa           = "*"                  // todas (só o papel de sistema admin)
 )
@@ -42,6 +43,7 @@ var CatalogoPermissoes = []Permissao{
 	{PermConfigGerir, "Configurações avançadas", "Gerir motores, contas e a configuração global."},
 	{PermUsuariosGerir, "Usuários e acessos", "Gerir usuários, papéis e tokens de API."},
 	{PermConsultasUsar, "Consultar o código", "Conversar com o consultor sobre o comportamento do sistema (sem acesso ao código-fonte)."},
+	{PermPlanejamentosUsar, "Planejar PRDs e ADRs", "Trabalhar com o estrategista na elaboração de PRDs e ADRs (os documentos e ADRs podem citar detalhes internos do código)."},
 	{PermCodigoEditar, "Editar código (IDE web)", "Abrir o VS Code no navegador para ajustes manuais no worktree de uma demanda. O IDE dá acesso de desenvolvedor ao servidor (terminal incluído)."},
 }
 

@@ -47,9 +47,14 @@ func (motorCodex) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	if op.Esforco != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", op.Esforco))
 	}
-	if op.SomenteLeitura {
+	switch {
+	case op.SomenteLeitura:
 		args = append(args, "--sandbox", "read-only")
-	} else {
+	case len(op.DirsProtegidos) > 0:
+		// workspace-write: so o cwd (op.Dir) e gravavel; o resto do sistema —
+		// incluindo os repos protegidos passados via --add-dir — fica em leitura.
+		args = append(args, "--sandbox", "workspace-write")
+	default:
 		fmt.Println("  AVISO: Codex em modo BYPASS (--dangerously-bypass-approvals-and-sandbox): acesso total ao sistema, sem sandbox nem aprovacoes. Use apenas em ambiente controlado.")
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}

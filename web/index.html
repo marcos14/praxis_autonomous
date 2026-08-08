@@ -22,6 +22,7 @@
       <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
       <button class="nav-item" data-view="nova" data-perm="demandas.criar"><span class="ico">＋</span> Nova demanda</button>
       <button class="nav-item" data-view="consultas" data-perm="consultas.usar"><span class="ico">✆</span> Consultas</button>
+      <button class="nav-item" data-view="planejamentos" data-perm="planejamentos.usar"><span class="ico">◈</span> Planejamentos</button>
     </div>
 
     <div class="nav-group">
@@ -99,6 +100,21 @@
         </div>
         <div class="panel" id="painel-consulta">
           <p class="sub" style="margin:0">Selecione uma consulta à esquerda ou inicie uma nova.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= PLANEJAMENTOS ======================= -->
+    <section class="view" id="view-planejamentos">
+      <h1 class="page">Planejamentos</h1>
+      <p class="sub">Trabalhe com o estrategista para transformar uma necessidade em PRD e/ou ADRs prontos para virar demanda — com apresentação visual e protótipo quando você quiser.</p>
+      <div class="two-col">
+        <div>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-planejamento">+ Novo planejamento</button>
+          <div id="lista-planejamentos"></div>
+        </div>
+        <div class="panel" id="painel-planejamento">
+          <p class="sub" style="margin:0">Selecione um planejamento à esquerda ou inicie um novo.</p>
         </div>
       </div>
     </section>

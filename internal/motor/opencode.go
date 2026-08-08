@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -182,8 +183,21 @@ func permissoesOpencode(op OpcoesRun) string {
 		bash["git push *"] = "deny"
 	}
 	perm := map[string]any{}
-	if op.SomenteLeitura {
+	switch {
+	case op.SomenteLeitura:
 		perm["edit"] = "deny"
+	case len(op.DirsProtegidos) > 0:
+		// Escrita liberada, mas nunca dentro das raizes protegidas (mapa de
+		// padroes do OpenCode: padrao mais especifico prevalece).
+		edit := map[string]string{"*": "allow"}
+		for _, d := range op.DirsProtegidos {
+			abs := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(d)), "/")
+			if abs == "" {
+				continue
+			}
+			edit[abs+"/**"] = "deny"
+		}
+		perm["edit"] = edit
 	}
 	if len(bash) > 0 {
 		perm["bash"] = bash

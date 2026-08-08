@@ -94,6 +94,21 @@ func TestProibidosClaude(t *testing.T) {
 	if got := proibidosClaude(OpcoesRun{}); len(got) != 0 {
 		t.Fatalf("sem restricoes nao deveria proibir nada: %+v", got)
 	}
+	// Estrategista: escreve na pasta de trabalho, mas nunca nos repos protegidos.
+	est := proibidosClaude(OpcoesRun{ProibirCommit: true, DirsProtegidos: []string{`C:\repos\alfa`, ""}})
+	if contemString(est, "Edit") {
+		t.Fatalf("estrategista nao deveria proibir edicao global: %+v", est)
+	}
+	for _, regra := range []string{"Edit(//C:/repos/alfa/**)", "Write(//C:/repos/alfa/**)", "NotebookEdit(//C:/repos/alfa/**)"} {
+		if !contemString(est, regra) {
+			t.Fatalf("faltou a regra %q: %+v", regra, est)
+		}
+	}
+	// SomenteLeitura prevalece: bloqueio global, sem regras por caminho.
+	rev2 := proibidosClaude(OpcoesRun{SomenteLeitura: true, DirsProtegidos: []string{`C:\repos\alfa`}})
+	if !contemString(rev2, "Edit") || contemString(rev2, "Edit(//C:/repos/alfa/**)") {
+		t.Fatalf("somente leitura deveria bloquear tudo sem regras por caminho: %+v", rev2)
+	}
 }
 
 func TestMotorClaudeDetectaLimiteNoStderrSemResultado(t *testing.T) {

@@ -105,6 +105,33 @@ export const api = {
   // log cru — o log cru contém código-fonte, que esta feature não expõe.
   urlProgressoConsulta: (id) => comToken(`/api/v1/consultas/${id}/progresso`),
 
+  // planejamentos (PRD/ADR iterativos com o estrategista).
+  listarPlanejamentos: (q = {}) => {
+    const p = new URLSearchParams();
+    if (q.project) p.set("project", q.project);
+    if (q.group) p.set("group", q.group);
+    const qs = p.toString();
+    return req("GET", "/api/v1/planejamentos" + (qs ? "?" + qs : ""));
+  },
+  obterPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}`),
+  criarPlanejamento: (p) => req("POST", "/api/v1/planejamentos", p),
+  atualizarPlanejamento: (id, p) => req("PUT", `/api/v1/planejamentos/${id}`, p),
+  excluirPlanejamento: (id) => req("DELETE", `/api/v1/planejamentos/${id}`),
+  listarChatPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/chat`),
+  enviarChatPlanejamento: (id, conteudo) => req("POST", `/api/v1/planejamentos/${id}/chat`, { conteudo }),
+  urlProgressoPlanejamento: (id) => comToken(`/api/v1/planejamentos/${id}/progresso`),
+  listarDocumentosPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/documentos`),
+  obterDocumentoPlanejamento: (id, arquivo, revisao) =>
+    req("GET", `/api/v1/planejamentos/${id}/documentos/${encodeURIComponent(arquivo)}` +
+      (revisao > 0 ? `?revisao=${revisao}` : "")),
+  listarArtefatosPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/artefatos`),
+  // O artefato abre em nova aba: o token vai na URL (como no SSE) porque a
+  // navegação do navegador não envia o header Authorization.
+  urlArtefatoPlanejamento: (id, arquivo) =>
+    comToken(`/api/v1/planejamentos/${id}/artefatos/${encodeURIComponent(arquivo)}`),
+  criarDemandaDePlanejamento: (id, corpo = {}) =>
+    req("POST", `/api/v1/planejamentos/${id}/criar-demanda`, corpo),
+
   // motores e contas (Fase 1d)
   listarMotores: () => req("GET", "/api/v1/engines"),
   obterMotor: (id) => req("GET", `/api/v1/engines/${id}`),

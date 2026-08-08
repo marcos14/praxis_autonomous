@@ -105,6 +105,13 @@ func gitEnv(dir string, extra []string, args ...string) (string, error) {
 	return out.String(), nil
 }
 
+// StatusPorcelain devolve a saida de `git status --porcelain` do repo — a
+// fotografia do working tree usada pela rede de seguranca do estrategista
+// (comparar o estado antes/depois de um turno para detectar escrita indevida).
+func StatusPorcelain(repo string) (string, error) {
+	return git(repo, "status", "--porcelain")
+}
+
 // EhRepoGit informa se dir esta dentro de uma arvore de trabalho git (mesma
 // deteccao usada em git.go:gitToplevel do Praxis atual).
 func EhRepoGit(dir string) bool {

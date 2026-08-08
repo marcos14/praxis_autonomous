@@ -156,6 +156,8 @@ func (s *Servidor) autorizarVisibilidade(ctx context.Context, pr *principal, cam
 		return s.banco.UsuarioVeDemanda(ctx, *uid, id)
 	case "consultas":
 		return s.banco.UsuarioVeConsulta(ctx, *uid, id)
+	case "planejamentos":
+		return s.banco.UsuarioVePlanejamento(ctx, *uid, id)
 	case "groups":
 		return s.banco.UsuarioVeGrupoProjetos(ctx, *uid, id)
 	}
@@ -366,6 +368,11 @@ func permissaoMutacao(seg []string, resto string) string {
 		// Criar consulta, conversar e excluir a própria consulta (o handler de
 		// DELETE ainda checa criador-ou-admin).
 		return db.PermConsultasUsar
+	case "planejamentos":
+		// Criar planejamento, conversar, criar demanda a partir do PRD e excluir
+		// o próprio planejamento (o handler de DELETE ainda checa criador-ou-admin;
+		// o de criar-demanda ainda exige demandas.criar).
+		return db.PermPlanejamentosUsar
 	case "ide":
 		// Abrir sessão do IDE web (edição manual do worktree de uma demanda).
 		return db.PermCodigoEditar

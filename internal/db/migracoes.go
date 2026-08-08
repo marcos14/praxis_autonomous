@@ -79,6 +79,11 @@ var migracoes = []migracao{
 		nome:   "participação do motor no fallback automático (engines.fallback)",
 		sql:    schemaMotorFallback,
 	},
+	{
+		versao: 13,
+		nome:   "planejamentos: sessões do estrategista (PRD/ADR), documentos versionados e artefatos visuais",
+		sql:    schemaPlanejamentos,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -587,4 +592,88 @@ ALTER TABLE consulta_runs ADD COLUMN conta TEXT NOT NULL DEFAULT '';
 // preferido do projeto ou motor do grupo de usuários nas consultas).
 const schemaMotorFallback = `
 ALTER TABLE engines ADD COLUMN fallback INTEGER NOT NULL DEFAULT 1 CHECK (fallback IN (0,1));
+`
+
+// schemaPlanejamentos é a migração 13: a feature de planejamentos — sessões
+// iterativas do ESTRATEGISTA (especialista de produto/arquitetura) que lapidam
+// PRDs e ADRs com o usuário. Espelha o desenho de consultas (alvo projeto OU
+// grupo, exclusivo; conversa em mensagens; execuções por turno), acrescentando:
+//   - planejamento_documentos: revisões dos .md canônicos (prd.md/adrs.md) —
+//     cada turno que altera um documento grava uma revisão nova (histórico);
+//   - planejamento_artefatos: índice dos .html autocontidos gravados na pasta
+//     PRAXIS_HOME/planejamentos/p<id>/ (só a versão corrente fica no disco;
+//     revisao conta as regravações);
+//   - demand_id: a demanda criada no handoff "criar demanda a partir do PRD"
+//     (SET NULL se a demanda for excluída — o planejamento sobrevive).
+const schemaPlanejamentos = `
+CREATE TABLE planejamentos (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id    INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    group_id      INTEGER REFERENCES project_groups(id) ON DELETE CASCADE,
+    titulo        TEXT NOT NULL DEFAULT '',
+    foco          TEXT NOT NULL DEFAULT 'prd' CHECK (foco IN ('prd','adr','ambos')),
+    nivel_visual  TEXT NOT NULL DEFAULT 'apresentacao'
+                  CHECK (nivel_visual IN ('documento','apresentacao','prototipo')),
+    status        TEXT NOT NULL DEFAULT 'ocioso',
+    custo_usd     REAL NOT NULL DEFAULT 0,
+    criado_por    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    demand_id     INTEGER REFERENCES demands(id) ON DELETE SET NULL,
+    erro          TEXT NOT NULL DEFAULT '',
+    criado_em     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    atualizado_em TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    CHECK ((project_id IS NOT NULL AND group_id IS NULL) OR
+           (project_id IS NULL AND group_id IS NOT NULL))
+);
+CREATE INDEX ix_planejamentos_project ON planejamentos (project_id);
+CREATE INDEX ix_planejamentos_group   ON planejamentos (group_id);
+
+CREATE TABLE planejamento_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    planejamento_id INTEGER NOT NULL REFERENCES planejamentos(id) ON DELETE CASCADE,
+    papel           TEXT NOT NULL CHECK (papel IN ('user','estrategista','sistema')),
+    conteudo        TEXT NOT NULL DEFAULT '',
+    meta            TEXT NOT NULL DEFAULT '{}',
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX ix_planejamento_messages_plan ON planejamento_messages (planejamento_id);
+
+CREATE TABLE planejamento_documentos (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    planejamento_id INTEGER NOT NULL REFERENCES planejamentos(id) ON DELETE CASCADE,
+    arquivo         TEXT NOT NULL,
+    revisao         INTEGER NOT NULL,
+    conteudo        TEXT NOT NULL DEFAULT '',
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE (planejamento_id, arquivo, revisao)
+);
+
+CREATE TABLE planejamento_artefatos (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    planejamento_id INTEGER NOT NULL REFERENCES planejamentos(id) ON DELETE CASCADE,
+    arquivo         TEXT NOT NULL,
+    titulo          TEXT NOT NULL DEFAULT '',
+    descricao       TEXT NOT NULL DEFAULT '',
+    tamanho         INTEGER NOT NULL DEFAULT 0,
+    hash            TEXT NOT NULL DEFAULT '',
+    revisao         INTEGER NOT NULL DEFAULT 1,
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    atualizado_em   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE (planejamento_id, arquivo)
+);
+
+CREATE TABLE planejamento_runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    planejamento_id INTEGER NOT NULL REFERENCES planejamentos(id) ON DELETE CASCADE,
+    engine          TEXT NOT NULL DEFAULT '',
+    conta           TEXT NOT NULL DEFAULT '',
+    modelo          TEXT NOT NULL DEFAULT '',
+    custo_usd       REAL NOT NULL DEFAULT 0,
+    tokens_in       INTEGER NOT NULL DEFAULT 0,
+    tokens_out      INTEGER NOT NULL DEFAULT 0,
+    is_error        INTEGER NOT NULL DEFAULT 0 CHECK (is_error IN (0,1)),
+    log_ref         TEXT NOT NULL DEFAULT '',
+    iniciado_em     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    terminado_em    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX ix_planejamento_runs_plan ON planejamento_runs (planejamento_id);
 `

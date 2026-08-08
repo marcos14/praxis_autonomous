@@ -37,6 +37,12 @@ type OpcoesRun struct {
 	Schema          string // se != "", quer saida estruturada conforme este JSON Schema
 	SomenteLeitura  bool   // revisor: nao edita arquivos nem commita
 	ProibirCommit   bool   // executor/corretor: quem commita e o orquestrador
+	// DirsProtegidos lista raizes que o harness NAO pode modificar mesmo com a
+	// escrita liberada (op.Dir gravavel) — o estrategista escreve artefatos na
+	// pasta do planejamento mas so LE os repositorios. Cada motor traduz
+	// best-effort para suas flags; a garantia final e a verificacao git do
+	// orquestrador apos o turno. Ignorado quando SomenteLeitura ja bloqueia tudo.
+	DirsProtegidos []string
 	RotuloLog       string // prefixo do arquivo de log em DirLogs
 	Ctx             context.Context
 	PausaCh         <-chan struct{}

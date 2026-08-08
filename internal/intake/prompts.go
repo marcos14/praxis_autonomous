@@ -25,6 +25,9 @@ const (
 	// reusar o mecanismo embutido + override no banco.
 	PromptConsultor = "consultor"
 	PromptOverview  = "overview"
+	// Prompt da feature de planejamentos (pacote estrategista): o especialista
+	// de produto/arquitetura que lapida PRDs e ADRs com o usuário.
+	PromptEstrategista = "estrategista"
 )
 
 // ProvedorPrompt devolve um provedor de prompts para o pipeline (Runner.Prompt):
