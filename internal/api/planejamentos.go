@@ -81,7 +81,39 @@ func (s *Servidor) registrarRotasPlanejamentos(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/planejamentos/{id}/referencias", s.handleEnviarReferenciaPlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/referencias/{arquivo}", s.handleBaixarReferenciaPlanejamento)
 	mux.HandleFunc("DELETE /api/v1/planejamentos/{id}/referencias/{arquivo}", s.handleExcluirReferenciaPlanejamento)
+	mux.HandleFunc("GET /api/v1/planejamentos/{id}/demandas", s.handleListarDemandasDoPlanejamento)
 	mux.HandleFunc("POST /api/v1/planejamentos/{id}/criar-demanda", s.handleCriarDemandaDePlanejamento)
+}
+
+// respDemandasDoPlanejamento é a resposta de GET /planejamentos/{id}/demandas:
+// os vínculos (cada demanda gerada, com a revisão entregue) e a revisão ATUAL de
+// cada documento — a UI compara os dois para mostrar o drift ("há mudanças não
+// entregues desde a demanda #N").
+type respDemandasDoPlanejamento struct {
+	Demandas     []db.VinculoPlanejamentoDemanda `json:"demandas"`
+	PRDRevAtual  int64                           `json:"prd_rev_atual"`
+	ADRsRevAtual int64                           `json:"adrs_rev_atual"`
+}
+
+// handleListarDemandasDoPlanejamento lista as demandas geradas pelo planejamento.
+func (s *Servidor) handleListarDemandasDoPlanejamento(w http.ResponseWriter, r *http.Request) {
+	plan, ok := s.obterPlanejamentoOu404(w, r)
+	if !ok {
+		return
+	}
+	vinculos, err := s.banco.ListarDemandasDoPlanejamento(r.Context(), plan.ID)
+	if err != nil {
+		s.responderErroPlanejamento(w, err)
+		return
+	}
+	resp := respDemandasDoPlanejamento{Demandas: vinculos}
+	if doc, err := s.banco.ObterDocumentoPlanejamento(r.Context(), plan.ID, "prd.md", 0); err == nil {
+		resp.PRDRevAtual = doc.Revisao
+	}
+	if doc, err := s.banco.ObterDocumentoPlanejamento(r.Context(), plan.ID, "adrs.md", 0); err == nil {
+		resp.ADRsRevAtual = doc.Revisao
+	}
+	responderJSON(w, http.StatusOK, resp)
 }
 
 // handleCriarPlanejamento cria o planejamento com a primeira fala do usuário e
@@ -745,9 +777,12 @@ func metaAutorDaRequisicao(r *http.Request) json.RawMessage {
 }
 
 // handleCriarDemandaDePlanejamento é o handoff: cria uma demanda (intake por
-// chat) cujo PRD é o documento mais recente do planejamento, e vincula a
-// demanda criada ao planejamento (demand_id). Exige também demandas.criar —
-// planejar e abrir demanda são capacidades distintas.
+// chat) cujo PRD é o documento mais recente do planejamento, registrando em
+// planejamento_demandas QUAL revisão foi entregue — um planejamento pode gerar
+// várias demandas (refazer, variante A/B; o aviso de demanda anterior ativa é
+// da UI, e a colisão de arquivos é coberta pela detecção de sobreposição).
+// Exige também demandas.criar — planejar e abrir demanda são capacidades
+// distintas.
 func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *http.Request) {
 	plan, ok := s.obterPlanejamentoOu404(w, r)
 	if !ok {
@@ -761,11 +796,6 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 			"o estrategista está trabalhando — crie a demanda após a resposta (o documento pode mudar)")
 		return
 	}
-	if plan.DemandID != nil {
-		responderErro(w, http.StatusConflict, "ja_criada",
-			fmt.Sprintf("este planejamento já gerou a demanda #%d", *plan.DemandID))
-		return
-	}
 	var req reqDemandaDePlanejamento
 	if !decodificarCorpo(w, r, &req) {
 		return
@@ -777,7 +807,7 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 		return
 	}
 
-	prd, err := s.montarPRDDoPlanejamento(r.Context(), plan)
+	prd, prdRev, adrsRev, err := s.montarPRDDoPlanejamento(r.Context(), plan)
 	if err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
 			responderErro(w, http.StatusConflict, "sem_documento",
@@ -817,8 +847,10 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 	}
 
 	did := criada.ID
-	plan.DemandID = &did
-	if _, err := s.banco.AtualizarPlanejamento(r.Context(), plan); err != nil {
+	if _, err := s.banco.CriarVinculoPlanejamentoDemanda(r.Context(), db.VinculoPlanejamentoDemanda{
+		PlanejamentoID: plan.ID, DemandID: did,
+		Tipo: db.TipoDemandaPlanejamentoCompleta, PRDRev: prdRev, ADRsRev: adrsRev,
+	}); err != nil {
 		s.log.Warn("vincular demanda ao planejamento", "erro", err, "planejamento", plan.ID, "demanda", did)
 	}
 
@@ -863,14 +895,20 @@ func (s *Servidor) resolverProjetoDoHandoff(r *http.Request, plan db.Planejament
 
 // montarPRDDoPlanejamento compõe o texto do PRD do handoff a partir das
 // revisões mais recentes: prd.md e, quando o foco inclui ADRs, adrs.md anexado
-// como seção de decisões arquiteturais. Sem documento nenhum → ErrNaoEncontrado.
-func (s *Servidor) montarPRDDoPlanejamento(ctx context.Context, plan db.Planejamento) (string, error) {
-	var partes []string
+// como seção de decisões arquiteturais. Devolve também a revisão de cada
+// documento usada (0 = documento não entrou) — é o que o vínculo registra para
+// a detecção de drift. Sem documento nenhum → ErrNaoEncontrado.
+func (s *Servidor) montarPRDDoPlanejamento(ctx context.Context, plan db.Planejamento) (string, int64, int64, error) {
+	var (
+		partes          []string
+		prdRev, adrsRev int64
+	)
 	if plan.Foco != db.FocoPlanejamentoADR {
 		if doc, err := s.banco.ObterDocumentoPlanejamento(ctx, plan.ID, "prd.md", 0); err == nil {
 			partes = append(partes, strings.TrimSpace(doc.Conteudo))
+			prdRev = doc.Revisao
 		} else if !errors.Is(err, db.ErrNaoEncontrado) {
-			return "", err
+			return "", 0, 0, err
 		}
 	}
 	if plan.Foco != db.FocoPlanejamentoPRD {
@@ -880,14 +918,15 @@ func (s *Servidor) montarPRDDoPlanejamento(ctx context.Context, plan db.Planejam
 				adrs = "---\n\n# Decisões arquiteturais (ADRs)\n\n" + adrs
 			}
 			partes = append(partes, adrs)
+			adrsRev = doc.Revisao
 		} else if !errors.Is(err, db.ErrNaoEncontrado) {
-			return "", err
+			return "", 0, 0, err
 		}
 	}
 	if len(partes) == 0 {
-		return "", db.ErrNaoEncontrado
+		return "", 0, 0, db.ErrNaoEncontrado
 	}
-	return strings.Join(partes, "\n\n"), nil
+	return strings.Join(partes, "\n\n"), prdRev, adrsRev, nil
 }
 
 // obterPlanejamentoOu404 resolve o path param {id} para o planejamento ou

@@ -5,6 +5,7 @@
 import { api } from "./api.js";
 import { el, limpar, bannerErro, toast, mdEditor } from "./ui.js";
 import { abrirCard } from "./demandas.js";
+import * as auth from "./auth.js";
 
 export async function montarNovaDemanda() {
   const cont = limpar(document.getElementById("painel-nova"));
@@ -40,6 +41,16 @@ export async function montarNovaDemanda() {
     el("div", { class: "acoes" }, btn),
   );
   cont.append(form);
+
+  // Atalho para o caminho planejado: quem tem acesso a Planejamentos pode
+  // lapidar o PRD com o estrategista e criar a demanda de lá (com vínculo e
+  // revisão registrados) — o fluxo de handoff vive naquela tela.
+  if (auth.temPermissao("planejamentos.usar")) {
+    cont.append(el("p", { class: "sub", style: "margin-top:12px" },
+      "Prefere construir o PRD antes? Comece por um ",
+      el("a", { href: "#planejamentos", text: "planejamento" }),
+      " — o estrategista lê o código, lapida o documento com você e cria a demanda de lá."));
+  }
 
   async function criar() {
     const prd = edPRD.ta.value.trim();

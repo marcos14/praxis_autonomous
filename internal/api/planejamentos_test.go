@@ -263,14 +263,51 @@ func TestCriarDemandaDePlanejamento(t *testing.T) {
 		}
 	}
 
-	// O planejamento fica vinculado e um segundo handoff é recusado.
-	got, _ := banco.ObterPlanejamento(context.Background(), plan.ID)
-	if got.DemandID == nil || *got.DemandID != dem.ID {
-		t.Fatalf("demand_id = %v, quero %d", got.DemandID, dem.ID)
+	// O vínculo registra a revisão entregue (PRD rev 1, ADRs rev 1).
+	vinculos, err := banco.ListarDemandasDoPlanejamento(context.Background(), plan.ID)
+	if err != nil || len(vinculos) != 1 {
+		t.Fatalf("vínculos = %+v (%v), quero 1", vinculos, err)
+	}
+	if vinculos[0].DemandID != dem.ID || vinculos[0].Tipo != db.TipoDemandaPlanejamentoCompleta ||
+		vinculos[0].PRDRev != 1 || vinculos[0].ADRsRev != 1 {
+		t.Fatalf("vínculo = %+v, quero completa com PRD/ADRs rev 1", vinculos[0])
+	}
+
+	// Um segundo handoff é permitido (refazer / variante A/B) e o documento que
+	// evoluiu entrega a revisão nova.
+	if _, err := banco.SalvarRevisaoDocumento(context.Background(), plan.ID, "prd.md", "# PRD v2\n\nRequisitos revistos…"); err != nil {
+		t.Fatal(err)
 	}
 	rec = fazerReq(t, srv, "POST", fmt.Sprintf("/api/v1/planejamentos/%d/criar-demanda", plan.ID), map[string]any{})
-	if rec.Code != 409 {
-		t.Fatalf("segundo handoff = %d, quero 409", rec.Code)
+	if rec.Code != 201 {
+		t.Fatalf("segundo handoff = %d (%s), quero 201", rec.Code, rec.Body.String())
+	}
+	dem2 := decodDemanda(t, rec)
+
+	// GET /demandas devolve os dois vínculos e as revisões atuais (drift).
+	rec = fazerReq(t, srv, "GET", fmt.Sprintf("/api/v1/planejamentos/%d/demandas", plan.ID), nil)
+	if rec.Code != 200 {
+		t.Fatalf("listar demandas = %d", rec.Code)
+	}
+	var resp struct {
+		Demandas     []db.VinculoPlanejamentoDemanda `json:"demandas"`
+		PRDRevAtual  int64                           `json:"prd_rev_atual"`
+		ADRsRevAtual int64                           `json:"adrs_rev_atual"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decodificar: %v (%s)", err, rec.Body.String())
+	}
+	if len(resp.Demandas) != 2 || resp.PRDRevAtual != 2 || resp.ADRsRevAtual != 1 {
+		t.Fatalf("resposta = %+v, quero 2 vínculos e PRD atual na rev 2", resp)
+	}
+	if resp.Demandas[1].DemandID != dem2.ID || resp.Demandas[1].PRDRev != 2 {
+		t.Fatalf("segundo vínculo = %+v, quero a rev 2 entregue", resp.Demandas[1])
+	}
+
+	// E a contagem aparece no planejamento.
+	got, _ := banco.ObterPlanejamento(context.Background(), plan.ID)
+	if got.DemandasCriadas != 2 {
+		t.Fatalf("demandas_criadas = %d, quero 2", got.DemandasCriadas)
 	}
 }
 

@@ -17,7 +17,17 @@ A tela **Planejamentos** é o espaço de PMs, POs e arquitetos: você descreve u
 2. Descreva a necessidade do seu jeito. Se algo estiver ambíguo, o estrategista faz **perguntas de decisão** antes de escrever — responda no chat.
 3. A cada turno, os documentos aparecem na aba **Documentos** (com histórico de revisões) e os artefatos na aba **Artefatos** (abrem em nova aba). Peça mudanças no chat até o documento ficar redondo.
 4. Você pode **mudar o foco e o nível visual no meio da conversa** — o próximo turno já obedece.
-5. Quando o PRD estiver pronto, clique **Criar demanda**: o documento vira a primeira mensagem de uma demanda nova (com os ADRs anexados, quando houver) e o analista do intake assume dali. O card da demanda abre na hora, e o planejamento fica vinculado a ela — o marcador *Demanda #N* no topo reabre o card quando quiser.
+5. Quando o PRD estiver pronto, clique **Criar demanda**: o documento vira a primeira mensagem de uma demanda nova (com os ADRs anexados, quando houver) e o analista do intake assume dali. O card da demanda abre na hora, e o planejamento registra o vínculo **com a revisão entregue**.
+
+### Um planejamento, várias demandas
+
+O planejamento é um documento vivo e pode gerar **quantas demandas você precisar** — refazer do zero, testar uma variante (A/B), entregar em outro repositório do grupo. O botão **Demandas (N)** no topo abre o diálogo de handoff, que mostra:
+
+- as demandas já geradas, com o **estado** de cada uma e **qual revisão** do PRD/ADRs ela recebeu;
+- o **drift**: se os documentos evoluíram desde a última entrega, o diálogo avisa que há mudanças não entregues;
+- um **aviso quando há demanda ativa** — criar outra do mesmo plano pode gerar trabalho sobreposto (não é bloqueado: o teste A/B é legítimo, e o Kanban sinaliza sobreposição de arquivos entre demandas).
+
+A demanda criada aqui é sempre **completa** (todo o documento atual). A demanda **complementar** — só o que evoluiu desde uma entrega concluída, com PRD incremental gerado pelo estrategista — chega numa próxima versão.
 
 ## Trabalhando em etapas (Produto ↔ Arquitetura)
 

@@ -78,24 +78,25 @@ func NivelVisualValido(n string) bool {
 
 // Planejamento é uma linha da tabela planejamentos: uma sessão iterativa do
 // estrategista (PRD/ADR) vinculada a UM projeto OU UM grupo (exclusivo — CHECK
-// no banco). DemandID aponta a demanda criada no handoff (nil antes dele).
-// ProjetoNome/GrupoNome são resolvidos por join nas listagens.
+// no banco). As demandas geradas nos handoffs vivem em planejamento_demandas
+// (um planejamento gera N demandas); DemandasCriadas é a contagem, resolvida
+// por subconsulta nas leituras. ProjetoNome/GrupoNome vêm de join nas listagens.
 type Planejamento struct {
-	ID           int64   `json:"id"`
-	ProjectID    *int64  `json:"project_id"`
-	GroupID      *int64  `json:"group_id"`
-	Titulo       string  `json:"titulo"`
-	Foco         string  `json:"foco"`
-	NivelVisual  string  `json:"nivel_visual"`
-	Status       string  `json:"status"`
-	CustoUSD     float64 `json:"custo_usd"`
-	CriadoPor    *int64  `json:"criado_por"`
-	DemandID     *int64  `json:"demand_id"`
-	Erro         string  `json:"erro"`
-	CriadoEm     string  `json:"criado_em"`
-	AtualizadoEm string  `json:"atualizado_em"`
-	ProjetoNome  string  `json:"projeto_nome,omitempty"`
-	GrupoNome    string  `json:"grupo_nome,omitempty"`
+	ID              int64   `json:"id"`
+	ProjectID       *int64  `json:"project_id"`
+	GroupID         *int64  `json:"group_id"`
+	Titulo          string  `json:"titulo"`
+	Foco            string  `json:"foco"`
+	NivelVisual     string  `json:"nivel_visual"`
+	Status          string  `json:"status"`
+	CustoUSD        float64 `json:"custo_usd"`
+	CriadoPor       *int64  `json:"criado_por"`
+	DemandasCriadas int64   `json:"demandas_criadas"`
+	Erro            string  `json:"erro"`
+	CriadoEm        string  `json:"criado_em"`
+	AtualizadoEm    string  `json:"atualizado_em"`
+	ProjetoNome     string  `json:"projeto_nome,omitempty"`
+	GrupoNome       string  `json:"grupo_nome,omitempty"`
 }
 
 // MensagemPlanejamento é uma linha de planejamento_messages. Meta é JSON livre
@@ -139,25 +140,28 @@ type ArtefatoPlanejamento struct {
 }
 
 // colunasPlanejamento lista as colunas de planejamentos na ordem esperada por
-// scanPlanejamento.
+// scanPlanejamento (a última é a contagem de demandas geradas; demand_id é
+// legado da migração 13 e não é mais lido — a verdade está em
+// planejamento_demandas).
 const colunasPlanejamento = `id, project_id, group_id, titulo, foco, nivel_visual, status,
-	custo_usd, criado_por, demand_id, erro, criado_em, atualizado_em`
+	custo_usd, criado_por, erro, criado_em, atualizado_em,
+	(SELECT COUNT(*) FROM planejamento_demandas pd WHERE pd.planejamento_id = planejamentos.id)`
 
 // scanPlanejamento lê uma linha de planejamentos (na ordem de
 // colunasPlanejamento) para Planejamento, tratando as FKs opcionais.
 func scanPlanejamento(sc interface{ Scan(...any) error }) (Planejamento, error) {
 	var (
-		p                       Planejamento
-		projID, grpID, por, dem sql.NullInt64
+		p                  Planejamento
+		projID, grpID, por sql.NullInt64
 	)
 	if err := sc.Scan(&p.ID, &projID, &grpID, &p.Titulo, &p.Foco, &p.NivelVisual,
-		&p.Status, &p.CustoUSD, &por, &dem, &p.Erro, &p.CriadoEm, &p.AtualizadoEm); err != nil {
+		&p.Status, &p.CustoUSD, &por, &p.Erro, &p.CriadoEm, &p.AtualizadoEm,
+		&p.DemandasCriadas); err != nil {
 		return Planejamento{}, err
 	}
 	p.ProjectID = ptrDeNull(projID)
 	p.GroupID = ptrDeNull(grpID)
 	p.CriadoPor = ptrDeNull(por)
-	p.DemandID = ptrDeNull(dem)
 	return p, nil
 }
 
@@ -235,8 +239,9 @@ func (d *DB) ListarPlanejamentos(ctx context.Context, projectID, groupID int64) 
 	}
 	rows, err := d.Leitor.QueryContext(ctx, `
 		SELECT pl.id, pl.project_id, pl.group_id, pl.titulo, pl.foco, pl.nivel_visual,
-		       pl.status, pl.custo_usd, pl.criado_por, pl.demand_id, pl.erro,
+		       pl.status, pl.custo_usd, pl.criado_por, pl.erro,
 		       pl.criado_em, pl.atualizado_em,
+		       (SELECT COUNT(*) FROM planejamento_demandas pd WHERE pd.planejamento_id = pl.id),
 		       COALESCE(p.nome, ''), COALESCE(g.nome, '')
 		FROM planejamentos pl
 		LEFT JOIN projects p       ON p.id = pl.project_id
@@ -251,18 +256,17 @@ func (d *DB) ListarPlanejamentos(ctx context.Context, projectID, groupID int64) 
 	planejamentos := []Planejamento{}
 	for rows.Next() {
 		var (
-			p                       Planejamento
-			projID, grpID, por, dem sql.NullInt64
+			p                  Planejamento
+			projID, grpID, por sql.NullInt64
 		)
 		if err := rows.Scan(&p.ID, &projID, &grpID, &p.Titulo, &p.Foco, &p.NivelVisual,
-			&p.Status, &p.CustoUSD, &por, &dem, &p.Erro, &p.CriadoEm, &p.AtualizadoEm,
-			&p.ProjetoNome, &p.GrupoNome); err != nil {
+			&p.Status, &p.CustoUSD, &por, &p.Erro, &p.CriadoEm, &p.AtualizadoEm,
+			&p.DemandasCriadas, &p.ProjetoNome, &p.GrupoNome); err != nil {
 			return nil, err
 		}
 		p.ProjectID = ptrDeNull(projID)
 		p.GroupID = ptrDeNull(grpID)
 		p.CriadoPor = ptrDeNull(por)
-		p.DemandID = ptrDeNull(dem)
 		planejamentos = append(planejamentos, p)
 	}
 	if err := rows.Err(); err != nil {
@@ -287,22 +291,20 @@ func (d *DB) ObterPlanejamento(ctx context.Context, id int64) (Planejamento, err
 }
 
 // AtualizarPlanejamento grava os campos mutáveis do planejamento p.ID (título,
-// foco, nível visual, status, custo acumulado, demanda do handoff, erro) e
-// carimba atualizado_em. Foco/nível inválidos viram ErrValorInvalido;
-// planejamento inexistente vira ErrNaoEncontrado. Vínculo projeto/grupo e
-// criado_por são imutáveis.
+// foco, nível visual, status, custo acumulado, erro) e carimba atualizado_em.
+// Foco/nível inválidos viram ErrValorInvalido; planejamento inexistente vira
+// ErrNaoEncontrado. Vínculo projeto/grupo e criado_por são imutáveis; as
+// demandas geradas vivem em planejamento_demandas.
 func (d *DB) AtualizarPlanejamento(ctx context.Context, p Planejamento) (Planejamento, error) {
 	if !FocoPlanejamentoValido(p.Foco) || !NivelVisualValido(p.NivelVisual) {
 		return Planejamento{}, ErrValorInvalido
 	}
 	res, err := d.Escritor.ExecContext(ctx, `
 		UPDATE planejamentos SET
-			titulo = ?, foco = ?, nivel_visual = ?, status = ?, custo_usd = ?,
-			demand_id = ?, erro = ?,
+			titulo = ?, foco = ?, nivel_visual = ?, status = ?, custo_usd = ?, erro = ?,
 			atualizado_em = strftime('%Y-%m-%dT%H:%M:%fZ','now')
 		WHERE id = ?`,
-		p.Titulo, p.Foco, p.NivelVisual, p.Status, p.CustoUSD,
-		nullInt(p.DemandID), p.Erro, p.ID,
+		p.Titulo, p.Foco, p.NivelVisual, p.Status, p.CustoUSD, p.Erro, p.ID,
 	)
 	if err != nil {
 		return Planejamento{}, fmt.Errorf("atualizar planejamento %d: %w", p.ID, traduzirErroFK(err))

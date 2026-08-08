@@ -8,7 +8,7 @@
 
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
-import { abrirCard, setProjetos } from "./demandas.js";
+import { abrirCard, setProjetos, pillStatus } from "./demandas.js";
 
 let planejamentos = [];
 let selecionadoID = null;
@@ -68,7 +68,8 @@ async function recarregarLista() {
       el("div", { class: "meta" },
         pillStatusPlanejamento(p.status),
         el("span", { class: "pill", text: FOCOS[p.foco] || p.foco }),
-        p.demand_id ? el("span", { class: "pill" }, el("span", { class: "dot dot-done" }), `demanda #${p.demand_id}`) : null,
+        p.demandas_criadas > 0 ? el("span", { class: "pill" }, el("span", { class: "dot dot-done" }),
+          p.demandas_criadas === 1 ? "1 demanda" : `${p.demandas_criadas} demandas`) : null,
         p.custo_usd > 0 ? el("span", { class: "pill", text: "US$ " + p.custo_usd.toFixed(2) }) : null,
       ),
     ));
@@ -494,50 +495,158 @@ async function abrirPlanejamento(id, abaInicial) {
   }
 }
 
-// botaoCriarDemanda monta o botão de handoff: cria a demanda a partir do PRD
-// mais recente (num grupo, pergunta antes qual repositório recebe a demanda).
-// Quando a demanda já existe, vira um marcador com o número dela.
+// botaoCriarDemanda monta o botão de handoff do cabeçalho: sem demanda ainda,
+// "Criar demanda"; com demandas geradas, "Demandas (N)". Ambos abrem o diálogo
+// de handoff (lista + drift + criação).
 function botaoCriarDemanda(plan) {
-  if (plan.demand_id) {
+  if (plan.demandas_criadas > 0) {
     return el("button", {
-      class: "btn ghost sm", title: "Abrir o card da demanda",
-      onclick: () => abrirDemandaModal(plan.demand_id),
-    }, el("span", { class: "dot dot-done", style: "margin-right:6px" }), `Demanda #${plan.demand_id} ⧉`);
+      class: "btn ghost sm", text: `Demandas (${plan.demandas_criadas}) ⧉`,
+      title: "Ver demandas geradas / criar outra",
+      onclick: () => abrirDialogoDemandas(plan),
+    });
   }
-  const b = el("button", { class: "btn good sm", text: "Criar demanda" });
-  b.onclick = async () => {
-    const corpo = {};
-    if (plan.group_id) {
-      let grupo;
-      try {
-        grupo = await api.obterGrupo(plan.group_id);
-      } catch (e) {
-        bannerErro("Falha ao carregar o grupo: " + e.message);
-        return;
-      }
-      const membros = grupo.membros || [];
-      if (membros.length === 0) { bannerErro("O grupo não tem repositórios."); return; }
-      const nomes = membros.map((m, i) => `${i + 1} — ${m.nome || m.project_id}`).join("\n");
-      const escolha = prompt("Qual repositório recebe a demanda?\n" + nomes, "1");
-      if (escolha == null) return;
-      const idx = Number(escolha) - 1;
-      if (!(idx >= 0 && idx < membros.length)) { bannerErro("Escolha inválida."); return; }
-      corpo.project_id = membros[idx].project_id;
-    } else if (!confirm("Criar a demanda a partir do documento atual do planejamento?")) {
+  return el("button", {
+    class: "btn good sm", text: "Criar demanda",
+    onclick: () => abrirDialogoDemandas(plan),
+  });
+}
+
+// DEMANDA_ENCERRADA são os status de demanda que não representam trabalho em
+// andamento — o aviso de sobreposição só vale para demandas fora deste conjunto.
+const DEMANDA_ENCERRADA = new Set(["concluida", "integrada", "cancelada"]);
+
+// abrirDialogoDemandas é o diálogo de handoff: mostra as demandas já geradas
+// (com o estado e a revisão entregue), o drift dos documentos desde a última
+// entrega e o formulário de criação de uma nova demanda completa.
+async function abrirDialogoDemandas(plan) {
+  let info;
+  try {
+    info = (await api.listarDemandasPlanejamento(plan.id)) || { demandas: [] };
+  } catch (e) {
+    bannerErro("Falha ao carregar as demandas do planejamento: " + e.message);
+    return;
+  }
+  const vinculos = info.demandas || [];
+
+  let membros = [];
+  if (plan.group_id) {
+    try {
+      membros = ((await api.obterGrupo(plan.group_id)).membros) || [];
+    } catch (e) {
+      bannerErro("Falha ao carregar o grupo: " + e.message);
       return;
     }
-    b.disabled = true;
+    if (membros.length === 0) { bannerErro("O grupo não tem repositórios."); return; }
+  }
+
+  const overlay = el("div", { class: "overlay open" });
+  const fechar = () => overlay.remove();
+  overlay.addEventListener("click", (ev) => { if (ev.target === overlay) fechar(); });
+
+  const corpo = el("div", { class: "form", style: "padding:0 22px 22px" });
+
+  // --- demandas já geradas + drift ---
+  if (vinculos.length > 0) {
+    const lista = el("div");
+    for (const v of vinculos) {
+      lista.append(el("div", {
+        class: "list-item", title: "Abrir o card da demanda",
+        onclick: () => { fechar(); abrirDemandaModal(v.demand_id); },
+      },
+        el("b", { text: `Demanda #${v.demand_id}` + (v.demanda_titulo ? " — " + v.demanda_titulo : "") }),
+        el("div", { class: "meta" },
+          pillStatus(v.demanda_status),
+          el("span", { class: "pill", text: v.tipo }),
+          el("span", { class: "pill", text: rotuloRevEntregue(v) }),
+        ),
+      ));
+    }
+    corpo.append(el("div", {}, el("label", {}, "Demandas geradas por este planejamento"), lista));
+
+    corpo.append(el("div", { class: "hint", text: descreverDrift(vinculos, info) }));
+
+    const ativas = vinculos.filter((v) => !DEMANDA_ENCERRADA.has(v.demanda_status));
+    if (ativas.length > 0) {
+      corpo.append(el("div", { class: "banner banner-warn", style: "display:block;position:static" },
+        `⚠ A demanda #${ativas[ativas.length - 1].demand_id} ainda está ativa. Criar outra demanda do mesmo plano pode gerar trabalho sobreposto — o Kanban sinaliza quando duas demandas tocam os mesmos arquivos.`));
+    }
+  }
+
+  // --- criação de nova demanda (completa) ---
+  const camposNova = el("div", {});
+  let selMembro = null;
+  if (plan.group_id) {
+    selMembro = el("select", {},
+      ...membros.map((m) => el("option", { value: String(m.project_id) }, m.nome || String(m.project_id))));
+    camposNova.append(el("label", {}, "Repositório que recebe a demanda"), selMembro);
+  }
+  const btnCriar = el("button", {
+    class: "btn good",
+    text: vinculos.length > 0 ? "Criar nova demanda completa" : "Criar demanda",
+  });
+  btnCriar.onclick = async () => {
+    btnCriar.disabled = true;
+    const corpoReq = {};
+    if (selMembro) corpoReq.project_id = Number(selMembro.value);
     try {
-      const dem = await api.criarDemandaDePlanejamento(plan.id, corpo);
+      const dem = await api.criarDemandaDePlanejamento(plan.id, corpoReq);
       toast(`Demanda #${dem.id} criada — o analista já está lendo o PRD.`, "ok");
+      fechar();
       await abrirPlanejamento(plan.id);
       await abrirDemandaModal(dem.id); // abre o card da demanda por cima
     } catch (e) {
       bannerErro("Falha ao criar demanda: " + e.message);
-      b.disabled = false;
+      btnCriar.disabled = false;
     }
   };
-  return b;
+  camposNova.append(
+    el("div", { class: "hint", style: "margin:6px 0",
+      text: "A nova demanda leva TODO o documento atual (demanda completa). A demanda complementar — só o que evoluiu desde uma entrega — chega numa próxima versão." }),
+    el("div", { class: "acoes" }, btnCriar),
+  );
+  corpo.append(el("div", {}, el("label", {}, vinculos.length > 0 ? "Nova demanda" : "Criar demanda a partir do documento atual"), camposNova));
+
+  overlay.append(el("div", { class: "modal", style: "max-width:640px" },
+    el("div", { class: "modal-head" },
+      el("div", { class: "row1" },
+        el("h2", { text: plan.titulo || `Planejamento #${plan.id}` }),
+        el("button", { class: "modal-close", text: "✕", onclick: fechar }),
+      ),
+      el("p", { class: "sub", style: "margin:4px 0 14px", text: "Demandas deste planejamento" }),
+    ),
+    corpo,
+  ));
+  document.body.append(overlay);
+}
+
+// rotuloRevEntregue formata a revisão entregue no handoff (0 = vínculo antigo,
+// anterior ao registro de revisões).
+function rotuloRevEntregue(v) {
+  const partes = [];
+  if (v.prd_rev > 0) partes.push("PRD rev " + v.prd_rev);
+  if (v.adrs_rev > 0) partes.push("ADRs rev " + v.adrs_rev);
+  if (partes.length === 0) return "revisão não registrada";
+  return partes.join(" · ");
+}
+
+// descreverDrift compara a última entrega com a revisão atual dos documentos.
+function descreverDrift(vinculos, info) {
+  const ult = vinculos[vinculos.length - 1];
+  if (ult.prd_rev === 0 && ult.adrs_rev === 0) {
+    return "A revisão entregue à última demanda não foi registrada (vínculo anterior a esta versão) — compare pela aba Documentos.";
+  }
+  const mudancas = [];
+  if (info.prd_rev_atual > ult.prd_rev) {
+    mudancas.push(`o PRD está na revisão ${info.prd_rev_atual} (a demanda #${ult.demand_id} recebeu a ${ult.prd_rev})`);
+  }
+  if (info.adrs_rev_atual > ult.adrs_rev) {
+    mudancas.push(`os ADRs estão na revisão ${info.adrs_rev_atual} (a demanda #${ult.demand_id} recebeu a ${ult.adrs_rev})`);
+  }
+  if (mudancas.length === 0) {
+    return "Os documentos não mudaram desde a última demanda criada.";
+  }
+  return "Há mudanças não entregues: " + mudancas.join("; ") + ".";
 }
 
 // ---------- aba Documentos ----------

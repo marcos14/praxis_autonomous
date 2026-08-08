@@ -174,6 +174,7 @@ export const api = {
     comToken(`/api/v1/planejamentos/${id}/referencias/${encodeURIComponent(arquivo)}`),
   excluirReferenciaPlanejamento: (id, arquivo) =>
     req("DELETE", `/api/v1/planejamentos/${id}/referencias/${encodeURIComponent(arquivo)}`),
+  listarDemandasPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/demandas`),
   criarDemandaDePlanejamento: (id, corpo = {}) =>
     req("POST", `/api/v1/planejamentos/${id}/criar-demanda`, corpo),
 

@@ -84,6 +84,11 @@ var migracoes = []migracao{
 		nome:   "planejamentos: sessões do estrategista (PRD/ADR), documentos versionados e artefatos visuais",
 		sql:    schemaPlanejamentos,
 	},
+	{
+		versao: 14,
+		nome:   "planejamento_demandas: um planejamento gera N demandas, com a revisão entregue registrada",
+		sql:    schemaPlanejamentoDemandas,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -676,4 +681,32 @@ CREATE TABLE planejamento_runs (
     terminado_em    TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX ix_planejamento_runs_plan ON planejamento_runs (planejamento_id);
+`
+
+// schemaPlanejamentoDemandas é a migração 14: o vínculo planejamento→demanda
+// deixa de ser 1:1 (planejamentos.demand_id) e vira a tabela
+// planejamento_demandas — um planejamento pode gerar várias demandas (refazer,
+// variante A/B, e futuramente a demanda complementar), cada uma registrando QUAL
+// revisão dos documentos foi entregue (prd_rev/adrs_rev; 0 = desconhecida, caso
+// dos vínculos migrados). tipo/base_demand_id já preparam a fase complementar.
+// Os vínculos existentes em demand_id são migrados; a coluna antiga permanece no
+// schema por compatibilidade (migrações são só aditivas), mas deixa de ser lida
+// e escrita pela aplicação.
+const schemaPlanejamentoDemandas = `
+CREATE TABLE planejamento_demandas (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    planejamento_id INTEGER NOT NULL REFERENCES planejamentos(id) ON DELETE CASCADE,
+    demand_id       INTEGER NOT NULL REFERENCES demands(id) ON DELETE CASCADE,
+    tipo            TEXT NOT NULL DEFAULT 'completa' CHECK (tipo IN ('completa','complementar')),
+    prd_rev         INTEGER NOT NULL DEFAULT 0,
+    adrs_rev        INTEGER NOT NULL DEFAULT 0,
+    base_demand_id  INTEGER REFERENCES demands(id) ON DELETE SET NULL,
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE (planejamento_id, demand_id)
+);
+CREATE INDEX ix_planejamento_demandas_plan ON planejamento_demandas (planejamento_id);
+CREATE INDEX ix_planejamento_demandas_dem  ON planejamento_demandas (demand_id);
+
+INSERT INTO planejamento_demandas (planejamento_id, demand_id, tipo)
+SELECT id, demand_id, 'completa' FROM planejamentos WHERE demand_id IS NOT NULL;
 `

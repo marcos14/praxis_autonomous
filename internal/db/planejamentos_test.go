@@ -84,7 +84,7 @@ func TestListarPlanejamentosComNomesEFiltros(t *testing.T) {
 	}
 }
 
-func TestAtualizarPlanejamentoStatusCustoEDemanda(t *testing.T) {
+func TestAtualizarPlanejamentoStatusECusto(t *testing.T) {
 	d := abrirTemp(t)
 	ctx := context.Background()
 	projID := criarProjetoTeste(t, d, "plan-d")
@@ -94,21 +94,15 @@ func TestAtualizarPlanejamentoStatusCustoEDemanda(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dem, err := d.CriarDemanda(ctx, Demanda{ProjectID: projID, Titulo: "Da entrega", Status: StatusDemandaRecebida})
-	if err != nil {
-		t.Fatalf("criar demanda: %v", err)
-	}
-
 	p.Status = StatusPlanejamentoPensando
 	p.CustoUSD = 1.5
 	p.Foco = FocoPlanejamentoAmbos
-	p.DemandID = &dem.ID
 	atual, err := d.AtualizarPlanejamento(ctx, p)
 	if err != nil {
 		t.Fatalf("atualizar: %v", err)
 	}
 	if atual.Status != StatusPlanejamentoPensando || atual.CustoUSD != 1.5 ||
-		atual.Foco != FocoPlanejamentoAmbos || atual.DemandID == nil || *atual.DemandID != dem.ID {
+		atual.Foco != FocoPlanejamentoAmbos {
 		t.Fatalf("atualizado = %+v", atual)
 	}
 
@@ -121,6 +115,69 @@ func TestAtualizarPlanejamentoStatusCustoEDemanda(t *testing.T) {
 	inexistente.ID = 9999
 	if _, err := d.AtualizarPlanejamento(ctx, inexistente); !errors.Is(err, ErrNaoEncontrado) {
 		t.Fatalf("id inexistente = %v, quero ErrNaoEncontrado", err)
+	}
+}
+
+func TestVinculosPlanejamentoDemanda(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	projID := criarProjetoTeste(t, d, "plan-vinc")
+	p, _, err := d.CriarPlanejamentoComChat(ctx, Planejamento{ProjectID: &projID},
+		MensagemPlanejamento{Conteudo: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dem1, err := d.CriarDemanda(ctx, Demanda{ProjectID: projID, Titulo: "Entrega 1", Status: StatusDemandaRecebida})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dem2, err := d.CriarDemanda(ctx, Demanda{ProjectID: projID, Titulo: "Variante B", Status: StatusDemandaRecebida})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v1, err := d.CriarVinculoPlanejamentoDemanda(ctx, VinculoPlanejamentoDemanda{
+		PlanejamentoID: p.ID, DemandID: dem1.ID, PRDRev: 3, ADRsRev: 1})
+	if err != nil || v1.ID == 0 || v1.Tipo != TipoDemandaPlanejamentoCompleta {
+		t.Fatalf("vínculo 1 = %+v (%v), quero tipo completa por default", v1, err)
+	}
+	// Um planejamento gera N demandas.
+	if _, err := d.CriarVinculoPlanejamentoDemanda(ctx, VinculoPlanejamentoDemanda{
+		PlanejamentoID: p.ID, DemandID: dem2.ID, PRDRev: 5}); err != nil {
+		t.Fatalf("segundo vínculo: %v", err)
+	}
+	// A mesma demanda não entra duas vezes (UNIQUE).
+	if _, err := d.CriarVinculoPlanejamentoDemanda(ctx, VinculoPlanejamentoDemanda{
+		PlanejamentoID: p.ID, DemandID: dem1.ID}); err == nil {
+		t.Fatal("vínculo duplicado deveria falhar")
+	}
+
+	// Listagem com título/status da demanda resolvidos.
+	vinculos, err := d.ListarDemandasDoPlanejamento(ctx, p.ID)
+	if err != nil || len(vinculos) != 2 {
+		t.Fatalf("listar = %+v (%v), quero 2", vinculos, err)
+	}
+	if vinculos[0].DemandaTitulo != "Entrega 1" || vinculos[0].DemandaStatus != StatusDemandaRecebida ||
+		vinculos[0].PRDRev != 3 || vinculos[0].ADRsRev != 1 {
+		t.Fatalf("vínculo listado = %+v", vinculos[0])
+	}
+
+	// A contagem aparece no planejamento (Obter e Listar).
+	got, err := d.ObterPlanejamento(ctx, p.ID)
+	if err != nil || got.DemandasCriadas != 2 {
+		t.Fatalf("demandas_criadas no Obter = %d (%v), quero 2", got.DemandasCriadas, err)
+	}
+	lista, err := d.ListarPlanejamentos(ctx, projID, 0)
+	if err != nil || len(lista) != 1 || lista[0].DemandasCriadas != 2 {
+		t.Fatalf("demandas_criadas no Listar = %+v (%v)", lista, err)
+	}
+
+	// Excluir o planejamento leva os vínculos (cascade); a demanda sobrevive.
+	if err := d.ExcluirPlanejamento(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.ObterDemanda(ctx, dem1.ID); err != nil {
+		t.Fatalf("demanda deveria sobreviver à exclusão do planejamento: %v", err)
 	}
 }
 
