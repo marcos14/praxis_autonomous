@@ -66,6 +66,38 @@ var nomeArtefatoValido = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*\.html$`
 // raiz da pasta do planejamento).
 func NomeArtefatoValido(nome string) bool { return nomeArtefatoValido.MatchString(nome) }
 
+// DirReferencias é a subpasta da pasta do planejamento onde ficam os documentos
+// de referência anexados pelo usuário (ADRs de outros projetos, transcrições de
+// reunião, rascunhos…). O harness a lê como insumo; a ingestão de artefatos a
+// ignora (só varre a raiz).
+const DirReferencias = "referencias"
+
+// extensoesReferencia são os tipos aceitos como referência — documentos que os
+// harnesses sabem ler (texto, pdf e imagem).
+var extensoesReferencia = map[string]bool{
+	".md": true, ".txt": true, ".csv": true, ".json": true, ".pdf": true,
+	".html": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
+}
+
+// NomeReferenciaValido informa se nome é um arquivo de referência aceitável:
+// nome simples (sem caminho, sem ponto inicial, sem caracteres de controle) com
+// extensão da lista de tipos legíveis. Aceita acentos e espaços — nomes reais
+// de arquivos de usuário ("Transcrição da reunião.md").
+func NomeReferenciaValido(nome string) bool {
+	if nome == "" || len(nome) > 120 || strings.HasPrefix(nome, ".") {
+		return false
+	}
+	if nome != filepath.Base(nome) || strings.ContainsAny(nome, `/\:*?"<>|`) || strings.Contains(nome, "..") {
+		return false
+	}
+	for _, r := range nome {
+		if r < 0x20 {
+			return false
+		}
+	}
+	return extensoesReferencia[strings.ToLower(filepath.Ext(nome))]
+}
+
 // PerguntaEstrategista é uma pergunta de clarificação na saída do estrategista.
 type PerguntaEstrategista struct {
 	Pergunta string `json:"pergunta"`
@@ -236,6 +268,7 @@ func (e *Estrategista) rodar(ctx context.Context, plan db.Planejamento, historic
 		"HISTORICO":      historico,
 		"FOCO":           fragmentoFoco(plan.Foco),
 		"NIVEL_VISUAL":   fragmentoNivelVisual(plan.NivelVisual),
+		"REFERENCIAS":    e.listarReferencias(),
 	})
 	protegidos := append(append([]string{}, e.Repos...), e.DirsExtras...)
 	res, runErr := m.Rodar(motor.OpcoesRun{
@@ -347,6 +380,31 @@ func (e *Estrategista) ingerirArtefatos(ctx context.Context, planejamentoID int6
 		return nil, err
 	}
 	return artefatos, nil
+}
+
+// listarReferencias monta a listagem de referências anexadas para o marcador
+// {REFERENCIAS} do prompt — o harness só lê o que a listagem apontar como
+// existente (a pasta pode nem existir quando nada foi anexado).
+func (e *Estrategista) listarReferencias() string {
+	entradas, err := os.ReadDir(filepath.Join(e.DirTrabalho, DirReferencias))
+	if err != nil {
+		return "(nenhuma referência anexada)"
+	}
+	var linhas []string
+	for _, ent := range entradas {
+		if ent.IsDir() || !NomeReferenciaValido(ent.Name()) {
+			continue
+		}
+		tamanho := int64(0)
+		if info, err := ent.Info(); err == nil {
+			tamanho = info.Size()
+		}
+		linhas = append(linhas, fmt.Sprintf("- %s/%s (%d bytes)", DirReferencias, ent.Name(), tamanho))
+	}
+	if len(linhas) == 0 {
+		return "(nenhuma referência anexada)"
+	}
+	return strings.Join(linhas, "\n")
 }
 
 // montarFala converte a saída estruturada na fala persistida do estrategista.

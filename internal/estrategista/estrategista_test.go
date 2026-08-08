@@ -70,7 +70,7 @@ func servicoDeTeste(t *testing.T, d *db.DB, fn func(op motor.OpcoesRun) (*motor.
 			return stubMotor{nome: "claude", fn: fn}, nil
 		},
 		Prompt: func(_ context.Context, nome string) (string, error) {
-			return "estrategista: {CONTEXTO_REPOS} ### {HISTORICO} ### {FOCO} ### {NIVEL_VISUAL}", nil
+			return "estrategista: {CONTEXTO_REPOS} ### {HISTORICO} ### {FOCO} ### {NIVEL_VISUAL} ### {REFERENCIAS}", nil
 		},
 		StatPasta:     func(string) error { return nil },
 		StatusRepo:    func(string) (string, error) { return "", nil },
@@ -335,6 +335,39 @@ func TestErroDoMotorCarimbaFalhouComFalaDeSistema(t *testing.T) {
 	ultima := msgs[len(msgs)-1]
 	if ultima.Papel != db.PapelPlanejamentoSistema {
 		t.Fatalf("última fala = %+v, quero fala de sistema explicando a falha", ultima)
+	}
+}
+
+func TestReferenciasAnexadasEntramNoPrompt(t *testing.T) {
+	d := abrirDB(t)
+	ctx := context.Background()
+	proj := criarProjetoComOverview(t, d, "ERP7", "")
+	plan := criarPlanejamentoProjeto(t, d, proj, "prd", "documento", "use a ata anexada")
+
+	var opRecebida motor.OpcoesRun
+	s := servicoDeTeste(t, d, func(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		opRecebida = op
+		return resultadoJSON(t, SaidaEstrategista{Tipo: TurnoResposta, RespostaMD: "ok."})
+	})
+
+	// Usuário anexou uma referência antes do turno (a API grava nesta subpasta).
+	refs := filepath.Join(s.Pasta(plan.ID), DirReferencias)
+	if err := os.MkdirAll(refs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(refs, "ata-reuniao.md"), []byte("## Ata"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Responder(ctx, plan.ID); err != nil {
+		t.Fatalf("Responder: %v", err)
+	}
+	if !strings.Contains(opRecebida.Prompt, "referencias/ata-reuniao.md") {
+		t.Fatalf("prompt sem a referência anexada:\n%s", opRecebida.Prompt)
+	}
+	// A referência (subpasta) NÃO vira artefato.
+	if _, err := d.ObterArtefatoPlanejamento(ctx, plan.ID, "ata-reuniao.md"); err == nil {
+		t.Fatal("referência não deveria ser indexada como artefato")
 	}
 }
 

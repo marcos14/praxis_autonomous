@@ -8,6 +8,7 @@
 
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
+import { abrirCard, setProjetos } from "./demandas.js";
 
 let planejamentos = [];
 let selecionadoID = null;
@@ -74,6 +75,35 @@ async function recarregarLista() {
   }
 }
 
+// abrirDemandaModal abre o card da demanda por cima da tela atual (o modal de
+// demandas é independente da view; só precisa dos projetos carregados).
+async function abrirDemandaModal(id) {
+  try {
+    setProjetos((await api.listarProjetos()) || []);
+  } catch {
+    setProjetos([]);
+  }
+  await abrirCard(id);
+}
+
+// baixarTexto baixa um conteúdo textual como arquivo na máquina do usuário.
+function baixarTexto(nome, conteudo) {
+  const blob = new Blob([conteudo], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { href: url });
+  a.download = nome;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// baixarURL navega para uma URL que responde com Content-Disposition:
+// attachment — o navegador baixa sem sair da página.
+function baixarURL(url) {
+  const a = el("a", { href: url });
+  a.download = "";
+  a.click();
+}
+
 function pillStatusPlanejamento(status) {
   const mapa = {
     ocioso: ["dot-good", "pronto"],
@@ -135,18 +165,47 @@ async function renderNovo() {
     rows: 5,
     placeholder: "Descreva a necessidade. Ex.: \"Precisamos de um portal de autoatendimento para segunda via de boletos\", \"Definir a arquitetura de integração com o novo gateway de pagamentos\".",
   });
+
+  // Referências opcionais anexadas já na criação (transcrição de reunião, ADR
+  // de outro projeto…): o planejamento nasce sem disparar o turno, os arquivos
+  // sobem e só então o estrategista roda — assim o 1º turno já as enxerga.
+  const inputAnexos = el("input", {
+    type: "file", multiple: true, hidden: true,
+    accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
+  });
+  const listaAnexos = el("span", { class: "hint", text: "nenhum arquivo selecionado" });
+  const btnAnexos = el("button", { class: "btn ghost sm", text: "📎 Selecionar arquivos" });
+  btnAnexos.onclick = (ev) => { ev.preventDefault(); inputAnexos.click(); };
+  inputAnexos.onchange = () => {
+    const nomes = [...inputAnexos.files].map((f) => f.name);
+    listaAnexos.textContent = nomes.length ? nomes.join(" · ") : "nenhum arquivo selecionado";
+  };
+
   const btn = el("button", { class: "btn", text: "Iniciar planejamento" });
   btn.onclick = async () => {
     const mensagem = ed.ta.value.trim();
     if (!mensagem) { bannerErro("Descreva a necessidade."); return; }
     bannerErro("");
     btn.disabled = true;
+    const anexos = [...inputAnexos.files];
     try {
       const [tipo, id] = sel.value.split(":");
       const corpo = { mensagem, foco: selFoco.value, nivel_visual: selNivel.value };
       if (tipo === "g") corpo.group_id = Number(id);
       else corpo.project_id = Number(id);
+      if (anexos.length > 0) corpo.anexos_pendentes = true;
+
       const criado = await api.criarPlanejamento(corpo);
+      if (anexos.length > 0) {
+        for (const arq of anexos) {
+          try {
+            await api.enviarReferenciaPlanejamento(criado.id, arq);
+          } catch (e) {
+            bannerErro(`Falha ao anexar ${arq.name}: ` + e.message + " — o planejamento segue sem este arquivo.");
+          }
+        }
+        await api.dispararTurnoPlanejamento(criado.id);
+      }
       toast("Planejamento iniciado — o estrategista está trabalhando.", "ok");
       selecionadoID = criado.id;
       await recarregarLista();
@@ -166,6 +225,9 @@ async function renderNovo() {
     ),
     el("div", {}, el("label", {}, "A necessidade"), ed.no,
       el("div", { class: "hint", text: "Não precisa estar redondo: o estrategista lê o código e faz perguntas antes de fechar o documento. Você pode mudar o foco e o nível visual a qualquer momento." })),
+    el("div", {}, el("label", {}, "Referências ", el("span", { class: "opt", text: "(opcional)" })),
+      el("div", { style: "display:flex;align-items:center;gap:10px" }, btnAnexos, inputAnexos, listaAnexos),
+      el("div", { class: "hint", text: "Anexe o material que o estrategista deve tomar como base: transcrição da reunião, ADR de outro projeto, rascunhos… (md, txt, csv, json, pdf, html ou imagem · até 15 MB cada)" })),
     el("div", { class: "acoes" }, btn),
   ));
   ed.ta.focus();
@@ -232,26 +294,33 @@ async function abrirPlanejamento(id, abaInicial) {
   };
   selFoco.onchange = aoAjustar;
   selNivel.onchange = aoAjustar;
-  const prefs = el("div", { class: "filtros", style: "margin-bottom:10px" },
-    el("span", { class: "hint", text: "Produzir:" }), selFoco,
-    el("span", { class: "hint", text: "Visual:" }), selNivel,
+  const prefs = el("div", { style: "margin-bottom:10px" },
+    el("div", { class: "filtros" },
+      el("span", { class: "hint", text: "Produzir:" }), selFoco,
+      el("span", { class: "hint", text: "Visual:" }), selNivel,
+    ),
+    el("div", { class: "hint", style: "margin-top:4px",
+      text: "Trabalho em etapas: o PO pode fechar o PRD e depois o arquiteto muda \"Produzir\" para PRD + ADRs e continua nesta mesma conversa — os documentos ficam." }),
   );
 
-  // Abas: Conversa | Documentos | Artefatos.
+  // Abas: Conversa | Documentos | Artefatos | Referências.
   const corpoConversa = el("div", { class: "tab-body active" });
   const corpoDocs = el("div", { class: "tab-body" });
   const corpoArts = el("div", { class: "tab-body" });
+  const corpoRefs = el("div", { class: "tab-body" });
   const abas = [
     ["Conversa", corpoConversa, null],
     ["Documentos", corpoDocs, () => renderDocumentos(corpoDocs, plan)],
     ["Artefatos", corpoArts, () => renderArtefatos(corpoArts, plan)],
+    ["Referências", corpoRefs, () => renderReferencias(corpoRefs, plan)],
   ];
+  const corpos = [corpoConversa, corpoDocs, corpoArts, corpoRefs];
   const barra = el("div", { class: "tabs" });
   const botoesAba = abas.map(([nome, corpo, ativar], i) => {
     const b = el("button", { class: "tab" + (i === 0 ? " active" : ""), text: nome });
     b.onclick = async () => {
       barra.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-      [corpoConversa, corpoDocs, corpoArts].forEach((c) => c.classList.remove("active"));
+      corpos.forEach((c) => c.classList.remove("active"));
       b.classList.add("active");
       corpo.classList.add("active");
       if (ativar) await ativar();
@@ -263,13 +332,42 @@ async function abrirPlanejamento(id, abaInicial) {
   // --- aba Conversa ---
   const box = el("div", { class: "chat" });
   const progresso = el("div", { class: "hint", hidden: true });
+  const acoesTurno = el("div", { style: "margin-top:8px", hidden: true });
   const inp = el("textarea", { rows: "1",
     placeholder: "Responder ao estrategista ou pedir ajustes no documento… (Shift+Enter quebra linha)" });
   const ajustarAltura = autoCrescer(inp);
   const btn = el("button", { class: "btn", text: "Enviar" });
-  corpoConversa.append(box, progresso, el("div", { class: "chat-input" }, inp, btn));
 
-  painel.append(cab, sub, prefs, barra, corpoConversa, corpoDocs, corpoArts);
+  // 📎 anexa referências direto da conversa (fica ativo mesmo com turno em voo:
+  // o anexo vale a partir do turno seguinte).
+  const inputClip = el("input", {
+    type: "file", multiple: true, hidden: true,
+    accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
+  });
+  const btnClip = el("button", { class: "btn ghost", text: "📎", title: "Anexar referências (transcrições, ADRs, rascunhos…)" });
+  btnClip.onclick = () => inputClip.click();
+  inputClip.onchange = async () => {
+    const arquivos = [...inputClip.files];
+    if (arquivos.length === 0) return;
+    let enviados = 0;
+    for (const arq of arquivos) {
+      try {
+        await api.enviarReferenciaPlanejamento(plan.id, arq);
+        enviados++;
+      } catch (e) {
+        bannerErro(`Falha ao anexar ${arq.name}: ` + e.message);
+      }
+    }
+    inputClip.value = "";
+    if (enviados > 0) {
+      toast(`${enviados} referência(s) anexada(s) — cite-as na sua mensagem para orientar o estrategista.`, "ok");
+    }
+  };
+
+  corpoConversa.append(box, progresso, acoesTurno,
+    el("div", { class: "chat-input" }, btnClip, inputClip, inp, btn));
+
+  painel.append(cab, sub, prefs, barra, corpoConversa, corpoDocs, corpoArts, corpoRefs);
 
   async function recarregarChat() {
     let msgs;
@@ -375,8 +473,24 @@ async function abrirPlanejamento(id, abaInicial) {
     const i = abas.findIndex(([nome]) => nome === abaInicial);
     if (i > 0) botoesAba[i].click();
   }
-  if (plan.status === "falhou" && plan.erro) {
-    bannerErro("Último turno falhou: " + plan.erro + " — você pode reenviar a mensagem.");
+  if (plan.status === "falhou") {
+    if (plan.erro) {
+      bannerErro("Último turno falhou: " + plan.erro);
+    }
+    const btnRetry = el("button", { class: "btn sm", text: "↻ Tentar novamente" });
+    btnRetry.onclick = async () => {
+      btnRetry.disabled = true;
+      try {
+        await api.dispararTurnoPlanejamento(plan.id);
+        await abrirPlanejamento(plan.id); // reabre já em modo "pensando"
+      } catch (e) {
+        bannerErro("Falha ao reprocessar: " + e.message);
+        btnRetry.disabled = false;
+      }
+    };
+    acoesTurno.hidden = false;
+    acoesTurno.append(btnRetry,
+      el("span", { class: "hint", style: "margin-left:8px", text: "Reprocessa a conversa atual, sem precisar reenviar a mensagem." }));
   }
 }
 
@@ -385,8 +499,10 @@ async function abrirPlanejamento(id, abaInicial) {
 // Quando a demanda já existe, vira um marcador com o número dela.
 function botaoCriarDemanda(plan) {
   if (plan.demand_id) {
-    return el("span", { class: "pill", title: "Acompanhe na tela Demandas" },
-      el("span", { class: "dot dot-done" }), `Demanda #${plan.demand_id}`);
+    return el("button", {
+      class: "btn ghost sm", title: "Abrir o card da demanda",
+      onclick: () => abrirDemandaModal(plan.demand_id),
+    }, el("span", { class: "dot dot-done", style: "margin-right:6px" }), `Demanda #${plan.demand_id} ⧉`);
   }
   const b = el("button", { class: "btn good sm", text: "Criar demanda" });
   b.onclick = async () => {
@@ -415,6 +531,7 @@ function botaoCriarDemanda(plan) {
       const dem = await api.criarDemandaDePlanejamento(plan.id, corpo);
       toast(`Demanda #${dem.id} criada — o analista já está lendo o PRD.`, "ok");
       await abrirPlanejamento(plan.id);
+      await abrirDemandaModal(dem.id); // abre o card da demanda por cima
     } catch (e) {
       bannerErro("Falha ao criar demanda: " + e.message);
       b.disabled = false;
@@ -447,24 +564,32 @@ async function renderDocumentos(corpo, plan) {
 // cartaoDocumento renderiza um documento com seletor de revisão (a mais recente
 // primeiro) e o markdown renderizado.
 function cartaoDocumento(plan, doc) {
+  let conteudoAtual = doc.conteudo || "";
+  let revisaoAtual = doc.revisao;
   const selRev = el("select", {});
   for (let r = doc.revisao; r >= 1; r--) {
     selRev.append(el("option", { value: String(r) }, r === doc.revisao ? `revisão ${r} (atual)` : `revisão ${r}`));
   }
-  const corpoMD = el("div", { class: "md", style: "margin-top:8px" }, ...renderMarkdown(doc.conteudo || ""));
+  const corpoMD = el("div", { class: "md", style: "margin-top:8px" }, ...renderMarkdown(conteudoAtual));
   selRev.onchange = async () => {
     try {
       const d = await api.obterDocumentoPlanejamento(plan.id, doc.arquivo, Number(selRev.value));
-      limpar(corpoMD).append(...renderMarkdown(d.conteudo || ""));
+      conteudoAtual = d.conteudo || "";
+      revisaoAtual = d.revisao;
+      limpar(corpoMD).append(...renderMarkdown(conteudoAtual));
     } catch (e) {
       bannerErro("Falha ao carregar a revisão: " + e.message);
     }
   };
+  const btnBaixar = el("button", {
+    class: "btn ghost sm", text: "Baixar .md", title: "Baixa a revisão exibida",
+    onclick: () => baixarTexto(doc.arquivo.replace(/\.md$/, "") + `-rev${revisaoAtual}.md`, conteudoAtual),
+  });
   return el("div", { class: "panel", style: "margin-bottom:12px" },
     el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px" },
       el("h3", { style: "margin:0" }, NOMES_DOCS[doc.arquivo] || doc.arquivo,
         el("small", { text: " " + doc.arquivo })),
-      selRev,
+      el("div", { style: "display:flex;gap:6px;align-items:center" }, selRev, btnBaixar),
     ),
     corpoMD,
   );
@@ -490,10 +615,16 @@ async function renderArtefatos(corpo, plan) {
     corpo.append(el("div", { class: "list-item", style: "cursor:default" },
       el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px" },
         el("b", { text: a.titulo || a.arquivo }),
-        el("button", {
-          class: "btn sm", text: "Abrir ⧉",
-          onclick: () => window.open(api.urlArtefatoPlanejamento(plan.id, a.arquivo), "_blank", "noopener"),
-        }),
+        el("div", { style: "display:flex;gap:6px" },
+          el("button", {
+            class: "btn ghost sm", text: "Baixar",
+            onclick: () => baixarURL(api.urlDownloadArtefatoPlanejamento(plan.id, a.arquivo)),
+          }),
+          el("button", {
+            class: "btn sm", text: "Abrir ⧉",
+            onclick: () => window.open(api.urlArtefatoPlanejamento(plan.id, a.arquivo), "_blank", "noopener"),
+          }),
+        ),
       ),
       a.descricao ? el("div", { class: "path", text: a.descricao }) : null,
       el("div", { class: "meta" },
@@ -504,6 +635,87 @@ async function renderArtefatos(corpo, plan) {
     ));
   }
   corpo.append(el("p", { class: "hint", text: "Os artefatos abrem em nova aba, isolados numa sandbox — eles não têm acesso à sua sessão do Praxis." }));
+}
+
+// ---------- aba Referências ----------
+
+// renderReferencias lista os documentos de apoio anexados (ADRs de outros
+// projetos, transcrições de reunião…) e permite anexar novos — o próximo turno
+// do estrategista já os enxerga.
+async function renderReferencias(corpo, plan) {
+  limpar(corpo).append(el("p", { class: "vazio", text: "Carregando referências…" }));
+  let refs;
+  try {
+    refs = (await api.listarReferenciasPlanejamento(plan.id)) || [];
+  } catch (e) {
+    limpar(corpo).append(el("p", { class: "vazio", text: "Falha ao carregar referências: " + e.message }));
+    return;
+  }
+  limpar(corpo);
+
+  const inputArquivos = el("input", {
+    type: "file", multiple: true, hidden: true,
+    accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
+  });
+  const btnAnexar = el("button", { class: "btn", text: "+ Anexar arquivos" });
+  btnAnexar.onclick = () => inputArquivos.click();
+  inputArquivos.onchange = async () => {
+    const arquivos = [...inputArquivos.files];
+    if (arquivos.length === 0) return;
+    btnAnexar.disabled = true;
+    let enviados = 0;
+    for (const arq of arquivos) {
+      try {
+        await api.enviarReferenciaPlanejamento(plan.id, arq);
+        enviados++;
+      } catch (e) {
+        bannerErro(`Falha ao anexar ${arq.name}: ` + e.message);
+      }
+    }
+    if (enviados > 0) {
+      toast(`${enviados} referência(s) anexada(s) — o estrategista as verá no próximo turno.`, "ok");
+    }
+    await renderReferencias(corpo, plan);
+  };
+  corpo.append(el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:12px" },
+    btnAnexar, inputArquivos,
+    el("span", { class: "hint", text: "md, txt, csv, json, pdf, html ou imagem · até 15 MB cada" }),
+  ));
+
+  if (refs.length === 0) {
+    corpo.append(el("p", { class: "vazio", text: "Nenhuma referência ainda. Anexe uma ADR de outro projeto, a transcrição de uma reunião ou qualquer material que o estrategista deva tomar como base." }));
+    return;
+  }
+  for (const ref of refs) {
+    corpo.append(el("div", { class: "list-item", style: "cursor:default" },
+      el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px" },
+        el("b", { text: ref.arquivo }),
+        el("div", { style: "display:flex;gap:6px" },
+          el("button", {
+            class: "btn ghost sm", text: "Baixar",
+            onclick: () => baixarURL(api.urlReferenciaPlanejamento(plan.id, ref.arquivo)),
+          }),
+          el("button", {
+            class: "btn ghost sm", text: "Excluir",
+            onclick: async () => {
+              if (!confirm(`Excluir a referência ${ref.arquivo}?`)) return;
+              try {
+                await api.excluirReferenciaPlanejamento(plan.id, ref.arquivo);
+                toast("Referência excluída.", "ok");
+                await renderReferencias(corpo, plan);
+              } catch (e) {
+                bannerErro("Falha ao excluir: " + e.message);
+              }
+            },
+          }),
+        ),
+      ),
+      el("div", { class: "meta" },
+        el("span", { class: "pill", text: formatarTamanho(ref.tamanho) }),
+      ),
+    ));
+  }
+  corpo.append(el("p", { class: "hint", text: "As referências ficam na pasta do planejamento como insumo somente leitura: o estrategista as consulta, mas nunca as altera." }));
 }
 
 function formatarTamanho(bytes) {
@@ -518,13 +730,15 @@ function formatarTamanho(bytes) {
 // bolha renderiza uma fala. No meta do estrategista vêm os documentos e
 // artefatos tocados no turno — viram atalhos sob a mensagem.
 function bolha(m, plan) {
-  const [rotulo, classe] = PAPEIS[m.papel] || [m.papel, "sys"];
+  let [rotulo, classe] = PAPEIS[m.papel] || [m.papel, "sys"];
   if (classe === "sys") {
     return el("div", { class: "msg sys", text: m.conteudo || rotulo });
   }
   const extras = [];
   try {
     const meta = typeof m.meta === "string" ? JSON.parse(m.meta) : m.meta;
+    // Chat colaborativo: a fala do usuário mostra QUEM falou (PO, arquiteto…).
+    if (m.papel === "user" && meta && meta.autor) rotulo = meta.autor;
     if (meta && meta.tipo === "perguntas") {
       extras.push(el("div", { class: "hint", text: "Responda no campo abaixo para o estrategista continuar." }));
     }

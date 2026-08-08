@@ -17,13 +17,38 @@ A tela **Planejamentos** é o espaço de PMs, POs e arquitetos: você descreve u
 2. Descreva a necessidade do seu jeito. Se algo estiver ambíguo, o estrategista faz **perguntas de decisão** antes de escrever — responda no chat.
 3. A cada turno, os documentos aparecem na aba **Documentos** (com histórico de revisões) e os artefatos na aba **Artefatos** (abrem em nova aba). Peça mudanças no chat até o documento ficar redondo.
 4. Você pode **mudar o foco e o nível visual no meio da conversa** — o próximo turno já obedece.
-5. Quando o PRD estiver pronto, clique **Criar demanda**: o documento vira a primeira mensagem de uma demanda nova (com os ADRs anexados, quando houver) e o analista do intake assume dali. O planejamento fica vinculado à demanda criada.
+5. Quando o PRD estiver pronto, clique **Criar demanda**: o documento vira a primeira mensagem de uma demanda nova (com os ADRs anexados, quando houver) e o analista do intake assume dali. O card da demanda abre na hora, e o planejamento fica vinculado a ela — o marcador *Demanda #N* no topo reabre o card quando quiser.
+
+## Trabalhando em etapas (Produto ↔ Arquitetura)
+
+O planejamento foi desenhado para ser **colaborativo e por etapas** — não é preciso decidir tudo na criação:
+
+1. **O PO começa** com foco **PRD** e lapida o documento com o estrategista até fechar a visão de negócio.
+2. **O arquiteto continua no MESMO planejamento**: muda o campo *Produzir* para **PRD + ADRs** (ou só ADRs) e manda os pontos dele no chat. O estrategista mantém o `prd.md` intacto, passa a produzir o `adrs.md` — e mantém os dois consistentes (se uma decisão arquitetural contradisser o PRD, ele aponta).
+3. Cada fala do chat mostra **quem falou** (o nome do usuário logado), então a conversa registra a discussão inteira: o que veio de produto, o que veio de arquitetura.
+4. Qualquer um dos dois (com a permissão `demandas.criar`) clica **Criar demanda** quando o conjunto estiver pronto — o PRD vai com os ADRs anexados.
+
+A ordem inversa também funciona (arquiteto primeiro, produto depois), e nada impede um planejamento só de ADRs do início ao fim.
+
+## Referências (anexar documentos de apoio)
+
+Você anexa o material que o estrategista deve tomar como base — uma **ADR de outro projeto** para reaproveitar como modelo, a **transcrição de uma reunião** que origina o PRD, rascunhos, planilhas de requisitos — em três lugares:
+
+- **na criação** (campo *Referências* do formulário Novo planejamento): o primeiro turno já parte delas — o Praxis segura o estrategista até os arquivos subirem;
+- **no clipe 📎** ao lado do campo de mensagem, sem sair da conversa;
+- **na aba Referências** do planejamento aberto, onde também dá para baixar e excluir.
+
+Aceita `md`, `txt`, `csv`, `json`, `pdf`, `html` e imagens (até 15 MB cada).
+
+- Cada anexo (e remoção) vira uma fala de sistema no chat, e o próximo turno do estrategista recebe a lista — cite no chat o que quer que ele faça com cada uma ("use a ADR-007 anexada como modelo de formato").
+- As referências são **insumo somente leitura**: o estrategista as consulta, mas nunca as altera. Elas ficam na pasta do planejamento (subpasta `referencias/`) e podem ser baixadas de volta ou excluídas a qualquer momento.
 
 ## Documentos e artefatos
 
 - Os `.md` são a **fonte da verdade** e ficam versionados no banco — cada turno que altera um documento grava uma revisão nova, e você pode reler qualquer revisão antiga.
 - Os artefatos `.html` são camada de apresentação, sempre regenerados a partir dos documentos. São **arquivos autocontidos** (funcionam offline, sem CDN) gravados em `PRAXIS_HOME/planejamentos/p<id>/`.
 - Ao abrir um artefato, ele roda numa **sandbox do navegador**: o JavaScript do artefato não tem acesso à sua sessão do Praxis nem à API — é só apresentação.
+- Tudo pode ser **baixado para a sua máquina**: os documentos pelo botão *Baixar .md* (na revisão exibida) e os artefatos pelo botão *Baixar* — como são autocontidos, o HTML baixado funciona aberto direto do disco, pronto para anexar num e-mail ou apresentar.
 
 ## Motor e modelo
 

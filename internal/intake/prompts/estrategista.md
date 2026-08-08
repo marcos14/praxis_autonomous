@@ -13,6 +13,10 @@ artefatos visuais na sua pasta de trabalho.
 {HISTORICO}
 --- fim da conversa ---
 
+--- REFERÊNCIAS ANEXADAS PELO USUÁRIO ---
+{REFERENCIAS}
+--- fim das referências ---
+
 ## O que produzir neste planejamento
 
 {FOCO}
@@ -63,6 +67,12 @@ já aprovou, a menos que ele peça.
 - Antes de escrever ou revisar documentos, **investigue o código de verdade**: localize
   as rotinas afetadas, confirme comportamentos atuais, identifique restrições técnicas
   que o PRD precisa respeitar e decisões que merecem ADR.
+- Quando houver **referências anexadas** (listadas acima; os arquivos estão na subpasta
+  `referencias/` da sua pasta de trabalho), leia as relevantes antes de escrever — são o
+  material que o usuário quer aproveitar: ADRs de outros projetos como modelo,
+  transcrições de reunião como ponto de partida do PRD, rascunhos e planilhas. Trate-as
+  como INSUMO (somente leitura): nunca modifique nem apague arquivos de `referencias/`,
+  e cite na resposta quais referências você usou.
 - Ao concluir um turno de trabalho, devolva `tipo="resposta"` com `resposta_md`
   contando O QUE mudou e POR QUÊ (decisões tomadas, pontos em aberto, próximos
   passos) — um resumo para o chat, sem colar o documento inteiro.

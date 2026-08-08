@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -316,5 +318,249 @@ func TestCriarDemandaDePlanejamentoDeGrupoExigeMembro(t *testing.T) {
 		map[string]any{"project_id": membroID})
 	if rec.Code != 201 {
 		t.Fatalf("membro do grupo = %d (%s), quero 201", rec.Code, rec.Body.String())
+	}
+}
+
+// fazerUpload envia um arquivo multipart (campo "arquivo") para a rota.
+func fazerUpload(t *testing.T, srv *Servidor, caminho, nomeArquivo string, conteudo []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("arquivo", nomeArquivo)
+	if err != nil {
+		t.Fatalf("montar multipart: %v", err)
+	}
+	if _, err := fw.Write(conteudo); err != nil {
+		t.Fatalf("escrever multipart: %v", err)
+	}
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", caminho, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestReferenciasDoPlanejamento(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	fake := &estrategistaFake{raiz: t.TempDir()}
+	srv := Novo(Opcoes{Banco: banco, Planejamentos: fake})
+	projID := criarProjetoTeste(t, srv)
+
+	plan, _, err := banco.CriarPlanejamentoComChat(context.Background(),
+		db.Planejamento{ProjectID: &projID}, db.MensagemPlanejamento{Conteudo: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("/api/v1/planejamentos/%d/referencias", plan.ID)
+
+	// Upload válido (nome com acento e espaço, como arquivos reais).
+	rec := fazerUpload(t, srv, base, "Transcrição da reunião.md", []byte("## Ata\n\nDecidimos X."))
+	if rec.Code != 201 {
+		t.Fatalf("upload = %d (%s), quero 201", rec.Code, rec.Body.String())
+	}
+	// Extensão proibida é recusada.
+	rec = fazerUpload(t, srv, base, "virus.exe", []byte("x"))
+	if rec.Code != 400 {
+		t.Fatalf("extensão proibida = %d, quero 400", rec.Code)
+	}
+	// Nome com traversal é recusado.
+	rec = fazerUpload(t, srv, base, "..\\..\\evil.md", []byte("x"))
+	if rec.Code == 201 {
+		// filepath.Base neutraliza o caminho; se entrou, tem de ter virado só o nome.
+		if _, err := os.Stat(filepath.Join(fake.Pasta(plan.ID), "referencias", "evil.md")); err != nil {
+			t.Fatalf("upload com traversal não foi neutralizado (%d)", rec.Code)
+		}
+	}
+
+	// O anexo vira fala de sistema (o estrategista fica sabendo).
+	msgs, _ := banco.ListarMensagensPlanejamento(context.Background(), plan.ID)
+	temFala := false
+	for _, m := range msgs {
+		if m.Papel == db.PapelPlanejamentoSistema && strings.Contains(m.Conteudo, "Transcrição da reunião.md") {
+			temFala = true
+		}
+	}
+	if !temFala {
+		t.Fatalf("anexo não virou fala de sistema: %+v", msgs)
+	}
+
+	// Listagem devolve o arquivo com tamanho.
+	rec = fazerReq(t, srv, "GET", base, nil)
+	if rec.Code != 200 {
+		t.Fatalf("listar = %d", rec.Code)
+	}
+	var refs []respReferencia
+	_ = json.Unmarshal(rec.Body.Bytes(), &refs)
+	achou := false
+	for _, ref := range refs {
+		if ref.Arquivo == "Transcrição da reunião.md" && ref.Tamanho > 0 {
+			achou = true
+		}
+	}
+	if !achou {
+		t.Fatalf("listagem = %+v, quero a transcrição com tamanho", refs)
+	}
+
+	// Download sempre como attachment (referência nunca é exibida no domínio).
+	rec = fazerReq(t, srv, "GET", base+"/"+"Transcri%C3%A7%C3%A3o%20da%20reuni%C3%A3o.md", nil)
+	if rec.Code != 200 {
+		t.Fatalf("download = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment") {
+		t.Fatalf("Content-Disposition = %q, quero attachment", cd)
+	}
+	if !strings.Contains(rec.Body.String(), "Decidimos X.") {
+		t.Fatalf("conteúdo divergente: %q", rec.Body.String())
+	}
+
+	// Exclusão remove o arquivo e registra fala.
+	rec = fazerReq(t, srv, "DELETE", base+"/"+"Transcri%C3%A7%C3%A3o%20da%20reuni%C3%A3o.md", nil)
+	if rec.Code != 204 {
+		t.Fatalf("excluir = %d, quero 204", rec.Code)
+	}
+	rec = fazerReq(t, srv, "GET", base+"/"+"Transcri%C3%A7%C3%A3o%20da%20reuni%C3%A3o.md", nil)
+	if rec.Code != 404 {
+		t.Fatalf("baixar excluída = %d, quero 404", rec.Code)
+	}
+}
+
+func TestCriacaoComAnexosPendentesSeguraOTurno(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	fake := &estrategistaFake{raiz: t.TempDir()}
+	srv := Novo(Opcoes{Banco: banco, Planejamentos: fake})
+	projID := criarProjetoTeste(t, srv)
+
+	// Com anexos pendentes: nasce ocioso e NÃO dispara o estrategista.
+	rec := fazerReq(t, srv, "POST", "/api/v1/planejamentos", map[string]any{
+		"project_id": projID, "mensagem": "use a ata anexada", "anexos_pendentes": true,
+	})
+	if rec.Code != 201 {
+		t.Fatalf("criar = %d (%s)", rec.Code, rec.Body.String())
+	}
+	plan := decodPlanejamento(t, rec)
+	if plan.Status != db.StatusPlanejamentoOcioso {
+		t.Fatalf("status = %q, quero ocioso (turno segurado)", plan.Status)
+	}
+	if len(fake.disparos) != 0 {
+		t.Fatalf("disparos = %v, quero nenhum antes dos anexos", fake.disparos)
+	}
+
+	// Sobe a referência e dispara o turno explicitamente.
+	rec = fazerUpload(t, srv, fmt.Sprintf("/api/v1/planejamentos/%d/referencias", plan.ID),
+		"ata.md", []byte("## Ata"))
+	if rec.Code != 201 {
+		t.Fatalf("upload = %d (%s)", rec.Code, rec.Body.String())
+	}
+	rec = fazerReq(t, srv, "POST", fmt.Sprintf("/api/v1/planejamentos/%d/turno", plan.ID), map[string]any{})
+	if rec.Code != 202 {
+		t.Fatalf("disparar turno = %d (%s), quero 202", rec.Code, rec.Body.String())
+	}
+	if len(fake.disparos) != 1 || fake.disparos[0] != plan.ID {
+		t.Fatalf("disparos = %v, quero o turno adiado", fake.disparos)
+	}
+	got, _ := banco.ObterPlanejamento(context.Background(), plan.ID)
+	if got.Status != db.StatusPlanejamentoPensando {
+		t.Fatalf("status pós-disparo = %q, quero pensando", got.Status)
+	}
+
+	// Turno em voo: novo disparo é recusado (tentar de novo só após o desfecho).
+	rec = fazerReq(t, srv, "POST", fmt.Sprintf("/api/v1/planejamentos/%d/turno", plan.ID), map[string]any{})
+	if rec.Code != 409 {
+		t.Fatalf("disparo com turno em voo = %d, quero 409", rec.Code)
+	}
+
+	// Após uma falha, o mesmo endpoint é o "tentar novamente" (limpa o erro).
+	got.Status = db.StatusPlanejamentoFalhou
+	got.Erro = "explodiu"
+	if _, err := banco.AtualizarPlanejamento(context.Background(), got); err != nil {
+		t.Fatal(err)
+	}
+	rec = fazerReq(t, srv, "POST", fmt.Sprintf("/api/v1/planejamentos/%d/turno", plan.ID), map[string]any{})
+	if rec.Code != 202 {
+		t.Fatalf("retry = %d, quero 202", rec.Code)
+	}
+	retry := decodPlanejamento(t, rec)
+	if retry.Status != db.StatusPlanejamentoPensando || retry.Erro != "" {
+		t.Fatalf("retry = %+v, quero pensando com erro limpo", retry)
+	}
+	if len(fake.disparos) != 2 {
+		t.Fatalf("disparos = %v, quero 2", fake.disparos)
+	}
+}
+
+func TestDownloadDeArtefatoComDisposition(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	fake := &estrategistaFake{raiz: t.TempDir()}
+	srv := Novo(Opcoes{Banco: banco, Planejamentos: fake})
+	projID := criarProjetoTeste(t, srv)
+
+	plan, _, err := banco.CriarPlanejamentoComChat(context.Background(),
+		db.Planejamento{ProjectID: &projID}, db.MensagemPlanejamento{Conteudo: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pasta := fake.Pasta(plan.ID)
+	if err := os.MkdirAll(pasta, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pasta, "apresentacao.html"), []byte("<p>x</p>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := banco.UpsertArtefatoPlanejamento(context.Background(), db.ArtefatoPlanejamento{
+		PlanejamentoID: plan.ID, Arquivo: "apresentacao.html", Hash: "h"}); err != nil {
+		t.Fatal(err)
+	}
+
+	url := fmt.Sprintf("/api/v1/planejamentos/%d/artefatos/apresentacao.html", plan.ID)
+	// Sem download: exibição (sem Content-Disposition), com a jaula CSP.
+	rec := fazerReq(t, srv, "GET", url, nil)
+	if rec.Code != 200 || rec.Header().Get("Content-Disposition") != "" {
+		t.Fatalf("exibição = %d disposition=%q", rec.Code, rec.Header().Get("Content-Disposition"))
+	}
+	// Com ?download=1: attachment (e a CSP continua — inofensiva no download).
+	rec = fazerReq(t, srv, "GET", url+"?download=1", nil)
+	if rec.Code != 200 {
+		t.Fatalf("download = %d", rec.Code)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment") {
+		t.Fatalf("Content-Disposition = %q, quero attachment", cd)
+	}
+}
+
+func TestFalasDoPlanejamentoCarregamAutor(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	fake := &estrategistaFake{raiz: t.TempDir()}
+	srv := Novo(Opcoes{Banco: banco, Planejamentos: fake})
+	token := setupAdmin(t, srv) // usuário "Root" logado — fim do modo bootstrap
+
+	rec := fazerReqToken(t, srv, "POST", "/api/v1/projects", token, map[string]any{
+		"nome": "Proj Autor", "pasta": repoGitTemp(t),
+	})
+	if rec.Code != 201 {
+		t.Fatalf("criar projeto: %d (%s)", rec.Code, rec.Body.String())
+	}
+	projID := decodProjeto(t, rec).ID
+
+	rec = fazerReqToken(t, srv, "POST", "/api/v1/planejamentos", token, map[string]any{
+		"project_id": projID, "mensagem": "primeira necessidade",
+	})
+	if rec.Code != 201 {
+		t.Fatalf("criar planejamento: %d (%s)", rec.Code, rec.Body.String())
+	}
+	plan := decodPlanejamento(t, rec)
+
+	msgs, err := banco.ListarMensagensPlanejamento(context.Background(), plan.ID)
+	if err != nil || len(msgs) == 0 {
+		t.Fatalf("mensagens = %v (%v)", msgs, err)
+	}
+	var meta struct {
+		Autor string `json:"autor"`
+	}
+	if err := json.Unmarshal(msgs[0].Meta, &meta); err != nil {
+		t.Fatalf("meta: %v", err)
+	}
+	if meta.Autor != "Root" {
+		t.Fatalf("autor = %q, quero Root (chat colaborativo mostra quem falou)", meta.Autor)
 	}
 }

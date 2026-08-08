@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,14 +21,18 @@ import (
 // reqNovoPlanejamento é o corpo de POST /planejamentos: o alvo (projeto OU
 // grupo, exclusivo), o foco documental (prd|adr|ambos), o nível visual
 // (documento|apresentacao|prototipo), um título opcional e a necessidade
-// inicial do usuário.
+// inicial do usuário. AnexosPendentes=true segura o primeiro turno: o
+// planejamento nasce ocioso para o cliente subir as referências e então
+// disparar via POST /planejamentos/{id}/turno — sem isso o estrategista rodaria
+// antes de os anexos chegarem.
 type reqNovoPlanejamento struct {
-	ProjectID   int64  `json:"project_id"`
-	GroupID     int64  `json:"group_id"`
-	Titulo      string `json:"titulo"`
-	Foco        string `json:"foco"`
-	NivelVisual string `json:"nivel_visual"`
-	Mensagem    string `json:"mensagem"`
+	ProjectID       int64  `json:"project_id"`
+	GroupID         int64  `json:"group_id"`
+	Titulo          string `json:"titulo"`
+	Foco            string `json:"foco"`
+	NivelVisual     string `json:"nivel_visual"`
+	Mensagem        string `json:"mensagem"`
+	AnexosPendentes bool   `json:"anexos_pendentes"`
 }
 
 // reqEditarPlanejamento é o corpo de PUT /planejamentos/{id}: campos ajustáveis
@@ -65,11 +71,16 @@ func (s *Servidor) registrarRotasPlanejamentos(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/planejamentos/{id}", s.handleExcluirPlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/chat", s.handleListarChatPlanejamento)
 	mux.HandleFunc("POST /api/v1/planejamentos/{id}/chat", s.handleChatPlanejamento)
+	mux.HandleFunc("POST /api/v1/planejamentos/{id}/turno", s.handleDispararTurnoPlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/progresso", s.handleProgressoPlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/documentos", s.handleListarDocumentosPlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/documentos/{arquivo}", s.handleObterDocumentoPlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/artefatos", s.handleListarArtefatosPlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/artefatos/{arquivo}", s.handleServirArtefatoPlanejamento)
+	mux.HandleFunc("GET /api/v1/planejamentos/{id}/referencias", s.handleListarReferenciasPlanejamento)
+	mux.HandleFunc("POST /api/v1/planejamentos/{id}/referencias", s.handleEnviarReferenciaPlanejamento)
+	mux.HandleFunc("GET /api/v1/planejamentos/{id}/referencias/{arquivo}", s.handleBaixarReferenciaPlanejamento)
+	mux.HandleFunc("DELETE /api/v1/planejamentos/{id}/referencias/{arquivo}", s.handleExcluirReferenciaPlanejamento)
 	mux.HandleFunc("POST /api/v1/planejamentos/{id}/criar-demanda", s.handleCriarDemandaDePlanejamento)
 }
 
@@ -123,9 +134,15 @@ func (s *Servidor) handleCriarPlanejamento(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	status := db.StatusPlanejamentoPensando
+	if req.AnexosPendentes {
+		// Nasce ocioso: o cliente ainda vai subir as referências e disparar o
+		// primeiro turno explicitamente (POST /turno).
+		status = db.StatusPlanejamentoOcioso
+	}
 	plan := db.Planejamento{
 		Titulo: strings.TrimSpace(req.Titulo), Foco: foco, NivelVisual: nivel,
-		Status: db.StatusPlanejamentoPensando,
+		Status: status,
 	}
 	if req.ProjectID > 0 {
 		plan.ProjectID = &req.ProjectID
@@ -141,15 +158,43 @@ func (s *Servidor) handleCriarPlanejamento(w http.ResponseWriter, r *http.Reques
 	}
 
 	criado, _, err := s.banco.CriarPlanejamentoComChat(r.Context(), plan,
-		db.MensagemPlanejamento{Papel: db.PapelPlanejamentoUser, Conteudo: mensagem})
+		db.MensagemPlanejamento{Papel: db.PapelPlanejamentoUser, Conteudo: mensagem,
+			Meta: metaAutorDaRequisicao(r)})
+	if err != nil {
+		s.responderErroPlanejamento(w, err)
+		return
+	}
+	if !req.AnexosPendentes && s.estrategista != nil {
+		s.estrategista.DispararResposta(criado.ID)
+	}
+	responderJSON(w, http.StatusCreated, criado)
+}
+
+// handleDispararTurnoPlanejamento roda um turno do estrategista SEM fala nova:
+// é o disparo adiado da criação com anexos pendentes e o "tentar novamente"
+// após um turno falhado (o motor é stateless — o turno reprocessa a conversa e
+// as referências atuais). Com turno em voo responde 409.
+func (s *Servidor) handleDispararTurnoPlanejamento(w http.ResponseWriter, r *http.Request) {
+	plan, ok := s.obterPlanejamentoOu404(w, r)
+	if !ok {
+		return
+	}
+	if plan.Status == db.StatusPlanejamentoPensando {
+		responderErro(w, http.StatusConflict, "pensando",
+			"o estrategista já está trabalhando — aguarde a resposta")
+		return
+	}
+	plan.Status = db.StatusPlanejamentoPensando
+	plan.Erro = ""
+	atualizado, err := s.banco.AtualizarPlanejamento(r.Context(), plan)
 	if err != nil {
 		s.responderErroPlanejamento(w, err)
 		return
 	}
 	if s.estrategista != nil {
-		s.estrategista.DispararResposta(criado.ID)
+		s.estrategista.DispararResposta(plan.ID)
 	}
-	responderJSON(w, http.StatusCreated, criado)
+	responderJSON(w, http.StatusAccepted, atualizado)
 }
 
 // handleListarPlanejamentos lista os planejamentos (filtros ?project= e
@@ -326,6 +371,7 @@ func (s *Servidor) handleChatPlanejamento(w http.ResponseWriter, r *http.Request
 
 	msg, err := s.banco.CriarMensagemPlanejamento(r.Context(), db.MensagemPlanejamento{
 		PlanejamentoID: plan.ID, Papel: db.PapelPlanejamentoUser, Conteudo: conteudo,
+		Meta: metaAutorDaRequisicao(r),
 	})
 	if err != nil {
 		s.responderErroPlanejamento(w, err)
@@ -495,8 +541,207 @@ func (s *Servidor) handleServirArtefatoPlanejamento(w http.ResponseWriter, r *ht
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Cache-Control", "no-cache")
+	// ?download=1: baixar em vez de exibir (o arquivo é autocontido — funciona
+	// aberto do disco do usuário, para anexar/compartilhar).
+	if r.URL.Query().Get("download") == "1" {
+		h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", arquivo))
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(conteudo)
+}
+
+// respReferencia é uma referência anexada ao planejamento (a listagem vem do
+// disco — a subpasta referencias/ da pasta de trabalho é a fonte da verdade).
+type respReferencia struct {
+	Arquivo      string `json:"arquivo"`
+	Tamanho      int64  `json:"tamanho"`
+	ModificadoEm string `json:"modificado_em"`
+}
+
+// dirReferencias resolve a subpasta de referências do planejamento. Devolve ""
+// quando o serviço de planejamentos não está ativo.
+func (s *Servidor) dirReferencias(planejamentoID int64) string {
+	if s.estrategista == nil {
+		return ""
+	}
+	return filepath.Join(s.estrategista.Pasta(planejamentoID), estrategista.DirReferencias)
+}
+
+// handleListarReferenciasPlanejamento lista os arquivos de referência anexados.
+func (s *Servidor) handleListarReferenciasPlanejamento(w http.ResponseWriter, r *http.Request) {
+	plan, ok := s.obterPlanejamentoOu404(w, r)
+	if !ok {
+		return
+	}
+	dir := s.dirReferencias(plan.ID)
+	if dir == "" {
+		responderErro(w, http.StatusServiceUnavailable, "indisponivel",
+			"o serviço de planejamentos não está ativo neste servidor")
+		return
+	}
+	refs := []respReferencia{}
+	if entradas, err := os.ReadDir(dir); err == nil {
+		for _, ent := range entradas {
+			if ent.IsDir() || !estrategista.NomeReferenciaValido(ent.Name()) {
+				continue
+			}
+			ref := respReferencia{Arquivo: ent.Name()}
+			if info, err := ent.Info(); err == nil {
+				ref.Tamanho = info.Size()
+				ref.ModificadoEm = info.ModTime().UTC().Format("2006-01-02T15:04:05.000Z")
+			}
+			refs = append(refs, ref)
+		}
+	}
+	responderJSON(w, http.StatusOK, refs)
+}
+
+// limiteReferencia é o tamanho máximo de um arquivo de referência (15 MiB —
+// transcrições e PDFs cabem com folga; nada disso deveria ser um vídeo).
+const limiteReferencia = 15 << 20
+
+// handleEnviarReferenciaPlanejamento recebe um arquivo de referência via
+// multipart/form-data (campo "arquivo") e o grava em referencias/. O anexo vira
+// fala de sistema no chat — o próximo turno do estrategista o vê listado.
+func (s *Servidor) handleEnviarReferenciaPlanejamento(w http.ResponseWriter, r *http.Request) {
+	plan, ok := s.obterPlanejamentoOu404(w, r)
+	if !ok {
+		return
+	}
+	dir := s.dirReferencias(plan.ID)
+	if dir == "" {
+		responderErro(w, http.StatusServiceUnavailable, "indisponivel",
+			"o serviço de planejamentos não está ativo neste servidor")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limiteReferencia+(1<<20))
+	if err := r.ParseMultipartForm(limiteReferencia); err != nil {
+		responderErro(w, http.StatusBadRequest, "invalido",
+			"envio inválido ou arquivo grande demais (máx. 15 MB)")
+		return
+	}
+	f, hdr, err := r.FormFile("arquivo")
+	if err != nil {
+		responderErro(w, http.StatusBadRequest, "invalido", "campo multipart 'arquivo' é obrigatório")
+		return
+	}
+	defer f.Close()
+
+	nome := filepath.Base(strings.TrimSpace(hdr.Filename))
+	if !estrategista.NomeReferenciaValido(nome) {
+		responderErro(w, http.StatusBadRequest, "invalido",
+			"nome de arquivo inválido — use md, txt, csv, json, pdf, html ou imagem (png/jpg/webp), até 120 caracteres")
+		return
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		s.log.Error("criar pasta de referências", "erro", err, "planejamento", plan.ID)
+		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		return
+	}
+	dst, err := os.Create(filepath.Join(dir, nome))
+	if err != nil {
+		s.log.Error("gravar referência", "erro", err, "planejamento", plan.ID, "arquivo", nome)
+		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		return
+	}
+	tamanho, err := io.Copy(dst, io.LimitReader(f, limiteReferencia+1))
+	if cerr := dst.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil || tamanho > limiteReferencia {
+		_ = os.Remove(filepath.Join(dir, nome))
+		responderErro(w, http.StatusBadRequest, "invalido",
+			"falha ao receber o arquivo (máx. 15 MB)")
+		return
+	}
+
+	s.registrarFalaReferencia(r, plan.ID,
+		fmt.Sprintf("Referência anexada: %s/%s", estrategista.DirReferencias, nome))
+	responderJSON(w, http.StatusCreated, respReferencia{Arquivo: nome, Tamanho: tamanho})
+}
+
+// handleBaixarReferenciaPlanejamento devolve o arquivo de referência SEMPRE
+// como download (attachment): referência é insumo do usuário, nunca página a
+// exibir no domínio do Praxis.
+func (s *Servidor) handleBaixarReferenciaPlanejamento(w http.ResponseWriter, r *http.Request) {
+	plan, ok := s.obterPlanejamentoOu404(w, r)
+	if !ok {
+		return
+	}
+	dir := s.dirReferencias(plan.ID)
+	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
+	if dir == "" || !estrategista.NomeReferenciaValido(arquivo) {
+		responderErro(w, http.StatusBadRequest, "invalido", "nome de referência inválido")
+		return
+	}
+	conteudo, err := os.ReadFile(filepath.Join(dir, arquivo))
+	if err != nil {
+		responderErro(w, http.StatusNotFound, "nao_encontrado", "referência não encontrada")
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", arquivo))
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(conteudo)
+}
+
+// handleExcluirReferenciaPlanejamento remove um arquivo de referência.
+func (s *Servidor) handleExcluirReferenciaPlanejamento(w http.ResponseWriter, r *http.Request) {
+	plan, ok := s.obterPlanejamentoOu404(w, r)
+	if !ok {
+		return
+	}
+	dir := s.dirReferencias(plan.ID)
+	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
+	if dir == "" || !estrategista.NomeReferenciaValido(arquivo) {
+		responderErro(w, http.StatusBadRequest, "invalido", "nome de referência inválido")
+		return
+	}
+	if err := os.Remove(filepath.Join(dir, arquivo)); err != nil {
+		if os.IsNotExist(err) {
+			responderErro(w, http.StatusNotFound, "nao_encontrado", "referência não encontrada")
+			return
+		}
+		s.log.Error("remover referência", "erro", err, "planejamento", plan.ID, "arquivo", arquivo)
+		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		return
+	}
+	s.registrarFalaReferencia(r, plan.ID,
+		fmt.Sprintf("Referência removida: %s/%s", estrategista.DirReferencias, arquivo))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// registrarFalaReferencia grava a fala de sistema de anexo/remoção (best-effort),
+// com o autor quando a sessão o identifica — é assim que o estrategista e os
+// demais participantes ficam sabendo da mudança nas referências.
+func (s *Servidor) registrarFalaReferencia(r *http.Request, planejamentoID int64, texto string) {
+	if pr := principalDaRequisicao(r); strings.TrimSpace(pr.nome) != "" {
+		texto += " (por " + strings.TrimSpace(pr.nome) + ")"
+	}
+	if _, err := s.banco.CriarMensagemPlanejamento(r.Context(), db.MensagemPlanejamento{
+		PlanejamentoID: planejamentoID, Papel: db.PapelPlanejamentoSistema, Conteudo: texto,
+	}); err != nil {
+		s.log.Warn("registrar fala de referência", "erro", err, "planejamento", planejamentoID)
+	}
+}
+
+// metaAutorDaRequisicao devolve o meta {"autor":"<nome>"} para as falas do
+// usuário — o chat de um planejamento é colaborativo (PO e arquiteto na mesma
+// conversa), então cada fala carrega quem falou. Nil no modo bootstrap/token
+// (sem usuário identificado).
+func metaAutorDaRequisicao(r *http.Request) json.RawMessage {
+	nome := strings.TrimSpace(principalDaRequisicao(r).nome)
+	if nome == "" {
+		return nil
+	}
+	b, err := json.Marshal(map[string]string{"autor": nome})
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // handleCriarDemandaDePlanejamento é o handoff: cria uma demanda (intake por

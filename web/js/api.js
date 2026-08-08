@@ -55,6 +55,40 @@ async function req(metodo, caminho, corpo) {
   return dados;
 }
 
+// reqUpload envia um arquivo via multipart/form-data (o req é só JSON). Mesmo
+// tratamento de token, 401 e envelope de erro do req.
+async function reqUpload(caminho, campo, arquivo) {
+  const fd = new FormData();
+  fd.append(campo, arquivo, arquivo.name);
+  const opts = { method: "POST", headers: {}, body: fd };
+  const tok = tokenAtual();
+  if (tok) opts.headers["Authorization"] = "Bearer " + tok;
+  let resp;
+  try {
+    resp = await fetch(caminho, opts);
+  } catch (e) {
+    throw new ErroAPI(0, "rede", "falha de rede: " + e.message);
+  }
+  if (resp.status === 401) {
+    logout();
+    throw new ErroAPI(401, "nao_autenticado", "sessão expirada: faça login novamente");
+  }
+  const texto = await resp.text();
+  let dados = null;
+  if (texto) {
+    try {
+      dados = JSON.parse(texto);
+    } catch {
+      if (!resp.ok) throw new ErroAPI(resp.status, "invalido", texto.slice(0, 200));
+    }
+  }
+  if (!resp.ok) {
+    const e = dados && dados.erro;
+    throw new ErroAPI(resp.status, e && e.codigo, (e && e.mensagem) || `erro ${resp.status}`);
+  }
+  return dados;
+}
+
 // comToken anexa o JWT da sessão como query param a uma URL de stream (SSE). O
 // EventSource não permite enviar o header Authorization, então as rotas de SSE
 // recebem o token por `?token=` (o backend aceita essa forma só para autenticar;
@@ -119,6 +153,8 @@ export const api = {
   excluirPlanejamento: (id) => req("DELETE", `/api/v1/planejamentos/${id}`),
   listarChatPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/chat`),
   enviarChatPlanejamento: (id, conteudo) => req("POST", `/api/v1/planejamentos/${id}/chat`, { conteudo }),
+  // Turno sem fala nova: disparo adiado (criação com anexos) e tentar novamente.
+  dispararTurnoPlanejamento: (id) => req("POST", `/api/v1/planejamentos/${id}/turno`, {}),
   urlProgressoPlanejamento: (id) => comToken(`/api/v1/planejamentos/${id}/progresso`),
   listarDocumentosPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/documentos`),
   obterDocumentoPlanejamento: (id, arquivo, revisao) =>
@@ -129,6 +165,15 @@ export const api = {
   // navegação do navegador não envia o header Authorization.
   urlArtefatoPlanejamento: (id, arquivo) =>
     comToken(`/api/v1/planejamentos/${id}/artefatos/${encodeURIComponent(arquivo)}`),
+  urlDownloadArtefatoPlanejamento: (id, arquivo) =>
+    comToken(`/api/v1/planejamentos/${id}/artefatos/${encodeURIComponent(arquivo)}?download=1`),
+  listarReferenciasPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/referencias`),
+  enviarReferenciaPlanejamento: (id, arquivo) =>
+    reqUpload(`/api/v1/planejamentos/${id}/referencias`, "arquivo", arquivo),
+  urlReferenciaPlanejamento: (id, arquivo) =>
+    comToken(`/api/v1/planejamentos/${id}/referencias/${encodeURIComponent(arquivo)}`),
+  excluirReferenciaPlanejamento: (id, arquivo) =>
+    req("DELETE", `/api/v1/planejamentos/${id}/referencias/${encodeURIComponent(arquivo)}`),
   criarDemandaDePlanejamento: (id, corpo = {}) =>
     req("POST", `/api/v1/planejamentos/${id}/criar-demanda`, corpo),
 
