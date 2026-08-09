@@ -1,48 +1,51 @@
-# Praxis Autonomous — Guia completo de operação
+🇺🇸 **English** · 🇧🇷 [Português (Brasil)](README_COMPLETO.pt-BR.md)
 
-> Este é o guia de referência (instalação, TLS, API, segurança, troubleshooting).
-> Para a apresentação do projeto, comece pelo [README.md](README.md). As telas de
-> **Consultas** e **Planejamentos** são documentadas no *Manual* dentro da própria web.
+# Praxis Autonomous — Full Operations Guide
 
-Orquestrador de desenvolvimento multi-projeto: cadastre uma demanda (PRD ou chamado)
-e ela **anda sozinha** — o analista lê o código e faz perguntas, o planejador gera o
-plano em fases, e após a sua aprovação a demanda executa em background (worktree +
-branch dedicada, ciclo executor → gates → corretor → revisor → commit por fase),
-até ficar pronta para o Merge Request. Toda a operação é pela **interface web**; o
-único comando do dia a dia é subir o serviço.
+> This is the reference guide (installation, TLS, API, security, troubleshooting).
+> For the project overview, start with the [README.md](README.md). The **Consultas**
+> (Queries) and **Planejamentos** (Plannings) screens are documented in the *Manual*
+> inside the web UI itself.
 
-> Os três (e únicos) momentos que exigem um humano: **responder as perguntas**,
-> **aprovar o plano** e **abrir o MR / integrar**.
+Multi-project development orchestrator: register a demand (a PRD or a ticket) and it
+**moves on its own** — the analyst reads the code and asks questions, the planner
+generates a phased plan, and after your approval the demand executes in the
+background (worktree + dedicated branch, an executor → gates → fixer → reviewer →
+commit-per-phase cycle) until it is ready for a Merge Request. Everything is operated
+through the **web UI**; the only day-to-day command is starting the service.
+
+> The three (and only) moments that require a human: **answering the questions**,
+> **approving the plan**, and **opening the MR / merging**.
 
 ---
 
-## 1. Requisitos
+## 1. Requirements
 
-- **Go 1.26+** (o build é puro Go — o SQLite usa `modernc.org/sqlite`, sem cgo).
-- **git** no PATH (worktrees, branches, push, merge-preview).
-- Um **harness de IA** instalado e autenticado para a execução real das fases:
-  `claude`, `codex` ou `opencode` (o que você cadastrar como motor). Sem um motor
-  válido, a UI e o intake funcionam, mas as fases não executam.
-- Para **push automático**: credenciais git já configuradas na máquina
-  (credential manager / SSH). O Praxis nunca armazena senha de git.
+- **Go 1.26+** (the build is pure Go — SQLite uses `modernc.org/sqlite`, no cgo).
+- **git** on the PATH (worktrees, branches, push, merge preview).
+- An installed and authenticated **AI harness** for the actual execution of phases:
+  `claude`, `codex`, or `opencode` (whichever you register as an engine). Without a
+  valid engine, the UI and the intake work, but phases do not execute.
+- For **automatic push**: git credentials already configured on the machine
+  (credential manager / SSH). Praxis never stores git passwords.
 
 ---
 
 ## 2. Build
 
 ```sh
-# a partir da raiz do repositório
+# from the repository root
 go build -o praxis ./cmd/praxis        # Linux/macOS
 go build -o praxis.exe ./cmd/praxis    # Windows
 ```
 
-Conferir a instalação:
+Check the installation:
 
 ```sh
 ./praxis -version
 ```
 
-Rodar os testes (gates do próprio projeto):
+Run the tests (this project's own gates):
 
 ```sh
 go build ./...
@@ -52,183 +55,194 @@ go test ./... -count=1
 
 ---
 
-## 3. Subir o serviço
+## 3. Running the service
 
 ```sh
-./praxis serve                           # bind padrão 127.0.0.1:7799 (uso local)
-./praxis serve -addr 127.0.0.1:9000      # porta alternativa
-./praxis serve -addr 0.0.0.0:7799 -tls   # acesso pela rede, HTTPS autoassinado
+./praxis serve                           # default bind 127.0.0.1:7799 (local use)
+./praxis serve -addr 127.0.0.1:9000      # alternate port
+./praxis serve -addr 0.0.0.0:7799 -tls   # network access, self-signed HTTPS
 ```
 
-Abra **http://127.0.0.1:7799** no navegador. O serviço faz o encerramento gracioso
-com `Ctrl+C` (SIGINT/SIGTERM), drenando as conexões e as tarefas em voo.
+Open **http://127.0.0.1:7799** in the browser. The service shuts down gracefully on
+`Ctrl+C` (SIGINT/SIGTERM), draining connections and in-flight tasks.
 
-### Acesso pela rede (HTTPS)
+### Network access (HTTPS)
 
-Para acessar de outras máquinas, faça o bind em `0.0.0.0` **com TLS**:
+To access from other machines, bind to `0.0.0.0` **with TLS**:
 
-- `-tls` gera (e reutiliza) um certificado **autoassinado** em `PRAXIS_HOME/tls`, com
-  SANs para `localhost`, o hostname e os IPs da máquina no momento da geração. Se o
-  IP do servidor mudar, apague `PRAXIS_HOME/tls` para regenerar.
-- `-tls-cert cert.pem -tls-key key.pem` usa um certificado próprio (CA interna da
-  empresa ou certificado válido) — sem nenhum passo nos dispositivos.
+- `-tls` generates (and reuses) a **self-signed** certificate in `PRAXIS_HOME/tls`,
+  with SANs for `localhost`, the hostname, and the machine's IPs at generation time.
+  If the server's IP changes, delete `PRAXIS_HOME/tls` to regenerate it.
+- `-tls-cert cert.pem -tls-key key.pem` uses your own certificate (a company-internal
+  CA or a valid certificate) — no steps needed on the devices.
 
-**Instale o certificado nos dispositivos** (necessário para o IDE web): apenas
-"aceitar o risco" no aviso do navegador NÃO basta — o Chrome aplica a exceção à
-página, mas **recusa o certificado nas conexões WebSocket**, e o IDE web depende
-delas (sintoma: workbench abre e cai com "WebSocket close 1006"). Em cada
-dispositivo, baixe `https://<servidor>:7799/cert` e instale como confiável:
+**Install the certificate on the devices** (required for the web IDE): just
+"accepting the risk" in the browser warning is NOT enough — Chrome applies the
+exception to the page but **rejects the certificate on WebSocket connections**, and
+the web IDE depends on them (symptom: the workbench opens and drops with "WebSocket
+close 1006"). On each device, download `https://<server>:7799/cert` and install it
+as trusted:
 
-- **Windows:** baixe o `praxis.crt`, duplo clique → *Instalar certificado* →
-  *Usuário atual* → armazenar em **Autoridades de Certificação Raiz Confiáveis**.
-  Ou, em terminal: `certutil -addstore -user Root praxis.crt`. Reinicie o navegador.
-- **Android:** Configurações → Segurança → Instalar certificado (CA).
-- **iOS/macOS:** abra o arquivo, instale o perfil e marque como confiável em
-  Ajustes → Geral → Confiança de certificados.
+- **Windows:** download `praxis.crt`, double-click → *Install certificate* →
+  *Current user* → store in **Trusted Root Certification Authorities**. Or, in a
+  terminal: `certutil -addstore -user Root praxis.crt`. Restart the browser.
+- **Android:** Settings → Security → Install a certificate (CA).
+- **iOS/macOS:** open the file, install the profile, and mark it as trusted in
+  Settings → General → Certificate Trust.
 
-O TLS não é opcional para o acesso remoto ao **IDE web** (§5): o VS Code no navegador
-exige contexto seguro (`https://` ou `localhost`). Sem TLS, apenas o uso local
-funciona. Um túnel SSH ou reverse-proxy com TLS próprio continuam sendo alternativas
-válidas (ver §9).
+TLS is not optional for remote access to the **web IDE** (§5): VS Code in the
+browser requires a secure context (`https://` or `localhost`). Without TLS, only
+local use works. An SSH tunnel or a reverse proxy with its own TLS remain valid
+alternatives (see §9).
 
-### O que sobe junto com o `serve`
+### What comes up with `serve`
 
-| Componente | O que faz |
+| Component | What it does |
 |---|---|
-| **HTTP + web** | Interface e API REST (`/api/v1`), assets embutidos no binário. |
-| **Scheduler** | Executa as demandas prontas em background (worker pool com limites). |
-| **Intake** | Dispara o analista (perguntas) e o planejador (plano) em background. |
-| **Notificações** | Envia eventos para os canais configurados (Telegram/Discord/Slack/Google Chat). |
-| **Manutenção** | Backup periódico do banco + rotação + retenção de logs/eventos. |
-| **Recuperação pós-restart** | Prune de worktrees, mata harnesses órfãos e re-enfileira demandas presas em `executando`. |
+| **HTTP + web** | UI and REST API (`/api/v1`), assets embedded in the binary. |
+| **Scheduler** | Runs ready demands in the background (worker pool with limits). |
+| **Intake** | Triggers the analyst (questions) and the planner (plan) in the background. |
+| **Notifications** | Sends events to the configured channels (Telegram/Discord/Slack/Google Chat). |
+| **Maintenance** | Periodic database backup + rotation + log/event retention. |
+| **Post-restart recovery** | Prunes worktrees, kills orphaned harnesses, and re-queues demands stuck in `executando` (running). |
 
 ---
 
-## 4. Onde ficam os dados — `PRAXIS_HOME`
+## 4. Where the data lives — `PRAXIS_HOME`
 
-Tudo vive fora das pastas dos projetos. A raiz é `PRAXIS_HOME`:
+Everything lives outside the project folders. The root is `PRAXIS_HOME`:
 
-- **Padrão:** `%LOCALAPPDATA%\praxis` (Windows) · `~/.config/praxis` (Linux/macOS).
-- **Override:** variável de ambiente `PRAXIS_HOME`.
+- **Default:** `%LOCALAPPDATA%\praxis` (Windows) · `~/.config/praxis` (Linux/macOS).
+- **Override:** the `PRAXIS_HOME` environment variable.
 
 ```
 PRAXIS_HOME/
-├─ praxis.db            # SQLite (WAL): projetos, motores, demandas, chat, fases, custos, eventos…
-├─ worktrees/<projeto>/<demanda>/   # working trees git isolados por demanda
-├─ logs/d<id>/          # .jsonl do log ao vivo de cada execução
-├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotação: mantém os 7 mais recentes)
-├─ pids/                # PIDs dos harnesses e do IDE web (para matar órfãos no boot)
-├─ tls/                 # cert.pem/key.pem autoassinados do -tls (gerados na 1ª vez)
-└─ tools/               # CLI do VS Code + dados do serve-web (IDE web, baixados na 1ª vez)
+├─ praxis.db            # SQLite (WAL): projects, engines, demands, chat, phases, costs, events…
+├─ worktrees/<project>/<demand>/    # git working trees isolated per demand
+├─ logs/d<id>/          # .jsonl live log of each execution
+├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotation: keeps the 7 most recent)
+├─ pids/                # PIDs of the harnesses and the web IDE (to kill orphans on boot)
+├─ tls/                 # self-signed cert.pem/key.pem from -tls (generated on 1st run)
+└─ tools/               # VS Code CLI + serve-web data (web IDE, downloaded on 1st use)
 ```
 
-Nas pastas dos **projetos-alvo** só entram os commits nas branches `praxis/d<id>-<slug>`.
-O working tree do desenvolvedor nunca é tocado.
+The **target projects'** folders only ever receive commits on `praxis/d<id>-<slug>`
+branches. The developer's working tree is never touched.
 
 ---
 
-## 5. Operação pela web
+## 5. Operating through the web
 
-Navegação (menu lateral):
+Navigation (side menu — labels are in Portuguese, glossed here):
 
-- **Home** — gasto no mês, demandas ativas, fases concluídas (7d), integradas, franquia;
-  gráfico de gastos por dia, tabela por projeto, lista **"Precisa de você"** e atividade
-  recente (tempo real via SSE).
-- **Kanban** — colunas por status; filtros por projeto/motor; arraste um card para
-  reordenar a prioridade (transições de estado só por botão). Badge **⚠ sobrepõe N**
-  quando duas demandas tocam os mesmos arquivos.
-- **Demandas** — lista simples + o **card (modal)** com abas: Chat/PRD, Perguntas,
-  Plano & Fases, Integração, Log ao vivo, Eventos.
-- **Nova demanda** — escolha o projeto e cole o PRD; a demanda nasce como conversa.
-- **Projetos** — cadastro e parâmetros (com herança do global).
-- **Motores** — motores por prioridade (ordem de fallback), modelos, budget, contas.
-- **Configurações** — config global, **Tokens de API**.
-- **Manual** — o guia do fluxo dentro da própria web.
+- **Home** — month's spend, active demands, phases completed (7d), merged demands,
+  quota; daily spend chart, per-project table, the **"Precisa de você"** ("needs
+  you") list, and recent activity (real time via SSE).
+- **Kanban** — columns by status; filters by project/engine; drag a card to reorder
+  priority (state transitions only via buttons). A **⚠ sobrepõe N** (overlaps N)
+  badge appears when two demands touch the same files.
+- **Demandas** (Demands) — a simple list + the **card (modal)** with tabs: Chat/PRD,
+  Questions, Plan & Phases, Integration, Live log, Events.
+- **Nova demanda** (New demand) — pick the project and paste the PRD; the demand is
+  born as a conversation.
+- **Projetos** (Projects) — registration and parameters (inheriting from global).
+- **Motores** (Engines) — engines by priority (fallback order), models, budget,
+  accounts.
+- **Configurações** (Settings) — global config, **API tokens**.
+- **Manual** — the flow guide inside the web UI itself.
 
-### 5.1 Fluxo completo de uma demanda
+### 5.1 A demand's full flow
 
-1. **Cadastre um projeto** (Projetos → *Cadastrar projeto*): informe a pasta (repo git),
-   a branch principal, o modo de integração e a URL da plataforma (para o link do MR).
-2. **Crie a demanda** (Nova demanda): cole o PRD. O **analista** roda em modo somente
-   leitura e gera perguntas → status `Aguardando respostas`.
-3. **Responda as perguntas** no card e clique *Responder tudo e gerar plano*. O
-   **planejador** monta o plano e as fases → status `Aguardando aprovação`.
-4. **Revise e aprove** na aba *Plano & Fases* (edite/reordene/remova fases, marque as
-   que exigem humano). Aprovar → a demanda entra na fila e **executa sozinha**.
-   *Rejeitar com comentário* → replaneja.
-5. **Acompanhe** pelo Kanban e pela aba *Log ao vivo*. Você pode **pausar**, **retomar**
-   ou **cancelar** a qualquer momento.
-6. **Integre** (aba *Integração*):
-   - **modo `merge_request`** (padrão): a branch é publicada a cada commit; a demanda
-     concluída mostra os commits, o preview de conflito com a main e o **link para abrir
-     o MR** na plataforma. O merge é feito por você lá.
-   - **modo `merge_local`**: o botão **Integrar** faz `merge --no-ff` na main; sem
-     conflito, worktree e branch são removidos e a demanda vai para `Integrada`.
-   - **Conflito** → a demanda volta destacada com os arquivos; use **Atualizar branch**
-     (traz a main para a branch) ou resolva no worktree.
+1. **Register a project** (Projetos → *Cadastrar projeto*): set the folder (git
+   repo), the main branch, the integration mode, and the platform URL (for the MR
+   link).
+2. **Create the demand** (Nova demanda): paste the PRD. The **analyst** runs in
+   read-only mode and generates questions → status `Aguardando respostas` (waiting
+   for answers).
+3. **Answer the questions** on the card and click *Responder tudo e gerar plano*
+   (answer everything and generate the plan). The **planner** assembles the plan and
+   its phases → status `Aguardando aprovação` (waiting for approval).
+4. **Review and approve** on the *Plano & Fases* (Plan & Phases) tab (edit/reorder/
+   remove phases, flag the ones that require a human). Approve → the demand joins
+   the queue and **executes on its own**. *Reject with a comment* → it replans.
+5. **Follow along** on the Kanban and the *Log ao vivo* (live log) tab. You can
+   **pause**, **resume**, or **cancel** at any time.
+6. **Merge** (the *Integração* tab):
+   - **`merge_request` mode** (default): the branch is published on every commit; a
+     finished demand shows the commits, the conflict preview against main, and the
+     **link to open the MR** on your platform. You do the merge there.
+   - **`merge_local` mode**: the **Integrar** button runs `merge --no-ff` into main;
+     without conflicts, the worktree and branch are removed and the demand moves to
+     `Integrada` (merged).
+   - **Conflict** → the demand comes back highlighted with the conflicting files;
+     use **Atualizar branch** (brings main into the branch) or resolve it in the
+     worktree.
 
-### 5.1b Editar o código manualmente (IDE web)
+### 5.1b Editing the code manually (web IDE)
 
-Para ajustes e correções manuais no worktree de uma demanda, a aba **Integração** tem
-o botão **Editar código ⧉**: abre o **VS Code no navegador** (`code serve-web`), direto
-na pasta do worktree, com terminal integrado — sem instalar nada na máquina de quem
-acessa.
+For manual adjustments and fixes in a demand's worktree, the **Integração** tab has
+the **Editar código ⧉** (edit code) button: it opens **VS Code in the browser**
+(`code serve-web`), straight in the worktree folder, with an integrated terminal —
+nothing to install on the machine of whoever is accessing.
 
-Como funciona:
+How it works:
 
-- **Sob demanda:** na primeira vez, o Praxis baixa o CLI oficial do VS Code do endpoint
-  da Microsoft (`update.code.visualstudio.com`) para `PRAXIS_HOME/tools` e sobe uma
-  instância única do serve-web (só no loopback, com connection-token gerado). A
-  instância é derrubada após ~30 min sem uso; o próximo acesso sobe de novo em segundos.
-- **Mesma porta, mesma segurança:** o IDE é exposto pelo proxy `/ide/*` do próprio
-  Praxis — nenhuma porta extra, o connection-token nunca chega ao navegador e o acesso
-  exige a permissão **`codigo.editar`** (papéis em Configurações → Usuários).
-- **Gate de estado:** só com a demanda **pausada, falhada, em conflito ou encerrada** —
-  nunca enquanto o scheduler pode escrever no worktree. Para mexer numa demanda em
-  execução, **pause-a** primeiro; ao terminar, **retome**.
-- Cada abertura do IDE gera um evento de auditoria (`codigo_acessado`) na demanda.
-- **Uso local:** quem acessa por `localhost` também vê o atalho **Abrir no VS Code
-  local** (`vscode://`), que usa o VS Code instalado na própria máquina.
+- **On demand:** on first use, Praxis downloads the official VS Code CLI from
+  Microsoft's endpoint (`update.code.visualstudio.com`) into `PRAXIS_HOME/tools` and
+  starts a single serve-web instance (loopback only, with a generated connection
+  token). The instance is torn down after ~30 min idle; the next access brings it
+  back up in seconds.
+- **Same port, same security:** the IDE is exposed through Praxis's own `/ide/*`
+  proxy — no extra port, the connection token never reaches the browser, and access
+  requires the **`codigo.editar`** permission (roles in Configurações → Usuários).
+- **State gate:** only when the demand is **paused, failed, in conflict, or closed**
+  — never while the scheduler might write to the worktree. To touch a running
+  demand, **pause it** first; when done, **resume**.
+- Every IDE opening generates an audit event (`codigo_acessado`) on the demand.
+- **Local use:** whoever accesses via `localhost` also sees the **Abrir no VS Code
+  local** (open in local VS Code) shortcut (`vscode://`), which uses the VS Code
+  installed on their own machine.
 
-> ⚠ O IDE web dá acesso de **desenvolvedor** ao servidor (o terminal integrado roda
-> como o usuário do serviço). Conceda `codigo.editar` só a quem você daria shell na
-> máquina — e, na internet pública, prefira VPN (ver §9).
+> ⚠ The web IDE grants **developer** access to the server (the integrated terminal
+> runs as the service's user). Grant `codigo.editar` only to people you would give a
+> shell on the machine — and on the public internet, prefer a VPN (see §9).
 
-### 5.2 Parâmetros de configuração (global → override por projeto)
+### 5.2 Configuration parameters (global → per-project override)
 
-Chaves reconhecidas (todas herdam do global quando não definidas no projeto):
+Recognized keys (all inherit from global when not set on the project):
 
-| Chave | Efeito |
+| Key | Effect |
 |---|---|
-| `motor_preferido` | Motor usado por padrão na execução. |
-| `execucoes_simultaneas` | Limite global de execuções em paralelo (default 2). |
-| `execucoes_por_projeto` | Limite de execuções simultâneas por projeto (default 1). |
-| `gates_simultaneos` | Quantas baterias de gates rodam ao mesmo tempo (default 1). |
-| `max_correcoes` | Ciclos de corretor por rodada de gates. |
-| `max_ciclos_revisao` | Ciclos de correção após reprovação do revisor. |
-| `max_fases_novas` | Teto de fases descobertas inseridas por rodada. |
-| `budget_demanda_usd` | Teto de custo por demanda. |
-| `gates` | Comandos de validação (um por linha), ex.: `go build ./...`, `go test ./...`. Uma fase só conclui com todos verdes. |
+| `motor_preferido` | Engine used by default for execution. |
+| `execucoes_simultaneas` | Global limit of parallel executions (default 2). |
+| `execucoes_por_projeto` | Limit of simultaneous executions per project (default 1). |
+| `gates_simultaneos` | How many gate batteries run at the same time (default 1). |
+| `max_correcoes` | Fixer cycles per round of gates. |
+| `max_ciclos_revisao` | Fix cycles after a reviewer rejection. |
+| `max_fases_novas` | Cap of discovered phases inserted per round. |
+| `budget_demanda_usd` | Cost cap per demand. |
+| `gates` | Validation commands (one per line), e.g. `go build ./...`, `go test ./...`. A phase only completes with all of them green. |
 
-> Os **gates** rodam no repositório-alvo, então use os comandos daquele projeto
-> (build/lint/test). Sem gates configurados, a fase depende só da autoverificação do harness.
+> The **gates** run in the target repository, so use that project's commands
+> (build/lint/test). Without gates configured, a phase relies only on the harness's
+> self-verification.
 
 ---
 
-## 6. API REST (`/api/v1`)
+## 6. REST API (`/api/v1`)
 
-Base: `http://127.0.0.1:7799/api/v1`. Respostas e erros em JSON
+Base: `http://127.0.0.1:7799/api/v1`. Responses and errors in JSON
 (`{"erro":{"codigo","mensagem"}}`). Health: `GET /healthz`.
 
-Endpoints principais:
+Main endpoints:
 
 ```
 GET/POST /projects            GET/PUT /projects/{id}      GET/PUT /projects/{id}/config
 GET/POST /engines             PUT /engines/{id}           PUT /engines/ordem
-POST     /projects/{id}/demands       # intake: com "prd" (chat) ou com "fases" (manual)
+POST     /projects/{id}/demands       # intake: with "prd" (chat) or "fases" (manual)
 GET      /demands?project=&status=    GET /demands/{id}
-GET      /board                       # kanban enriquecido (progresso + motor)
-PUT      /demands/ordem               # reordenar prioridade
+GET      /board                       # enriched kanban (progress + engine)
+PUT      /demands/ordem               # reorder priority
 POST     /demands/{id}/chat           POST /demands/{id}/answers
 PUT      /demands/{id}/phases         POST /demands/{id}/approve-plan
 POST     /demands/{id}/actions {pausar|retomar|cancelar|publicar_branch|integrar|atualizar_branch}
@@ -239,43 +253,44 @@ GET      /overlaps                    GET /manual   GET /manual/{slug}
 POST/GET /tokens                      DELETE /tokens/{id}
 ```
 
-### 6.1 Autenticação e papéis
+### 6.1 Authentication and roles
 
-- **Sem token** (loopback confiável) → acesso **admin** local. É o modo da UI local.
-- **Com token** (`Authorization: Bearer <token>` ou header `X-Praxis-Token`) → o papel
-  do token. Um token `leitor` fica **barrado de escrita** (403).
-- **Token inválido/revogado** → 401.
+- **No token** (trusted loopback) → local **admin** access. This is the local UI's
+  mode.
+- **With a token** (`Authorization: Bearer <token>` or the `X-Praxis-Token` header)
+  → the token's role. A `leitor` (reader) token is **blocked from writes** (403).
+- **Invalid/revoked token** → 401.
 
-Papéis: `leitor` (só leitura) · `operador` (criar/agir em demandas) · `admin` (gerir
-tokens, projetos, motores, config).
+Roles: `leitor` (read-only) · `operador` (create/act on demands) · `admin` (manage
+tokens, projects, engines, config).
 
-Crie tokens em **Configurações → Tokens de API** (o valor aparece **uma única vez**) ou
-via API. Exemplo — intake automatizado de um sistema de chamados:
+Create tokens in **Configurações → Tokens de API** (the value is shown **only
+once**) or via the API. Example — automated intake from a ticketing system:
 
 ```sh
-# 1) criar um token operador (admin)
+# 1) create an operator token (admin)
 curl -s -X POST http://127.0.0.1:7799/api/v1/tokens \
   -H 'Content-Type: application/json' \
-  -d '{"nome":"chamados","papel":"operador"}'
-# → { "id":1, "papel":"operador", "token":"<COPIE-AGORA>" }
+  -d '{"nome":"tickets","papel":"operador"}'
+# → { "id":1, "papel":"operador", "token":"<COPY-IT-NOW>" }
 
-# 2) abrir uma demanda pelo chamado (conduz sozinha até "Aguardando respostas")
+# 2) open a demand from a ticket (drives itself to "Aguardando respostas")
 curl -s -X POST http://127.0.0.1:7799/api/v1/projects/1/demands \
   -H 'Authorization: Bearer <TOKEN>' -H 'Content-Type: application/json' \
-  -d '{"prd":"Como usuário quero X...","origem":"api","origem_ref":"chamado #4812"}'
+  -d '{"prd":"As a user, I want X...","origem":"api","origem_ref":"ticket #4812"}'
 ```
 
 ---
 
-## 7. Notificações
+## 7. Notifications
 
-Canais suportados: **Telegram, Discord, Slack, Google Chat** e um webhook genérico.
-A config vive na config global, chave `notificacoes` (lida a cada ciclo — muda sem
-reiniciar). Formato:
+Supported channels: **Telegram, Discord, Slack, Google Chat**, and a generic
+webhook. The config lives in the global config under the `notificacoes` key (read on
+every cycle — changes apply without a restart). Format:
 
 ```json
 {
-  "cabecalho": "Praxis · Produção",
+  "cabecalho": "Praxis · Production",
   "eventos": { "push_falhou": true, "conflito": true },
   "canais": {
     "telegram":    { "ativo": true,  "token": "<bot-token>", "chat_id": "<id>" },
@@ -287,91 +302,93 @@ reiniciar). Formato:
 }
 ```
 
-Gravar via API (a UI de edição é opcional; qualquer canal ausente em `eventos` notifica
-por padrão):
+Write it via the API (the editing UI is optional; any channel missing from `eventos`
+notifies by default):
 
 ```sh
 curl -s -X PUT http://127.0.0.1:7799/api/v1/config \
   -H 'Content-Type: application/json' \
-  -d '{"notificacoes": { ... o objeto acima ... }}'
+  -d '{"notificacoes": { ... the object above ... }}'
 ```
 
 ---
 
-## 8. Outros subcomandos
+## 8. Other subcommands
 
 ```sh
-# Gerar a configuração para rodar como serviço (imprime; o registro efetivo exige admin):
-./praxis service                      # unit systemd (Linux) ou comando sc.exe (Windows)
+# Generate the config to run as a service (prints it; actual registration requires admin):
+./praxis service                      # systemd unit (Linux) or sc.exe command (Windows)
 ./praxis service -exe /opt/praxis/praxis -addr 127.0.0.1:7799 -nome praxis
 
-# Importar projetos do Praxis clássico (lê automacao/autopilot.json + fases.csv; idempotente):
-./praxis import /caminho/do/projeto [/outro/projeto ...]
+# Import projects from classic Praxis (reads automacao/autopilot.json + fases.csv; idempotent):
+./praxis import /path/to/project [/another/project ...]
 ```
 
-### 8.1 Rodar como serviço
+### 8.1 Running as a system service
 
 **Linux (systemd):**
 ```sh
-./praxis service > /etc/systemd/system/praxis.service   # como root, revise o conteúdo
+./praxis service > /etc/systemd/system/praxis.service   # as root, review the contents
 systemctl daemon-reload && systemctl enable --now praxis
 ```
 
-**Windows (como Administrador):**
+**Windows (as Administrator):**
 ```powershell
-# cole/execute o comando "sc.exe create ..." impresso por:
+# paste/run the "sc.exe create ..." command printed by:
 .\praxis.exe service
 sc.exe start praxis
 ```
 
 ---
 
-## 9. Segurança e boas práticas
+## 9. Security and good practices
 
-- **Acesso remoto: sempre com TLS.** Na LAN/VPN, `-addr 0.0.0.0:7799 -tls` (ou
-  certificado próprio) é o caminho direto; túnel SSH e reverse-proxy com TLS continuam
-  valendo. Na **internet pública**, prefira VPN (WireGuard/Tailscale) na frente — com o
-  IDE web habilitado, uma conta com `codigo.editar` comprometida equivale a um shell no
-  servidor.
-- Quem estiver no loopback **antes do primeiro admin ser criado** tem acesso pleno
-  (modo bootstrap) — crie o primeiro usuário logo após subir o serviço.
-- **Tokens** para chamadores programáticos (sistema de chamados, integrações): dê o
-  menor papel necessário (`operador` para criar demandas; `leitor` para dashboards).
-- **Push protegido:** o Praxis só empurra branches `praxis/*`; a main nunca é empurrada;
-  o harness é proibido de commitar/pushar (commit e push são sempre do orquestrador).
-- **Backups:** automáticos em `PRAXIS_HOME/backups` (mantém os 7 mais recentes). Para
-  um backup manual, copie `praxis.db` com o serviço parado, ou use um dos backups gerados.
+- **Remote access: always with TLS.** On a LAN/VPN, `-addr 0.0.0.0:7799 -tls` (or
+  your own certificate) is the direct path; an SSH tunnel or a reverse proxy with
+  TLS also work. On the **public internet**, prefer a VPN (WireGuard/Tailscale) in
+  front — with the web IDE enabled, a compromised account holding `codigo.editar`
+  is equivalent to a shell on the server.
+- Anyone on loopback **before the first admin is created** has full access
+  (bootstrap mode) — create the first user right after starting the service.
+- **Tokens** for programmatic callers (ticketing systems, integrations): grant the
+  smallest role needed (`operador` to create demands; `leitor` for dashboards).
+- **Protected push:** Praxis only pushes `praxis/*` branches; main is never pushed;
+  the harness is forbidden from committing/pushing (commit and push are always done
+  by the orchestrator).
+- **Backups:** automatic in `PRAXIS_HOME/backups` (keeps the 7 most recent). For a
+  manual backup, copy `praxis.db` with the service stopped, or use one of the
+  generated backups.
 
 ---
 
-## 10. Solução de problemas
+## 10. Troubleshooting
 
-| Sintoma | O que verificar |
+| Symptom | What to check |
 |---|---|
-| Demanda fica em `pronta` e não executa | Há um **motor ativo** cadastrado e autenticado? Veja o log do serviço e a aba Log ao vivo. |
-| "commits não publicados (N)" | Falha de push (rede/credenciais/branch protegida). Use **Publicar branch** no card; as credenciais git da máquina precisam estar válidas. |
-| Fase reprova nos gates | Abra o **Log ao vivo**; os comandos de `gates` do projeto precisam passar no worktree. |
-| Conflito na integração | Use **Atualizar branch** (traz a main) ou resolva no worktree indicado no card. |
-| `/healthz` retorna `degradado` | Banco inacessível — cheque permissões de `PRAXIS_HOME` e se o disco tem espaço. |
-| Porta ocupada | Suba com `-addr` em outra porta. |
+| Demand sits in `pronta` (ready) and doesn't run | Is there an **active engine** registered and authenticated? Check the service log and the Live log tab. |
+| "commits não publicados (N)" (unpublished commits) | Push failure (network/credentials/protected branch). Use **Publicar branch** on the card; the machine's git credentials must be valid. |
+| A phase fails the gates | Open the **Live log**; the project's `gates` commands must pass in the worktree. |
+| Conflict on merge | Use **Atualizar branch** (brings main in) or resolve it in the worktree shown on the card. |
+| `/healthz` returns `degradado` (degraded) | Database unreachable — check `PRAXIS_HOME` permissions and disk space. |
+| Port already in use | Start with `-addr` on another port. |
 
 ---
 
-## 11. Estrutura do repositório
+## 11. Repository layout
 
 ```
-cmd/praxis/            # binário: subcomandos serve / service / import
+cmd/praxis/            # binary: serve / service / import subcommands
 internal/
-  db/                  # SQLite, migrações, stores
-  api/                 # servidor HTTP, rotas REST, auth, SSE
-  scheduler/           # fila + worker pool, executor da demanda
-  pipeline/            # ciclo de fase (executor→gates→corretor→revisor→commit), gates, fallback
+  db/                  # SQLite, migrations, stores
+  api/                 # HTTP server, REST routes, auth, SSE
+  scheduler/           # queue + worker pool, demand executor
+  pipeline/            # phase cycle (executor→gates→fixer→reviewer→commit), gates, fallback
   motor/               # harnesses (claude/codex/opencode)
   gitops/              # git: worktree, push, merge-preview, merge
-  intake/              # analista + planejador + prompts embutidos
-  notify/              # notificações (canais + despachante de eventos)
-  manutencao/          # backup, rotação, retenção
-  importador/          # importador do Praxis clássico
-  procs/               # árvore de processos dos harnesses
-web/                   # frontend embutido (HTML + CSS + ES modules vanilla)
+  intake/              # analyst + planner + embedded prompts
+  notify/              # notifications (channels + event dispatcher)
+  manutencao/          # backup, rotation, retention
+  importador/          # classic Praxis importer
+  procs/               # harness process tree
+web/                   # embedded frontend (HTML + CSS + vanilla ES modules)
 ```

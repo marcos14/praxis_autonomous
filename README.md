@@ -1,104 +1,111 @@
+🇺🇸 **English** · 🇧🇷 [Português (Brasil)](README.pt-BR.md)
+
 # Praxis Autonomous
 
-**Uma equipe de IA em cima dos seus repositórios — pela web, para o time inteiro.**
+**An AI team on top of your repositories — through the web, for your whole team.**
 
-Cadastre os projetos git uma única vez. A partir daí, qualquer pessoa autorizada
-tira dúvidas sobre o sistema em linguagem de negócio, transforma necessidades em
-PRDs com protótipo navegável e executa demandas de código de ponta a ponta — com
-aprovação humana só nos momentos que importam.
+Register your git projects once. From then on, anyone authorized can ask how the
+system behaves in business language, turn needs into PRDs with navigable
+prototypes, and run development demands end to end — with human approval only at
+the moments that matter.
 
-*Go puro · um binário · SQLite embutido · interface 100% web*
+*Pure Go · single binary · embedded SQLite · 100% web UI*
 
----
-
-## O problema
-
-Quem mais precisa entender o código raramente é quem o escreveu:
-
-- O **suporte** precisa saber o que acontece quando o boleto vence para responder
-  o cliente — e abre chamado para a squad.
-- A **implantação** precisa da estratégia de configuração para um cliente novo —
-  e depende da agenda de um desenvolvedor.
-- O **produto** precisa saber como a cobrança funciona *hoje* antes de escrever o
-  PRD — e acaba escrevendo sem saber.
-- O **dev de outra squad** precisa das regras de negócio para fazer uma integração,
-  criar um mock ou prototipar um cenário — e vai ler um código que nunca viu.
-
-Todos esses caminhos terminam interrompendo um desenvolvedor do projeto. O Praxis
-remove o gargalo: ele **lê o código de verdade**, em modo somente leitura, e devolve
-respostas, documentos, protótipos — e até o desenvolvimento pronto para merge.
+> **Note:** the web UI is currently in Brazilian Portuguese — i18n is on the roadmap.
 
 ---
 
-## Consultas — respostas em linguagem de negócio, sem expor o código
+## The problem
 
-![Tela de Consultas: pergunta sobre o sistema respondida em linguagem de negócio](docs/media/praxis_consultas.png)
+The people who most need to understand the code are rarely the ones who wrote it:
 
-Pergunte como o sistema se comporta — *"o que acontece quando o boleto vence?"*,
-*"consigo criar tools com base em APIs externas?"* — e o consultor responde lendo o
-código, em linguagem de negócio, **sem nunca mostrar código-fonte** (um pós-filtro
-no servidor garante). O suporte responde o cliente com certeza, o produto elabora
-PRDs sobre o comportamento real, a integração mapeia as regras antes de codificar.
+- **Support** needs to know what happens when an invoice is past due to answer a
+  customer — and files a ticket with the squad.
+- **Implementation teams** need the setup strategy for a new customer — and depend
+  on a developer's schedule.
+- **Product** needs to know how billing works *today* before writing the PRD — and
+  ends up writing it blind.
+- **A developer from another squad** needs the business rules to build an
+  integration, create a mock, or prototype a scenario — and has to read a codebase
+  they have never seen.
 
-A permissão é própria (`consultas.usar`): dá para criar um papel "Suporte" ou
-"Produto" sem nenhum acesso a demandas, código ou configurações.
-
----
-
-## Planejamentos — da necessidade ao PRD, com protótipo navegável
-
-![Planejamento gerando PRD, ADRs, apresentação executiva e protótipo navegável](docs/media/praxis_planejamento.gif)
-
-Descreva uma necessidade e o **estrategista** — lendo o código dos repositórios —
-lapida com você um **PRD** e/ou **ADRs** em conversa iterativa. Além dos documentos,
-ele gera uma **apresentação visual** (infográficos, fluxogramas) e, se você pedir,
-um **protótipo navegável** das telas propostas — tudo autocontido, pronto para
-apresentar ou anexar num e-mail.
-
-O PO fecha a visão de negócio, o arquiteto continua **no mesmo planejamento** com
-as decisões técnicas e, quando o conjunto estiver redondo, o PRD **vira demanda com
-um clique**.
+Every one of those paths ends up interrupting a developer who owns the code.
+Praxis removes the bottleneck: it **actually reads the code**, in read-only mode,
+and returns answers, documents, prototypes — and even development ready to merge.
 
 ---
 
-## Demandas — desenvolvimento autônomo de ponta a ponta
+## Consultas (Queries) — business-language answers, without exposing code
 
-![Fluxo da demanda: PRD, perguntas do analista, plano em fases e execução](docs/media/praxis_demanda.gif)
+![Queries screen: a question about the system answered in business language](docs/media/praxis_consultas.png)
 
-Cole um PRD ou a descrição de um chamado. O **analista** lê o código e faz perguntas
-objetivas (com sugestões prontas — responder é clicar), o **planejador** monta o
-plano em fases e, aprovado o plano, a demanda **executa sozinha** em background:
-worktree isolado, branch dedicada, ciclo executor → gates → corretor → revisor,
-commit por fase e branch publicada para o Merge Request. Você acompanha pelo Kanban,
-log ao vivo, diff e custo por fase — e pode pausar, retomar ou cancelar a qualquer
-momento.
+Ask how the system behaves — *"what happens when an invoice is past due?"*, *"can
+I create tools backed by external APIs?"* — and the consultant answers by reading
+the code, in business language, **never showing source code** (a server-side
+post-filter guarantees it). Support answers customers with confidence, product
+writes PRDs grounded in real behavior, integrators map the business rules before
+writing a line of code.
 
-> Os três (e únicos) momentos que exigem um humano: **responder as perguntas**,
-> **aprovar o plano** e **abrir o MR / integrar**.
+Access is its own permission (`consultas.usar`): you can create a "Support" or
+"Product" role with no access to demands, code, or settings.
 
 ---
 
-## Por que usar
+## Planejamentos (Plannings) — from a need to a PRD, with a navigable prototype
 
-- **Multi-projeto e multi-motor** — orquestra `claude`, `codex` ou `opencode`, com
-  ordem de fallback, modelo por tarefa e budget por demanda.
-- **Nada para instalar em quem usa** — toda a operação é pelo navegador, inclusive
-  um **VS Code web** para ajustes manuais no worktree de uma demanda.
-- **Código protegido** — execução em worktree isolado, push só de branches
-  `praxis/*`, a main nunca é tocada; consultas nunca expõem código-fonte.
-- **Custo visível** — gasto por demanda, por projeto e por mês direto na Home.
-- **Encaixa no seu fluxo** — API REST com tokens e papéis (abra demandas a partir
-  do seu sistema de chamados) e notificações via Telegram, Discord, Slack e
+![A planning producing PRD, ADRs, an executive presentation and a navigable prototype](docs/media/praxis_planejamento.gif)
+
+Describe a need and the **strategist** — reading the repositories — refines a
+**PRD** and/or **ADRs** with you in an iterative conversation. Beyond the
+documents, it generates a **visual presentation** (infographics, flowcharts) and,
+on request, a **navigable prototype** of the proposed screens — all self-contained,
+ready to present or attach to an email.
+
+The PO closes the business vision, the architect continues **in the same
+planning** with the technical decisions, and once the set is ready the PRD
+**becomes a demand in one click**.
+
+---
+
+## Demandas (Demands) — autonomous development, end to end
+
+![Demand flow: PRD, analyst questions, phased plan and execution](docs/media/praxis_demanda.gif)
+
+Paste a PRD or a ticket description. The **analyst** reads the code and asks
+objective questions (with ready-made suggestions — answering is one click), the
+**planner** builds a phased plan and, once you approve it, the demand **runs on
+its own** in the background: isolated worktree, dedicated branch, an executor →
+gates → fixer → reviewer cycle, one commit per phase, and the branch published
+for a Merge Request. You follow along on the Kanban, live log, diff, and
+per-phase cost — and can pause, resume, or cancel at any time.
+
+> The three (and only) moments that require a human: **answering the questions**,
+> **approving the plan**, and **opening the MR / merging**.
+
+---
+
+## Why Praxis
+
+- **Multi-project, multi-engine** — orchestrates `claude`, `codex`, or `opencode`,
+  with a fallback order, per-task models, and a per-demand budget.
+- **Nothing to install for users** — everything runs in the browser, including a
+  **web VS Code** for manual adjustments in a demand's worktree.
+- **Your code is protected** — execution in isolated worktrees, pushes limited to
+  `praxis/*` branches, main is never touched; queries never expose source code.
+- **Visible costs** — spend per demand, per project, and per month right on the
+  Home screen.
+- **Fits your workflow** — REST API with tokens and roles (open demands straight
+  from your ticketing system) and notifications via Telegram, Discord, Slack, and
   Google Chat.
-- **Operação simples** — um binário Go com SQLite embutido: sem Docker, sem banco
-  externo, sem dependências de runtime.
+- **Simple to operate** — a single Go binary with embedded SQLite: no Docker, no
+  external database, no runtime dependencies.
 
 ---
 
-## Como executar
+## Getting started
 
-Requisitos: **Go 1.26+**, **git** no PATH e um harness de IA autenticado
-(`claude`, `codex` ou `opencode`).
+Requirements: **Go 1.26+**, **git** on the PATH, and an authenticated AI harness
+(`claude`, `codex`, or `opencode`).
 
 **Linux/macOS**
 
@@ -114,24 +121,24 @@ go build -o praxis.exe .\cmd\praxis
 .\praxis.exe serve
 ```
 
-Abra **http://127.0.0.1:7799**, cadastre um projeto (a pasta de um repositório git)
-e crie a primeira consulta ou demanda. O menu **Manual**, dentro da própria web,
-guia o fluxo completo.
+Open **http://127.0.0.1:7799**, register a project (the folder of a git
+repository), and create your first query or demand. The **Manual** menu, inside
+the web UI, walks through the whole flow.
 
-Para acessar de outras máquinas sem ter um certificado próprio, suba com
-`-tls` — o Praxis gera um certificado HTTPS autoassinado:
+To reach the server from other machines without a certificate of your own, start
+with `-tls` — Praxis generates a self-signed HTTPS certificate:
 
 ```sh
 ./praxis serve -addr 0.0.0.0:7799 -tls
 ```
 
-Saiba mais no [guia completo](README_COMPLETO.md#acesso-pela-rede-https):
-certificado próprio, instalação do certificado nos dispositivos e boas práticas.
+Learn more in the [full guide](README_COMPLETO.md#network-access-https):
+custom certificates, installing the certificate on devices, and good practices.
 
 ---
 
-## Documentação completa
+## Full documentation
 
-O guia detalhado está em **[README_COMPLETO.md](README_COMPLETO.md)**: acesso pela
-rede com TLS, execução como serviço (systemd / Windows), API REST, notificações,
-parâmetros de configuração, segurança e solução de problemas.
+The detailed guide lives in **[README_COMPLETO.md](README_COMPLETO.md)**: network
+access with TLS, running as a service (systemd / Windows), REST API, notifications,
+configuration parameters, security, and troubleshooting.
