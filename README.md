@@ -2,12 +2,14 @@
 
 # Praxis Autonomous
 
-**An AI team on top of your repositories — through the web, for your whole team.**
+**Your system's knowledge and business rules — served to the whole team, without
+handing out the source code.**
 
-Register your git projects once. From then on, anyone authorized can ask how the
-system behaves in business language, turn needs into PRDs with navigable
-prototypes, and run development demands end to end — with human approval only at
-the moments that matter.
+Praxis sits on top of your git repositories and answers what support, product,
+implementation, and partner teams need to know — in business language, with the
+source code never exposed and no repo access to hand out. And when understanding
+turns into work, it carries the demand end to end: AI-refined PRD, phased plan,
+autonomous execution, merge request.
 
 *Pure Go · single binary · embedded SQLite · 100% web UI*
 
@@ -15,7 +17,7 @@ the moments that matter.
 
 ---
 
-## The problem
+## The problem — answers locked in the code, access handed out without need
 
 The people who most need to understand the code are rarely the ones who wrote it:
 
@@ -29,22 +31,33 @@ The people who most need to understand the code are rarely the ones who wrote it
   integration, create a mock, or prototype a scenario — and has to read a codebase
   they have never seen.
 
-Every one of those paths ends up interrupting a developer who owns the code.
-Praxis removes the bottleneck: it **actually reads the code**, in read-only mode,
-and returns answers, documents, prototypes — and even development ready to merge.
+Companies solve this the worst possible way: interrupting the developers who own
+the code — or granting source-code access to anyone who might ever need an answer,
+until half the company can clone the repositories. The knowledge stays tribal, and
+least privilege goes out the window.
+
+Praxis removes both problems at once: it **actually reads the code**, in read-only
+mode, and returns answers, documents, prototypes — and even development ready to
+merge — while the source code stays exactly where it belongs.
 
 ---
 
-## Consultas (Queries) — business-language answers, without exposing code
+## Consultas (Queries) — business-rule answers, without exposing source code
 
 ![Queries screen: a question about the system answered in business language](docs/media/praxis_consultas.png)
 
 Ask how the system behaves — *"what happens when an invoice is past due?"*, *"can
 I create tools backed by external APIs?"* — and the consultant answers by reading
 the code, in business language, **never showing source code** (a server-side
-post-filter guarantees it). Support answers customers with confidence, product
-writes PRDs grounded in real behavior, integrators map the business rules before
-writing a line of code.
+post-filter guarantees it). Your codebase becomes a self-service knowledge base
+for the teams around it: support answers customers with confidence, product writes
+PRDs grounded in real behavior, integrators map the business rules of a legacy
+system before writing a line of code.
+
+> **Real-world case — an L2/L3 support tier:** wire the Praxis API into your
+> helpdesk and the ticket the L1 analyst can't solve with the obvious becomes a
+> query — Praxis digs into the code and resolves around 90% of those cases,
+> leaving the senior teams focused on the genuinely complex problems.
 
 Access is its own permission (`consultas.usar`): you can create a "Support" or
 "Product" role with no access to demands, code, or settings.
@@ -87,16 +100,21 @@ per-phase cost — and can pause, resume, or cancel at any time.
 ## Why Praxis
 
 - **Multi-project, multi-engine** — orchestrates `claude`, `codex`, or `opencode`,
-  with a fallback order, per-task models, and a per-demand budget.
+  with per-task models and a per-demand budget.
+- **Frontier AI at subscription cost** — the engines are AI harnesses running on
+  the plans you already subscribe to: a fixed monthly cost instead of a per-token
+  API bill. And if one plan's quota runs out, Praxis switches to the next engine
+  automatically — the user never goes unanswered.
 - **Nothing to install for users** — everything runs in the browser, including a
   **web VS Code** for manual adjustments in a demand's worktree.
 - **Your code is protected** — execution in isolated worktrees, pushes limited to
-  `praxis/*` branches, main is never touched; queries never expose source code.
+  `praxis/*` branches, main is never touched; queries answer without repo access —
+  least privilege by default.
 - **Visible costs** — spend per demand, per project, and per month right on the
   Home screen.
-- **Fits your workflow** — REST API with tokens and roles (open demands straight
-  from your ticketing system) and notifications via Telegram, Discord, Slack, and
-  Google Chat.
+- **Fits your workflow** — REST API with tokens and roles: open demands or run
+  queries straight from your helpdesk, plus notifications via Telegram, Discord,
+  Slack, and Google Chat.
 - **Simple to operate** — a single Go binary with embedded SQLite: no Docker, no
   external database, no runtime dependencies.
 

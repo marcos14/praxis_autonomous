@@ -2,18 +2,20 @@
 
 # Praxis Autonomous
 
-**Uma equipe de IA em cima dos seus repositórios — pela web, para o time inteiro.**
+**O conhecimento e as regras de negócio do seu sistema — servidos para o time
+inteiro, sem distribuir o código-fonte.**
 
-Cadastre os projetos git uma única vez. A partir daí, qualquer pessoa autorizada
-tira dúvidas sobre o sistema em linguagem de negócio, transforma necessidades em
-PRDs com protótipo navegável e executa demandas de código de ponta a ponta — com
-aprovação humana só nos momentos que importam.
+O Praxis fica em cima dos seus repositórios git e responde o que suporte, produto,
+implantação e squads parceiras precisam saber — em linguagem de negócio, sem nunca
+expor o código-fonte e sem distribuir acesso ao repositório. E quando o
+entendimento vira trabalho, ele leva a demanda de ponta a ponta: PRD lapidado com
+IA, plano em fases, execução autônoma, merge request.
 
 *Go puro · um binário · SQLite embutido · interface 100% web*
 
 ---
 
-## O problema
+## O problema — respostas trancadas no código, acesso distribuído sem necessidade
 
 Quem mais precisa entender o código raramente é quem o escreveu:
 
@@ -26,21 +28,34 @@ Quem mais precisa entender o código raramente é quem o escreveu:
 - O **dev de outra squad** precisa das regras de negócio para fazer uma integração,
   criar um mock ou prototipar um cenário — e vai ler um código que nunca viu.
 
-Todos esses caminhos terminam interrompendo um desenvolvedor do projeto. O Praxis
-remove o gargalo: ele **lê o código de verdade**, em modo somente leitura, e devolve
-respostas, documentos, protótipos — e até o desenvolvimento pronto para merge.
+As empresas resolvem isso do pior jeito: interrompendo os desenvolvedores donos do
+código — ou dando acesso ao código-fonte para qualquer um que talvez precise de uma
+resposta, até meia empresa poder clonar os repositórios. O conhecimento continua
+tribal, e o menor privilégio vai pelo ralo.
+
+O Praxis remove os dois problemas de uma vez: ele **lê o código de verdade**, em
+modo somente leitura, e devolve respostas, documentos, protótipos — e até o
+desenvolvimento pronto para merge — enquanto o código-fonte fica exatamente onde
+deve ficar.
 
 ---
 
-## Consultas — respostas em linguagem de negócio, sem expor o código
+## Consultas — respostas sobre regras de negócio, sem expor o código-fonte
 
 ![Tela de Consultas: pergunta sobre o sistema respondida em linguagem de negócio](docs/media/praxis_consultas.png)
 
 Pergunte como o sistema se comporta — *"o que acontece quando o boleto vence?"*,
 *"consigo criar tools com base em APIs externas?"* — e o consultor responde lendo o
 código, em linguagem de negócio, **sem nunca mostrar código-fonte** (um pós-filtro
-no servidor garante). O suporte responde o cliente com certeza, o produto elabora
-PRDs sobre o comportamento real, a integração mapeia as regras antes de codificar.
+no servidor garante). O código vira uma base de conhecimento self-service para os
+times ao redor: o suporte responde o cliente com certeza, o produto elabora PRDs
+sobre o comportamento real, a integração mapeia as regras de negócio de um sistema
+legado antes de codificar.
+
+> **Caso real — N2/N3 do suporte:** integrando a API do Praxis à ferramenta de
+> chamados, o chamado que o N1 não resolve com o óbvio vira uma consulta — o
+> Praxis aprofunda no código e resolve cerca de 90% desses casos, deixando as
+> equipes avançadas focadas nos problemas realmente complexos.
 
 A permissão é própria (`consultas.usar`): dá para criar um papel "Suporte" ou
 "Produto" sem nenhum acesso a demandas, código ou configurações.
@@ -83,15 +98,20 @@ momento.
 ## Por que usar
 
 - **Multi-projeto e multi-motor** — orquestra `claude`, `codex` ou `opencode`, com
-  ordem de fallback, modelo por tarefa e budget por demanda.
+  modelo por tarefa e budget por demanda.
+- **IA de ponta no custo da assinatura** — os motores são harnesses de IA que rodam
+  nos planos que você já assina: custo fixo mensal em vez de conta de API por
+  token. E se a franquia de um plano esgotar, o Praxis muda automaticamente para o
+  próximo motor — o usuário nunca fica sem resposta.
 - **Nada para instalar em quem usa** — toda a operação é pelo navegador, inclusive
   um **VS Code web** para ajustes manuais no worktree de uma demanda.
 - **Código protegido** — execução em worktree isolado, push só de branches
-  `praxis/*`, a main nunca é tocada; consultas nunca expõem código-fonte.
+  `praxis/*`, a main nunca é tocada; consultas respondem sem dar acesso ao
+  repositório — menor privilégio por padrão.
 - **Custo visível** — gasto por demanda, por projeto e por mês direto na Home.
-- **Encaixa no seu fluxo** — API REST com tokens e papéis (abra demandas a partir
-  do seu sistema de chamados) e notificações via Telegram, Discord, Slack e
-  Google Chat.
+- **Encaixa no seu fluxo** — API REST com tokens e papéis: abra demandas ou
+  dispare consultas direto do seu sistema de chamados, além de notificações via
+  Telegram, Discord, Slack e Google Chat.
 - **Operação simples** — um binário Go com SQLite embutido: sem Docker, sem banco
   externo, sem dependências de runtime.
 

@@ -239,6 +239,9 @@ GET      /demands/{id}/merge-preview  GET /demands/{id}/overlap
 GET      /demands/{id}/logs (SSE)     GET /demands/{id}/events
 GET      /events (SSE global)         GET /metrics  GET /pendencias  GET /activity
 GET      /overlaps                    GET /manual   GET /manual/{slug}
+POST/GET /consultas                   # consultas: criar (projeto ou grupo) / listar
+GET      /consultas/{id}              DELETE /consultas/{id}
+GET/POST /consultas/{id}/chat         GET /consultas/{id}/progresso
 POST/GET /tokens                      DELETE /tokens/{id}
 ```
 
