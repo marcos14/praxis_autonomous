@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { el, limpar, bannerErro, toast, mdEditor } from "./ui.js";
 import { abrirCard } from "./demandas.js";
 import * as auth from "./auth.js";
+import { t } from "./i18n.js";
 
 export async function montarNovaDemanda() {
   const cont = limpar(document.getElementById("painel-nova"));
@@ -14,30 +15,30 @@ export async function montarNovaDemanda() {
   try {
     projetos = (await api.listarProjetos()) || [];
   } catch (e) {
-    cont.append(el("p", { class: "sub", text: "Falha ao carregar projetos: " + e.message }));
+    cont.append(el("p", { class: "sub", text: t("nova.falha_projetos", { erro: e.message }) }));
     return;
   }
   if (projetos.length === 0) {
     cont.append(el("p", { class: "sub" },
-      "Cadastre um projeto antes de criar uma demanda. Vá em ",
-      el("a", { href: "#projetos", text: "Projetos" }), "."));
+      t("nova.cadastre_antes"),
+      el("a", { href: "#projetos", text: t("nav.projetos") }), "."));
     return;
   }
 
   const selProj = el("select", {},
     ...projetos.map((p) => el("option", { value: String(p.id), text: p.nome })));
-  const inpTitulo = el("input", { type: "text", placeholder: "Opcional — se vazio, usamos a primeira linha do PRD" });
-  const inpBranch = el("input", { type: "text", placeholder: "Opcional — ex.: painel-home (vira praxis/painel-home)" });
-  const edPRD = mdEditor({ placeholder: "Cole aqui o PRD ou descreva o chamado…", rows: 10 });
-  const btn = el("button", { class: "btn", text: "Criar demanda" });
+  const inpTitulo = el("input", { type: "text", placeholder: t("nova.ph_titulo") });
+  const inpBranch = el("input", { type: "text", placeholder: t("nova.ph_branch") });
+  const edPRD = mdEditor({ placeholder: t("nova.ph_prd"), rows: 10 });
+  const btn = el("button", { class: "btn", text: t("nova.criar") });
 
   const form = el("div", { class: "form" },
-    el("div", {}, el("label", { text: "Projeto" }), selProj),
-    el("div", {}, el("label", { text: "Título" }), inpTitulo),
-    el("div", {}, el("label", { text: "Branch" }), inpBranch,
+    el("div", {}, el("label", { text: t("nova.projeto") }), selProj),
+    el("div", {}, el("label", { text: t("nova.titulo") }), inpTitulo),
+    el("div", {}, el("label", { text: t("nova.branch") }), inpBranch,
       el("p", { class: "sub", style: "margin:4px 0 0",
-        text: "Em branco, geramos praxis/d<id>-<título>. O prefixo praxis/ é sempre adicionado." })),
-    el("div", {}, el("label", { text: "PRD / descrição do chamado" }), edPRD.no),
+        text: t("nova.hint_branch") })),
+    el("div", {}, el("label", { text: t("nova.prd") }), edPRD.no),
     el("div", { class: "acoes" }, btn),
   );
   cont.append(form);
@@ -47,15 +48,15 @@ export async function montarNovaDemanda() {
   // revisão registrados) — o fluxo de handoff vive naquela tela.
   if (auth.temPermissao("planejamentos.usar")) {
     cont.append(el("p", { class: "sub", style: "margin-top:12px" },
-      "Prefere construir o PRD antes? Comece por um ",
-      el("a", { href: "#planejamentos", text: "planejamento" }),
-      " — o estrategista lê o código, lapida o documento com você e cria a demanda de lá."));
+      t("nova.plan_antes"),
+      el("a", { href: "#planejamentos", text: t("nova.plan_link") }),
+      t("nova.plan_depois")));
   }
 
   async function criar() {
     const prd = edPRD.ta.value.trim();
     if (!prd) {
-      bannerErro("Cole o PRD ou descreva o chamado antes de criar a demanda.");
+      bannerErro(t("nova.cole_prd"));
       return;
     }
     btn.disabled = true;
@@ -66,7 +67,7 @@ export async function montarNovaDemanda() {
         prd,
       });
       bannerErro("");
-      toast("Demanda #" + d.id + " criada.", "ok");
+      toast(t("nova.criada", { id: d.id }), "ok");
       // limpa o formulário e abre o card da demanda recém-criada.
       inpTitulo.value = "";
       inpBranch.value = "";
@@ -74,7 +75,7 @@ export async function montarNovaDemanda() {
       location.hash = "demandas";
       await abrirCard(d.id);
     } catch (e) {
-      bannerErro("Falha ao criar a demanda: " + e.message);
+      bannerErro(t("nova.falha_criar", { erro: e.message }));
     } finally {
       btn.disabled = false;
     }

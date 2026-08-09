@@ -20,13 +20,13 @@ type Store interface {
 
 // Opcoes configura a manutenção.
 type Opcoes struct {
-	Store       Store
-	DirBackups  string        // onde gravar os backups (ex.: PRAXIS_HOME/backups)
-	DirLogs     string        // onde ficam os .jsonl a reter (ex.: PRAXIS_HOME/logs)
-	ManterBackups int         // quantos backups manter (default 7)
-	RetencaoDias  int         // idade máxima de logs/eventos em dias (default 30)
-	Intervalo   time.Duration // periodicidade do ciclo (default 24h)
-	Log         func(string)
+	Store         Store
+	DirBackups    string        // onde gravar os backups (ex.: PRAXIS_HOME/backups)
+	DirLogs       string        // onde ficam os .jsonl a reter (ex.: PRAXIS_HOME/logs)
+	ManterBackups int           // quantos backups manter (default 7)
+	RetencaoDias  int           // idade máxima de logs/eventos em dias (default 30)
+	Intervalo     time.Duration // periodicidade do ciclo (default 24h)
+	Log           func(string)
 }
 
 // Manutencao executa os ciclos de backup/retenção.

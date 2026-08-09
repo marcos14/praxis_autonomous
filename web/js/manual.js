@@ -2,25 +2,26 @@
 // GET /api/v1/manual (lista) e /api/v1/manual/{slug} (conteúdo markdown).
 
 import { api } from "./api.js";
+import { t } from "./i18n.js";
 import { el, limpar, bannerErro, renderMarkdown } from "./ui.js";
 
 export async function montarManual() {
   const nav = limpar(document.getElementById("manual-nav"));
   const corpo = limpar(document.getElementById("manual-corpo"));
-  corpo.append(el("p", { class: "sub", text: "Carregando…" }));
+  corpo.append(el("p", { class: "sub", text: t("configx.carregando") }));
 
   let secoes;
   try {
     secoes = (await api.listarManual()) || [];
   } catch (e) {
-    bannerErro("Falha ao carregar o manual: " + e.message);
+    bannerErro(t("manualx.falha_carregar", { erro: e.message }));
     return;
   }
   bannerErro("");
   limpar(corpo);
 
   if (secoes.length === 0) {
-    corpo.append(el("p", { class: "sub", text: "Manual indisponível." }));
+    corpo.append(el("p", { class: "sub", text: t("manualx.indisponivel") }));
     return;
   }
 

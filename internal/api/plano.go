@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"net/http"
 	"os"
 	"strings"
@@ -27,8 +28,7 @@ func (s *Servidor) handleEditarFases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if dem.Status != db.StatusDemandaAguardandoAprovacao {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"só é possível editar as fases enquanto a demanda aguarda aprovação (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_editar_fases_estado", "status", dem.Status)
 		return
 	}
 
@@ -37,7 +37,7 @@ func (s *Servidor) handleEditarFases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.Fases) == 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "informe ao menos uma fase")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.plano_ao_menos_uma_fase")
 		return
 	}
 	fases, msg := validarFasesReq(req.Fases)
@@ -47,7 +47,7 @@ func (s *Servidor) handleEditarFases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.banco.SubstituirFases(r.Context(), dem.ID, fases); err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	s.responderDemandaComFases(w, r, dem)
@@ -75,8 +75,7 @@ func (s *Servidor) handleAprovarPlano(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if dem.Status != db.StatusDemandaAguardandoAprovacao {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"só é possível aprovar/rejeitar uma demanda aguardando aprovação (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_aprovar_estado", "status", dem.Status)
 		return
 	}
 
@@ -96,24 +95,23 @@ func (s *Servidor) handleAprovarPlano(w http.ResponseWriter, r *http.Request) {
 func (s *Servidor) aprovarPlano(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
 	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	if len(fases) == 0 {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"não é possível aprovar um plano sem fases")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_sem_fases")
 		return
 	}
 
 	dem.Status = db.StatusDemandaPronta
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
-	s.registrarEventoDemanda(r, atual, "plano_aprovado", "Praxis: plano aprovado",
-		"Plano aprovado pelo usuário; demanda pronta para execução.")
+	s.registrarEventoDemanda(r, atual, "plano_aprovado", i18n.TI("evento.plano_aprovado"),
+		i18n.TI("evento.plano_aprovado_detalhe"))
 	s.responderDemandaComFases(w, r, atual)
 }
 
@@ -121,8 +119,7 @@ func (s *Servidor) aprovarPlano(w http.ResponseWriter, r *http.Request, dem db.D
 // `planejando` e redispara o planejador (replanejar).
 func (s *Servidor) rejeitarPlano(w http.ResponseWriter, r *http.Request, dem db.Demanda, comentario string) {
 	if comentario == "" {
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"informe um comentário explicando o que ajustar no plano")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.plano_comentario_obrigatorio")
 		return
 	}
 
@@ -130,19 +127,19 @@ func (s *Servidor) rejeitarPlano(w http.ResponseWriter, r *http.Request, dem db.
 	if _, err := s.banco.CriarMensagemChat(r.Context(), db.MensagemChat{
 		DemandID: dem.ID, Papel: db.PapelUser, Conteudo: comentario,
 	}); err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
 	dem.Status = db.StatusDemandaPlanejando
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
-	s.registrarEventoDemanda(r, atual, "plano_rejeitado", "Praxis: plano rejeitado",
-		"Usuário rejeitou o plano com comentário; replanejando.")
+	s.registrarEventoDemanda(r, atual, "plano_rejeitado", i18n.TI("evento.plano_rejeitado"),
+		i18n.TI("evento.plano_rejeitado_detalhe"))
 
 	if s.planejamento != nil {
 		s.planejamento.DispararPlanejamento(atual.ID)
@@ -170,20 +167,19 @@ func (s *Servidor) handleConcluirFaseHumana(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if statusTerminal(dem.Status) {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"não é possível concluir fases de uma demanda encerrada (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_demanda_encerrada", "status", dem.Status)
 		return
 	}
 
 	codigo := strings.TrimSpace(r.PathValue("codigo"))
 	if codigo == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "informe o código da fase")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.plano_codigo_fase")
 		return
 	}
 
 	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	var alvo *db.Fase
@@ -194,12 +190,11 @@ func (s *Servidor) handleConcluirFaseHumana(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if alvo == nil {
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "fase não encontrada nesta demanda")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.plano_fase_nao_encontrada")
 		return
 	}
 	if !alvo.RequerHumano {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"esta fase não exige intervenção humana; ela é conduzida automaticamente")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_fase_automatica")
 		return
 	}
 	if alvo.Status == db.StatusFaseConcluida {
@@ -217,10 +212,10 @@ func (s *Servidor) handleConcluirFaseHumana(w http.ResponseWriter, r *http.Reque
 	alvo.ConcluidoEm = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 	alvo.Observacao = "concluída manualmente (requer humano)"
 	if _, err := s.banco.AtualizarFase(r.Context(), *alvo); err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
-	s.registrarEventoDemanda(r, dem, "fase_humana_concluida", "Praxis: fase concluída manualmente",
+	s.registrarEventoDemanda(r, dem, "fase_humana_concluida", i18n.TI("evento.fase_humana_concluida"),
 		"Fase "+codigo+" ("+alvo.Titulo+") marcada como concluída por um humano; execução liberada.")
 
 	// Se a demanda estava pausada aguardando intervenção humana, volta à fila para
@@ -231,11 +226,11 @@ func (s *Servidor) handleConcluirFaseHumana(w http.ResponseWriter, r *http.Reque
 		dem.Status = db.StatusDemandaPronta
 		atual, err = s.banco.AtualizarDemanda(r.Context(), dem)
 		if err != nil {
-			s.responderErroDemanda(w, err)
+			s.responderErroDemanda(w, r, err)
 			return
 		}
-		s.registrarEventoDemanda(r, atual, "demanda_retomada", "Praxis: demanda retomada",
-			"Fase humana concluída; demanda de volta à fila do scheduler.")
+		s.registrarEventoDemanda(r, atual, "demanda_retomada", i18n.TI("evento.demanda_retomada.titulo"),
+			i18n.TI("evento.demanda_retomada_detalhe"))
 	}
 
 	s.responderDemandaComFases(w, r, atual)
@@ -267,19 +262,18 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 		db.StatusDemandaAguardandoFranquia, db.StatusDemandaFalhou:
 		// ok: estados de execução, dá para reiniciar uma fase.
 	default:
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"só é possível reiniciar uma fase com a demanda em execução, pausada ou falhada (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_reiniciar_estado", "status", dem.Status)
 		return
 	}
 
 	codigo := strings.TrimSpace(r.PathValue("codigo"))
 	if codigo == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "informe o código da fase")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.plano_codigo_fase")
 		return
 	}
 	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	var alvo *db.Fase
@@ -290,12 +284,11 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if alvo == nil {
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "fase não encontrada nesta demanda")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.plano_fase_nao_encontrada")
 		return
 	}
 	if alvo.RequerHumano {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"esta fase exige um humano e não é executada pelo scheduler; use \"Marcar como feito\"")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_fase_humana")
 		return
 	}
 	switch alvo.Status {
@@ -304,8 +297,7 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 		s.responderDemandaComFases(w, r, dem)
 		return
 	case db.StatusFaseConcluida:
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"não é possível reiniciar uma fase concluída — as fases seguintes podem depender do resultado dela")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.plano_fase_concluida")
 		return
 	}
 
@@ -314,7 +306,7 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 	// descarte. O status final (pronta) é gravado no passo 4.
 	dem.Status = db.StatusDemandaPausada
 	if dem, err = s.banco.AtualizarDemanda(r.Context(), dem); err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
@@ -330,7 +322,7 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 	descarte := ""
 	if dir := strings.TrimSpace(dem.WorktreePath); dir != "" {
 		if _, statErr := os.Stat(dir); statErr == nil {
-			descarte = "Sobras não commitadas do worktree foram descartadas."
+			descarte = i18n.TI("evento.fase_reiniciada_descartado")
 			if err := s.descartarComRetentativas(dir); err != nil {
 				descarte = "Não consegui descartar as mudanças não commitadas do worktree: " + err.Error()
 				s.log.Warn("reiniciar fase: descartar mudanças do worktree", "erro", err, "demanda", dem.ID)
@@ -342,14 +334,14 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 	alvo.Status = db.StatusFasePendente
 	alvo.Observacao = "reiniciada manualmente pelo usuário"
 	if _, err := s.banco.AtualizarFase(r.Context(), *alvo); err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	dem.Status = db.StatusDemandaPronta
 	dem.Erro = ""
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	if s.exec != nil {
@@ -365,7 +357,7 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 	if descarte != "" {
 		detalhe += " " + descarte
 	}
-	s.registrarEventoDemanda(r, atual, "fase_reiniciada", "Praxis: fase reiniciada", detalhe)
+	s.registrarEventoDemanda(r, atual, "fase_reiniciada", i18n.TI("evento.fase_reiniciada"), detalhe)
 	s.responderDemandaComFases(w, r, atual)
 }
 

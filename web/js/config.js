@@ -7,19 +7,20 @@ import { el, limpar, toast, bannerErro } from "./ui.js";
 import { temPermissao } from "./auth.js";
 import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
 import { GRUPOS_EVENTOS, CANAIS, resolverEventos } from "./notify-events.js";
+import { t } from "./i18n.js";
 
 let desconhecidas = {}; // chaves fora da whitelist, preservadas no save
 
 export async function montarConfig() {
   const painel = document.getElementById("painel-config");
   limpar(painel);
-  painel.append(el("p", { class: "sub", style: "margin:0", text: "Carregando…" }));
+  painel.append(el("p", { class: "sub", style: "margin:0", text: t("configx.carregando") }));
 
   let cfg;
   try {
     cfg = await api.obterConfigGlobal();
   } catch (e) {
-    bannerErro("Falha ao carregar config global: " + e.message);
+    bannerErro(t("configx.falha_carregar", { erro: e.message }));
     return;
   }
   bannerErro("");
@@ -44,8 +45,8 @@ export async function montarConfig() {
     ));
   }
 
-  const btn = el("button", { class: "btn", style: "width:fit-content", onclick: () => salvar(inputs, campos, btn) }, "Salvar");
-  form.append(el("div", { class: "hint", text: "Chaves em branco não são gravadas (a config efetiva de cada projeto cai no default do sistema)." }));
+  const btn = el("button", { class: "btn", style: "width:fit-content", onclick: () => salvar(inputs, campos, btn) }, t("configx.salvar"));
+  form.append(el("div", { class: "hint", text: t("configx.hint_branco") }));
   form.append(btn);
   painel.append(form);
 
@@ -70,7 +71,7 @@ async function montarNotificacoes() {
   try {
     cfg = await api.obterConfigGlobal();
   } catch (e) {
-    painel.append(el("p", { class: "sub", text: "Falha ao carregar notificações: " + e.message }));
+    painel.append(el("p", { class: "sub", text: t("configx.falha_notif", { erro: e.message }) }));
     return;
   }
   const notif = cfg["notificacoes"] || {};
@@ -79,15 +80,15 @@ async function montarNotificacoes() {
 
   const form = el("div", { class: "form" });
 
-  const inpCab = el("input", { type: "text", value: notif.cabecalho || "", placeholder: "ex.: [Praxis · Produção]" });
+  const inpCab = el("input", { type: "text", value: notif.cabecalho || "", placeholder: t("configx.ph_cabecalho") });
   form.append(el("div", {},
-    el("label", {}, "Cabeçalho das mensagens ", el("span", { class: "opt" }, "(opcional)")),
+    el("label", {}, t("configx.cabecalho") + " ", el("span", { class: "opt" }, t("configx.opcional"))),
     inpCab,
-    el("div", { class: "hint", text: "Linha fixa no topo de toda notificação — útil para identificar o ambiente." })));
+    el("div", { class: "hint", text: t("configx.hint_cabecalho") })));
 
   // Canais.
   const canalCtl = new Map();
-  form.append(el("h3", { class: "notif-sub" }, "Canais"));
+  form.append(el("h3", { class: "notif-sub" }, t("configx.canais")));
   for (const canal of CANAIS) {
     const salvo = canaisSalvos[canal.chave] || {};
     const chkAtivo = el("input", { type: "checkbox" });
@@ -115,8 +116,8 @@ async function montarNotificacoes() {
   }
 
   // Eventos notificados por padrão.
-  form.append(el("h3", { class: "notif-sub" }, "Eventos notificados por padrão"));
-  form.append(el("div", { class: "hint", style: "margin-top:-6px", text: "Valem para todos os projetos que não personalizarem suas notificações." }));
+  form.append(el("h3", { class: "notif-sub" }, t("configx.eventos_padrao")));
+  form.append(el("div", { class: "hint", style: "margin-top:-6px", text: t("configx.hint_eventos") }));
   const evtCtl = new Map();
   for (const g of GRUPOS_EVENTOS) {
     const grid = el("div", { class: "notif-eventos" });
@@ -129,7 +130,7 @@ async function montarNotificacoes() {
     form.append(el("div", { class: "notif-grupo" }, el("div", { class: "notif-grupo-tit", text: g.grupo }), grid));
   }
 
-  const btn = el("button", { class: "btn", style: "width:fit-content" }, "Salvar notificações");
+  const btn = el("button", { class: "btn", style: "width:fit-content" }, t("configx.salvar_notif"));
   btn.onclick = () => salvarNotificacoes(canalCtl, evtCtl, inpCab, btn);
   form.append(btn);
   painel.append(form);
@@ -158,11 +159,11 @@ async function salvarNotificacoes(canalCtl, evtCtl, inpCab, btn) {
     const atual = await api.obterConfigGlobal();
     atual["notificacoes"] = notificacoes;
     await api.definirConfigGlobal(atual);
-    toast("Notificações salvas.", "ok");
+    toast(t("configx.notif_salvas"), "ok");
     await montarNotificacoes();
   } catch (e) {
-    bannerErro("Falha ao salvar notificações: " + e.message);
-    toast("Falha ao salvar.", "err");
+    bannerErro(t("configx.falha_salvar_notif", { erro: e.message }));
+    toast(t("configx.falha_salvar_toast"), "err");
   } finally {
     btn.disabled = false;
   }
@@ -170,7 +171,17 @@ async function salvarNotificacoes(canalCtl, evtCtl, inpCab, btn) {
 
 // ---------- Tokens de API (Fase 5a) ----------
 
+// PAPEIS_TOKEN são os VALORES enviados à API; o rótulo exibido é traduzido
+// por rotuloPapel (configx.papel_*).
 const PAPEIS_TOKEN = ["leitor", "operador", "admin"];
+
+// rotuloPapel traduz o papel de um token para exibição; papel desconhecido
+// aparece como veio da API.
+function rotuloPapel(papel) {
+  const chave = "configx.papel_" + papel;
+  const rotulo = t(chave);
+  return rotulo === chave ? papel : rotulo;
+}
 
 async function montarTokens() {
   const painel = document.getElementById("painel-tokens");
@@ -185,29 +196,29 @@ async function montarTokens() {
   if (!podeGerir) return;
   limpar(painel);
 
-  const inpNome = el("input", { type: "text", placeholder: "nome (ex.: sistema de chamados)" });
-  const selPapel = el("select", {}, ...PAPEIS_TOKEN.map((p) => el("option", { value: p, text: p })));
+  const inpNome = el("input", { type: "text", placeholder: t("configx.ph_token_nome") });
+  const selPapel = el("select", {}, ...PAPEIS_TOKEN.map((p) => el("option", { value: p, text: rotuloPapel(p) })));
   selPapel.value = "operador";
-  const btnNovo = el("button", { class: "btn sm", text: "Gerar token" });
+  const btnNovo = el("button", { class: "btn sm", text: t("configx.gerar_token") });
   const form = el("div", { class: "token-form" }, inpNome, selPapel, btnNovo);
   const lista = el("div", { id: "lista-tokens", style: "margin-top:14px" });
   painel.append(form, lista);
 
   btnNovo.addEventListener("click", async () => {
     const nome = inpNome.value.trim();
-    if (!nome) { bannerErro("Informe um nome para o token."); return; }
+    if (!nome) { bannerErro(t("configx.informe_nome")); return; }
     btnNovo.disabled = true;
     try {
       const tok = await api.criarToken(nome, selPapel.value);
       inpNome.value = "";
       painel.querySelector(".token-novo")?.remove();
       painel.insertBefore(el("div", { class: "banner banner-ok token-novo" },
-        el("div", { text: "Token criado — copie agora, não será mostrado de novo:" }),
+        el("div", { text: t("configx.token_criado") }),
         el("code", { class: "token-valor", text: tok.token }),
       ), lista);
       await recarregarTokens();
     } catch (e) {
-      bannerErro("Falha ao criar token: " + e.message);
+      bannerErro(t("configx.falha_criar_token", { erro: e.message }));
     } finally {
       btnNovo.disabled = false;
     }
@@ -224,23 +235,23 @@ async function recarregarTokens() {
   try {
     tokens = (await api.listarTokens()) || [];
   } catch (e) {
-    lista.append(el("p", { class: "sub", text: "Falha ao listar tokens: " + e.message }));
+    lista.append(el("p", { class: "sub", text: t("configx.falha_listar_tokens", { erro: e.message }) }));
     return;
   }
   if (tokens.length === 0) {
-    lista.append(el("p", { class: "sub", style: "margin:0", text: "Nenhum token criado." }));
+    lista.append(el("p", { class: "sub", style: "margin:0", text: t("configx.sem_tokens") }));
     return;
   }
-  for (const t of tokens) {
-    const revogado = !!t.revogado_em;
+  for (const tok of tokens) {
+    const revogado = !!tok.revogado_em;
     const row = el("div", { class: "token-row" + (revogado ? " revogado" : "") },
       el("div", {},
-        el("span", { class: "token-nome", text: t.nome }),
-        el("span", { class: "pill", style: "margin-left:8px", text: t.papel }),
-        revogado ? el("span", { class: "pill", style: "margin-left:6px;color:var(--muted)", text: "revogado" }) : null,
+        el("span", { class: "token-nome", text: tok.nome }),
+        el("span", { class: "pill", style: "margin-left:8px", text: rotuloPapel(tok.papel) }),
+        revogado ? el("span", { class: "pill", style: "margin-left:6px;color:var(--muted)", text: t("configx.revogado") }) : null,
       ),
-      revogado ? null : el("button", { class: "btn sm danger", text: "Revogar",
-        onclick: () => revogar(t.id) }),
+      revogado ? null : el("button", { class: "btn sm danger", text: t("configx.revogar"),
+        onclick: () => revogar(tok.id) }),
     );
     lista.append(row);
   }
@@ -251,7 +262,7 @@ async function revogar(id) {
     await api.revogarToken(id);
     await recarregarTokens();
   } catch (e) {
-    bannerErro("Falha ao revogar: " + e.message);
+    bannerErro(t("configx.falha_revogar", { erro: e.message }));
   }
 }
 
@@ -263,7 +274,7 @@ async function salvar(inputs, campos, btn) {
     if (c.tipo === "number") {
       if (texto.trim() === "") continue;
       const r = textoParaJSON(texto, c.tipo);
-      if (!r.ok) { bannerErro(`"${c.rotulo}" deve ser um número.`); return; }
+      if (!r.ok) { bannerErro(t("configx.deve_numero", { campo: c.rotulo })); return; }
       entradas[c.chave] = r.valor;
       continue;
     }
@@ -279,11 +290,11 @@ async function salvar(inputs, campos, btn) {
   btn.disabled = true;
   try {
     await api.definirConfigGlobal(entradas);
-    toast("Configuração global salva.", "ok");
+    toast(t("configx.salva"), "ok");
     await montarConfig();
   } catch (e) {
-    bannerErro("Falha ao salvar: " + e.message);
-    toast("Falha ao salvar.", "err");
+    bannerErro(t("configx.falha_salvar", { erro: e.message }));
+    toast(t("configx.falha_salvar_toast"), "err");
   } finally {
     btn.disabled = false;
   }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"net/http"
 	"strings"
 
@@ -86,8 +87,7 @@ func (s *Servidor) handleAcaoDemanda(w http.ResponseWriter, r *http.Request) {
 	case "atualizar_branch":
 		s.acaoAtualizarBranch(w, r, dem)
 	default:
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"ação desconhecida: use pausar, retomar, cancelar, tentar_novamente, publicar_branch, integrar ou atualizar_branch")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.acao_desconhecida")
 	}
 }
 
@@ -114,8 +114,8 @@ var acaoPausar = descAcao{
 	},
 	interromper: true,
 	tipoEvento:  "demanda_pausada",
-	tituloEv:    "Praxis: demanda pausada",
-	detalheEv:   "Execução pausada pelo usuário. A fase corrente termina e nenhuma outra começa até retomar.",
+	tituloEv:    i18n.TI("evento.demanda_pausada.titulo"),
+	detalheEv:   i18n.TI("evento.demanda_pausada.detalhe"),
 	msgInvalido: "só é possível pausar uma demanda pronta, executando ou aguardando franquia",
 }
 
@@ -127,8 +127,8 @@ var acaoRetomar = descAcao{
 		return st == db.StatusDemandaPausada || st == db.StatusDemandaAguardandoFranquia
 	},
 	tipoEvento:  "demanda_retomada",
-	tituloEv:    "Praxis: demanda retomada",
-	detalheEv:   "Execução retomada pelo usuário; a demanda voltou à fila do scheduler.",
+	tituloEv:    i18n.TI("evento.demanda_retomada.titulo"),
+	detalheEv:   i18n.TI("evento.demanda_retomada.detalhe"),
 	msgInvalido: "só é possível retomar uma demanda pausada ou aguardando franquia",
 }
 
@@ -139,8 +139,8 @@ var acaoCancelar = descAcao{
 	permitido:   func(st string) bool { return !statusTerminal(st) },
 	interromper: true,
 	tipoEvento:  "demanda_cancelada",
-	tituloEv:    "Praxis: demanda cancelada",
-	detalheEv:   "Execução cancelada pelo usuário. Estado terminal; a demanda não será mais conduzida.",
+	tituloEv:    i18n.TI("evento.demanda_cancelada.titulo"),
+	detalheEv:   i18n.TI("evento.demanda_cancelada.detalhe"),
 	msgInvalido: "não é possível cancelar uma demanda já concluída, integrada, cancelada ou que falhou",
 }
 
@@ -169,7 +169,7 @@ func (s *Servidor) aplicarAcao(w http.ResponseWriter, r *http.Request, dem db.De
 	dem.Status = a.alvo
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
@@ -207,13 +207,12 @@ func (s *Servidor) aplicarAcao(w http.ResponseWriter, r *http.Request, dem db.De
 //     substituir as perguntas.
 func (s *Servidor) acaoTentarNovamente(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
 	if dem.Status != db.StatusDemandaFalhou {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"só é possível tentar novamente uma demanda que falhou (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.acao_tentar_novamente_invalida", "status", dem.Status)
 		return
 	}
 	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	var falhas []db.Fase
@@ -230,7 +229,7 @@ func (s *Servidor) acaoTentarNovamente(w http.ResponseWriter, r *http.Request, d
 			f.Status = db.StatusFasePendente
 			f.Observacao = ""
 			if _, err := s.banco.AtualizarFase(r.Context(), f); err != nil {
-				s.responderErroDemanda(w, err)
+				s.responderErroDemanda(w, r, err)
 				return
 			}
 		}
@@ -238,22 +237,22 @@ func (s *Servidor) acaoTentarNovamente(w http.ResponseWriter, r *http.Request, d
 		detalhe = fmt.Sprintf("%d fase(s) falhada(s) voltaram a pendente; demanda refilada para o scheduler reexecutar.", len(falhas))
 	case s.intakePassouDaAnalise(r.Context(), dem, fases):
 		alvo = db.StatusDemandaPlanejando
-		detalhe = "A falha foi no planejamento; planejador redisparado."
+		detalhe = i18n.TI("evento.demanda_reativada.planejamento")
 	default:
 		alvo = db.StatusDemandaRecebida
-		detalhe = "A falha foi na análise do PRD; analista redisparado."
+		detalhe = i18n.TI("evento.demanda_reativada.analise")
 	}
 
 	dem.Status = alvo
 	dem.Erro = ""
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
 	pid, did := atual.ProjectID, atual.ID
-	ev := db.Evento{Tipo: "demanda_reativada", Titulo: "Praxis: tentando novamente", Detalhe: detalhe}
+	ev := db.Evento{Tipo: "demanda_reativada", Titulo: i18n.TI("evento.demanda_reativada.titulo"), Detalhe: detalhe}
 	if pid > 0 {
 		ev.ProjectID = &pid
 	}
@@ -321,7 +320,7 @@ func (s *Servidor) intakePassouDaAnalise(ctx context.Context, dem db.Demanda, fa
 func (s *Servidor) responderDemandaComFases(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
 	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, respDemanda{Demanda: dem, Fases: fases})

@@ -36,17 +36,17 @@ func (s *Servidor) handleCriarToken(w http.ResponseWriter, r *http.Request) {
 		papel = db.PapelOperador
 	}
 	if !db.PapelTokenValido(papel) {
-		responderErro(w, http.StatusBadRequest, "invalido", "papel deve ser leitor, operador ou admin")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.token_papel_invalido")
 		return
 	}
 	if strings.TrimSpace(req.Nome) == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "nome do token é obrigatório")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.token_nome_obrigatorio")
 		return
 	}
 	tok, err := s.banco.CriarToken(r.Context(), req.Nome, papel)
 	if err != nil {
 		s.log.Error("criar token", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	responderJSON(w, http.StatusCreated, tok)
@@ -57,7 +57,7 @@ func (s *Servidor) handleListarTokens(w http.ResponseWriter, r *http.Request) {
 	tokens, err := s.banco.ListarTokens(r.Context())
 	if err != nil {
 		s.log.Error("listar tokens", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	responderJSON(w, http.StatusOK, tokens)
@@ -67,16 +67,16 @@ func (s *Servidor) handleListarTokens(w http.ResponseWriter, r *http.Request) {
 func (s *Servidor) handleRevogarToken(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "id inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.id_invalido")
 		return
 	}
 	if err := s.banco.RevogarToken(r.Context(), id); err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "token não encontrado")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.token_nao_encontrado")
 			return
 		}
 		s.log.Error("revogar token", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

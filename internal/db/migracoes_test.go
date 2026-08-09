@@ -82,7 +82,7 @@ func TestMigrarRejeitaVersaoFutura(t *testing.T) {
 }
 
 // TestMigracaoContaPreservaRunsExistentes garante o critério da migração 11:
-// runs gravados antes dela continuam legíveis (conta = '') — os relatórios
+// runs gravados antes dela continuam legíveis (conta = ”) — os relatórios
 // atuais não quebram no upgrade.
 func TestMigracaoContaPreservaRunsExistentes(t *testing.T) {
 	db := abrirBruto(t)

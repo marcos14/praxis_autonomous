@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 )
 
 // tipoJSON é o Content-Type usado em todas as respostas JSON da API.
@@ -41,4 +43,25 @@ func responderJSON(w http.ResponseWriter, status int, v any) {
 // responderErro escreve um erro padronizado (ErroResp) com o status HTTP dado.
 func responderErro(w http.ResponseWriter, status int, codigo, mensagem string) {
 	responderJSON(w, status, ErroResp{Erro: ErroDetalhe{Codigo: codigo, Mensagem: mensagem}})
+}
+
+// idiomaDaRequisicao resolve o idioma da resposta: o header X-Praxis-Idioma
+// (a UI envia o idioma ativo em toda requisição) → Accept-Language do navegador
+// → o padrão do i18n. Resolução por headers apenas — determinística e sem
+// consulta ao banco no caminho de erro.
+func idiomaDaRequisicao(r *http.Request) string {
+	if l := i18n.Normalizar(r.Header.Get("X-Praxis-Idioma")); l != "" {
+		return l
+	}
+	if l := i18n.DoAcceptLanguage(r.Header.Get("Accept-Language")); l != "" {
+		return l
+	}
+	return i18n.Padrao
+}
+
+// erroT é o responderErro com a mensagem vinda do catálogo (internal/i18n) no
+// idioma da requisição. `codigo` continua sendo o contrato estável da API;
+// `chave` aponta a mensagem ("erro.<algo>"), com pares nome/valor interpolados.
+func erroT(w http.ResponseWriter, r *http.Request, status int, codigo, chave string, args ...string) {
+	responderErro(w, status, codigo, i18n.T(idiomaDaRequisicao(r), chave, args...))
 }

@@ -31,7 +31,7 @@ func (s *Servidor) registrarRotasGruposUsuarios(mux *http.ServeMux) {
 func (s *Servidor) handleListarGruposUsuarios(w http.ResponseWriter, r *http.Request) {
 	grupos, err := s.banco.ListarGruposUsuarios(r.Context())
 	if err != nil {
-		s.responderErroGrupoUsuarios(w, err)
+		s.responderErroGrupoUsuarios(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, grupos)
@@ -49,7 +49,7 @@ func (s *Servidor) handleCriarGrupoUsuarios(w http.ResponseWriter, r *http.Reque
 	}
 	criado, err := s.banco.CriarGrupoUsuarios(r.Context(), g)
 	if err != nil {
-		s.responderErroGrupoUsuarios(w, err)
+		s.responderErroGrupoUsuarios(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, criado)
@@ -72,7 +72,7 @@ func (s *Servidor) handleAtualizarGrupoUsuarios(w http.ResponseWriter, r *http.R
 	g.ID = id
 	atualizado, err := s.banco.AtualizarGrupoUsuarios(r.Context(), g)
 	if err != nil {
-		s.responderErroGrupoUsuarios(w, err)
+		s.responderErroGrupoUsuarios(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, atualizado)
@@ -84,7 +84,7 @@ func (s *Servidor) handleExcluirGrupoUsuarios(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := s.banco.ExcluirGrupoUsuarios(r.Context(), id); err != nil {
-		s.responderErroGrupoUsuarios(w, err)
+		s.responderErroGrupoUsuarios(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -107,14 +107,14 @@ func montarGrupoUsuarios(req reqGrupoUsuarios) (db.GrupoUsuarios, string) {
 }
 
 // responderErroGrupoUsuarios traduz os erros do store para respostas HTTP.
-func (s *Servidor) responderErroGrupoUsuarios(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroGrupoUsuarios(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "grupo de usuários ou motor não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.gusuario_nao_encontrado")
 	case errors.Is(err, db.ErrGrupoUsuariosDuplicado):
 		responderErro(w, http.StatusConflict, "nome_duplicado", err.Error())
 	default:
 		s.log.Error("erro no store de grupos de usuários", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

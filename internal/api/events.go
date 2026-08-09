@@ -38,7 +38,7 @@ func (s *Servidor) registrarRotasEventos(mux *http.ServeMux) {
 func (s *Servidor) handleEventosGlobais(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		responderErro(w, http.StatusInternalServerError, "sem_streaming", "streaming não suportado por esta conexão")
+		erroT(w, r, http.StatusInternalServerError, "sem_streaming", "erro.sem_streaming")
 		return
 	}
 

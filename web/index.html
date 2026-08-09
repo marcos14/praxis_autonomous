@@ -10,43 +10,45 @@
 <div class="app">
 
   <!-- ======================= SIDEBAR ======================= -->
+  <!-- Textos com data-i18n são traduzidos no boot (i18n.aplicarTraducoes); o
+       conteúdo pt-BR abaixo é o fallback até o catálogo carregar. -->
   <nav class="sidebar">
-    <div class="logo">Praxis <span>Autonomous</span><small>orquestrador de desenvolvimento</small></div>
-    <button class="nav-item" data-view="home"><span class="ico">◎</span> Home</button>
+    <div class="logo">Praxis <span>Autonomous</span><small data-i18n="app.tagline">orquestrador de desenvolvimento</small></div>
+    <button class="nav-item" data-view="home"><span class="ico">◎</span> <span data-i18n="nav.home">Home</span></button>
 
     <!-- Grupos de menu: o app.js esconde o grupo inteiro quando nenhum item
          fica visível para as permissões do usuário. -->
     <div class="nav-group">
-      <div class="nav-group-title">Trabalho</div>
-      <button class="nav-item" data-view="kanban"><span class="ico">▤</span> Kanban</button>
-      <button class="nav-item" data-view="demandas"><span class="ico">▦</span> Demandas</button>
-      <button class="nav-item" data-view="nova" data-perm="demandas.criar"><span class="ico">＋</span> Nova demanda</button>
-      <button class="nav-item" data-view="consultas" data-perm="consultas.usar"><span class="ico">✆</span> Consultas</button>
-      <button class="nav-item" data-view="planejamentos" data-perm="planejamentos.usar"><span class="ico">◈</span> Planejamentos</button>
+      <div class="nav-group-title" data-i18n="nav.grupo_trabalho">Trabalho</div>
+      <button class="nav-item" data-view="kanban"><span class="ico">▤</span> <span data-i18n="nav.kanban">Kanban</span></button>
+      <button class="nav-item" data-view="demandas"><span class="ico">▦</span> <span data-i18n="nav.demandas">Demandas</span></button>
+      <button class="nav-item" data-view="nova" data-perm="demandas.criar"><span class="ico">＋</span> <span data-i18n="nav.nova">Nova demanda</span></button>
+      <button class="nav-item" data-view="consultas" data-perm="consultas.usar"><span class="ico">✆</span> <span data-i18n="nav.consultas">Consultas</span></button>
+      <button class="nav-item" data-view="planejamentos" data-perm="planejamentos.usar"><span class="ico">◈</span> <span data-i18n="nav.planejamentos">Planejamentos</span></button>
     </div>
 
     <div class="nav-group">
-      <div class="nav-group-title">Projetos</div>
-      <button class="nav-item" data-view="projetos" data-perm="projetos.gerir"><span class="ico">🗀</span> Projetos</button>
-      <button class="nav-item" data-view="grupos" data-perm="projetos.gerir"><span class="ico">🗂</span> Grupos de repositórios</button>
+      <div class="nav-group-title" data-i18n="nav.grupo_projetos">Projetos</div>
+      <button class="nav-item" data-view="projetos" data-perm="projetos.gerir"><span class="ico">🗀</span> <span data-i18n="nav.projetos">Projetos</span></button>
+      <button class="nav-item" data-view="grupos" data-perm="projetos.gerir"><span class="ico">🗂</span> <span data-i18n="nav.grupos">Grupos de repositórios</span></button>
     </div>
 
     <div class="nav-group">
-      <div class="nav-group-title">Acessos</div>
-      <button class="nav-item" data-view="usuarios" data-perm="usuarios.gerir"><span class="ico">👤</span> Usuários</button>
-      <button class="nav-item" data-view="papeis" data-perm="usuarios.gerir"><span class="ico">🔑</span> Papéis</button>
-      <button class="nav-item" data-view="gusuarios" data-perm="usuarios.gerir"><span class="ico">👥</span> Grupos de usuários</button>
+      <div class="nav-group-title" data-i18n="nav.grupo_acessos">Acessos</div>
+      <button class="nav-item" data-view="usuarios" data-perm="usuarios.gerir"><span class="ico">👤</span> <span data-i18n="nav.usuarios">Usuários</span></button>
+      <button class="nav-item" data-view="papeis" data-perm="usuarios.gerir"><span class="ico">🔑</span> <span data-i18n="nav.papeis">Papéis</span></button>
+      <button class="nav-item" data-view="gusuarios" data-perm="usuarios.gerir"><span class="ico">👥</span> <span data-i18n="nav.gusuarios">Grupos de usuários</span></button>
     </div>
 
     <div class="nav-group">
-      <div class="nav-group-title">Sistema</div>
-      <button class="nav-item" data-view="motores" data-perm="config.gerir"><span class="ico">⚙</span> Motores</button>
-      <button class="nav-item" data-view="config" data-perm="config.gerir"><span class="ico">⚒</span> Configurações</button>
+      <div class="nav-group-title" data-i18n="nav.grupo_sistema">Sistema</div>
+      <button class="nav-item" data-view="motores" data-perm="config.gerir"><span class="ico">⚙</span> <span data-i18n="nav.motores">Motores</span></button>
+      <button class="nav-item" data-view="config" data-perm="config.gerir"><span class="ico">⚒</span> <span data-i18n="nav.config">Configurações</span></button>
     </div>
 
-    <button class="nav-item nav-manual" data-view="manual"><span class="ico">✎</span> Manual</button>
+    <button class="nav-item nav-manual" data-view="manual"><span class="ico">✎</span> <span data-i18n="nav.manual">Manual</span></button>
     <div class="nav-user" id="nav-user" hidden></div>
-    <div class="nav-foot" id="nav-foot">carregando…</div>
+    <div class="nav-foot" id="nav-foot" data-i18n="app.carregando">carregando…</div>
   </nav>
 
   <main class="main">
@@ -55,8 +57,8 @@
 
     <!-- ======================= HOME ======================= -->
     <section class="view" id="view-home">
-      <h1 class="page">Home</h1>
-      <p class="sub">Visão do mês: gastos, demandas ativas e o que precisa de você.</p>
+      <h1 class="page" data-i18n="view.home.titulo">Home</h1>
+      <p class="sub" data-i18n="view.home.sub">Visão do mês: gastos, demandas ativas e o que precisa de você.</p>
       <div class="tiles" id="home-tiles"></div>
       <div class="two-col" style="margin-top:20px">
         <div class="panel" id="home-grafico"></div>
@@ -68,96 +70,96 @@
 
     <!-- ======================= KANBAN ======================= -->
     <section class="view" id="view-kanban">
-      <h1 class="page">Kanban</h1>
-      <p class="sub">Cada coluna é um status. Arraste um card para reordenar a prioridade; as transições de estado acontecem pelos botões do card.</p>
+      <h1 class="page" data-i18n="view.kanban.titulo">Kanban</h1>
+      <p class="sub" data-i18n="view.kanban.sub">Cada coluna é um status. Arraste um card para reordenar a prioridade; as transições de estado acontecem pelos botões do card.</p>
       <div class="filtros" id="filtros-kanban"></div>
       <div class="kanban" id="kanban-board"></div>
     </section>
 
     <!-- ======================= DEMANDAS ======================= -->
     <section class="view" id="view-demandas">
-      <h1 class="page">Demandas</h1>
-      <p class="sub">Cada demanda roda sozinha em sua branch. Abra o card para acompanhar as fases e o log ao vivo.</p>
+      <h1 class="page" data-i18n="view.demandas.titulo">Demandas</h1>
+      <p class="sub" data-i18n="view.demandas.sub">Cada demanda roda sozinha em sua branch. Abra o card para acompanhar as fases e o log ao vivo.</p>
       <div class="filtros" id="filtros-demandas"></div>
       <div id="lista-demandas"></div>
     </section>
 
     <!-- ======================= NOVA DEMANDA (chat) ======================= -->
     <section class="view" id="view-nova">
-      <h1 class="page">Nova demanda</h1>
-      <p class="sub">Escolha o projeto e cole o PRD ou descreva o chamado. A demanda nasce como conversa — tudo fica registrado no chat até virar plano.</p>
+      <h1 class="page" data-i18n="view.nova.titulo">Nova demanda</h1>
+      <p class="sub" data-i18n="view.nova.sub">Escolha o projeto e cole o PRD ou descreva o chamado. A demanda nasce como conversa — tudo fica registrado no chat até virar plano.</p>
       <div class="panel" style="max-width:760px" id="painel-nova"></div>
     </section>
 
     <!-- ======================= CONSULTAS ======================= -->
     <section class="view" id="view-consultas">
-      <h1 class="page">Consultas</h1>
-      <p class="sub">Pergunte como o sistema se comporta — para elaborar PRDs, entender rotinas ou montar a estratégia de um cliente. O consultor analisa o código e responde em linguagem de negócio, sem expor código-fonte.</p>
+      <h1 class="page" data-i18n="view.consultas.titulo">Consultas</h1>
+      <p class="sub" data-i18n="view.consultas.sub">Pergunte como o sistema se comporta — para elaborar PRDs, entender rotinas ou montar a estratégia de um cliente. O consultor analisa o código e responde em linguagem de negócio, sem expor código-fonte.</p>
       <div class="two-col">
         <div>
-          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-nova-consulta">+ Nova consulta</button>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-nova-consulta" data-i18n="view.consultas.nova">+ Nova consulta</button>
           <div id="lista-consultas"></div>
         </div>
         <div class="panel" id="painel-consulta">
-          <p class="sub" style="margin:0">Selecione uma consulta à esquerda ou inicie uma nova.</p>
+          <p class="sub" style="margin:0" data-i18n="view.consultas.selecione">Selecione uma consulta à esquerda ou inicie uma nova.</p>
         </div>
       </div>
     </section>
 
     <!-- ======================= PLANEJAMENTOS ======================= -->
     <section class="view" id="view-planejamentos">
-      <h1 class="page">Planejamentos</h1>
-      <p class="sub">Trabalhe com o estrategista para transformar uma necessidade em PRD e/ou ADRs prontos para virar demanda — com apresentação visual e protótipo quando você quiser.</p>
+      <h1 class="page" data-i18n="view.planejamentos.titulo">Planejamentos</h1>
+      <p class="sub" data-i18n="view.planejamentos.sub">Trabalhe com o estrategista para transformar uma necessidade em PRD e/ou ADRs prontos para virar demanda — com apresentação visual e protótipo quando você quiser.</p>
       <div class="two-col">
         <div>
-          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-planejamento">+ Novo planejamento</button>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-planejamento" data-i18n="view.planejamentos.novo">+ Novo planejamento</button>
           <div id="lista-planejamentos"></div>
         </div>
         <div class="panel" id="painel-planejamento">
-          <p class="sub" style="margin:0">Selecione um planejamento à esquerda ou inicie um novo.</p>
+          <p class="sub" style="margin:0" data-i18n="view.planejamentos.selecione">Selecione um planejamento à esquerda ou inicie um novo.</p>
         </div>
       </div>
     </section>
 
     <!-- ======================= PROJETOS ======================= -->
     <section class="view" id="view-projetos">
-      <h1 class="page">Projetos</h1>
-      <p class="sub">Cadastre a pasta do projeto e os parâmetros. O que não for definido aqui herda da configuração global.</p>
+      <h1 class="page" data-i18n="view.projetos.titulo">Projetos</h1>
+      <p class="sub" data-i18n="view.projetos.sub">Cadastre a pasta do projeto e os parâmetros. O que não for definido aqui herda da configuração global.</p>
       <div class="two-col">
         <div>
-          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-projeto">+ Cadastrar projeto</button>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-projeto" data-i18n="view.projetos.novo">+ Cadastrar projeto</button>
           <div id="lista-projetos"></div>
         </div>
         <div class="panel" id="painel-projeto">
-          <p class="sub" style="margin:0">Selecione um projeto à esquerda ou cadastre um novo.</p>
+          <p class="sub" style="margin:0" data-i18n="view.projetos.selecione">Selecione um projeto à esquerda ou cadastre um novo.</p>
         </div>
       </div>
     </section>
 
     <!-- ======================= GRUPOS DE REPOSITÓRIOS ======================= -->
     <section class="view" id="view-grupos">
-      <h1 class="page">Grupos de repositórios</h1>
-      <p class="sub">Agrupe os repositórios de uma mesma solução (ex.: "Vulcano Chat"). Nas consultas, o primeiro projeto do grupo é o repositório principal e os demais entram como contexto extra. Um projeto pode participar de vários grupos.</p>
+      <h1 class="page" data-i18n="view.grupos.titulo">Grupos de repositórios</h1>
+      <p class="sub" data-i18n="view.grupos.sub">Agrupe os repositórios de uma mesma solução (ex.: "Vulcano Chat"). Nas consultas, o primeiro projeto do grupo é o repositório principal e os demais entram como contexto extra. Um projeto pode participar de vários grupos.</p>
       <div class="two-col">
         <div>
-          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-grupo">+ Novo grupo</button>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-grupo" data-i18n="view.grupos.novo">+ Novo grupo</button>
           <div id="lista-grupos"></div>
         </div>
         <div class="panel" id="painel-grupo">
-          <p class="sub" style="margin:0">Selecione um grupo à esquerda ou crie um novo.</p>
+          <p class="sub" style="margin:0" data-i18n="view.grupos.selecione">Selecione um grupo à esquerda ou crie um novo.</p>
         </div>
       </div>
     </section>
 
     <!-- ======================= MOTORES ======================= -->
     <section class="view" id="view-motores">
-      <h1 class="page">Motores</h1>
-      <p class="sub">Ordene por prioridade — se a franquia do primeiro esgotar, o próximo assume (fallback automático). Use ▲/▼ para reordenar.</p>
+      <h1 class="page" data-i18n="view.motores.titulo">Motores</h1>
+      <p class="sub" data-i18n="view.motores.sub">Ordene por prioridade — se a franquia do primeiro esgotar, o próximo assume (fallback automático). Use ▲/▼ para reordenar.</p>
       <div style="max-width:820px">
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <button class="btn" id="btn-novo-motor">+ Novo motor</button>
-          <button class="btn ghost" id="btn-detectar-motores">⟳ Detectar no ambiente</button>
-          <button class="btn ghost" id="btn-uso-motores">▦ Uso e franquia</button>
+          <button class="btn" id="btn-novo-motor" data-i18n="view.motores.novo">+ Novo motor</button>
+          <button class="btn ghost" id="btn-detectar-motores" data-i18n="view.motores.detectar">⟳ Detectar no ambiente</button>
+          <button class="btn ghost" id="btn-uso-motores" data-i18n="view.motores.uso">▦ Uso e franquia</button>
         </div>
         <div class="panel" id="painel-uso" style="margin-bottom:14px" hidden></div>
         <div class="panel" id="painel-deteccao" style="margin-bottom:14px" hidden></div>
@@ -168,66 +170,66 @@
 
     <!-- ======================= CONFIG ======================= -->
     <section class="view" id="view-config">
-      <h1 class="page">Configurações globais</h1>
-      <p class="sub">Valem para todos os projetos que não definirem override próprio.</p>
+      <h1 class="page" data-i18n="view.config.titulo">Configurações globais</h1>
+      <p class="sub" data-i18n="view.config.sub">Valem para todos os projetos que não definirem override próprio.</p>
       <div class="panel" style="max-width:680px" id="painel-config"></div>
-      <h2 class="page" style="font-size:18px;margin-top:28px">Notificações externas</h2>
-      <p class="sub">Envie os eventos do Praxis para Telegram, Discord, Slack, Google Chat ou um webhook próprio. Configure os canais e os eventos notificados por padrão — cada projeto pode personalizar quais recebe.</p>
+      <h2 class="page" style="font-size:18px;margin-top:28px" data-i18n="view.config.notificacoes">Notificações externas</h2>
+      <p class="sub" data-i18n="view.config.notificacoes_sub">Envie os eventos do Praxis para Telegram, Discord, Slack, Google Chat ou um webhook próprio. Configure os canais e os eventos notificados por padrão — cada projeto pode personalizar quais recebe.</p>
       <div class="panel" style="max-width:680px" id="painel-notificacoes"></div>
-      <h2 class="page" style="font-size:18px;margin-top:28px">Tokens de API</h2>
-      <p class="sub">Para o sistema de chamados e integrações. O valor aparece uma única vez na criação.</p>
+      <h2 class="page" style="font-size:18px;margin-top:28px" data-i18n="view.config.tokens">Tokens de API</h2>
+      <p class="sub" data-i18n="view.config.tokens_sub">Para o sistema de chamados e integrações. O valor aparece uma única vez na criação.</p>
       <div class="panel" style="max-width:680px" id="painel-tokens"></div>
     </section>
 
     <!-- ======================= USUÁRIOS ======================= -->
     <section class="view" id="view-usuarios">
-      <h1 class="page">Usuários e acessos</h1>
-      <p class="sub">Cadastre quem usa este Praxis e defina o que cada um pode fazer. O acesso básico é sempre visualizar; papéis concedem as demais capacidades.</p>
+      <h1 class="page" data-i18n="view.usuarios.titulo">Usuários e acessos</h1>
+      <p class="sub" data-i18n="view.usuarios.sub">Cadastre quem usa este Praxis e defina o que cada um pode fazer. O acesso básico é sempre visualizar; papéis concedem as demais capacidades.</p>
       <div class="two-col">
         <div>
-          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-usuario">+ Novo usuário</button>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-usuario" data-i18n="view.usuarios.novo">+ Novo usuário</button>
           <div id="lista-usuarios"></div>
         </div>
         <div class="panel" id="painel-usuario">
-          <p class="sub" style="margin:0">Selecione um usuário à esquerda ou cadastre um novo.</p>
+          <p class="sub" style="margin:0" data-i18n="view.usuarios.selecione">Selecione um usuário à esquerda ou cadastre um novo.</p>
         </div>
       </div>
     </section>
 
     <!-- ======================= PAPÉIS ======================= -->
     <section class="view" id="view-papeis">
-      <h1 class="page">Papéis</h1>
-      <p class="sub">Um papel é um conjunto de permissões do catálogo. Vincule papéis aos usuários na tela Usuários.</p>
+      <h1 class="page" data-i18n="view.papeis.titulo">Papéis</h1>
+      <p class="sub" data-i18n="view.papeis.sub">Um papel é um conjunto de permissões do catálogo. Vincule papéis aos usuários na tela Usuários.</p>
       <div class="two-col">
         <div>
-          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-papel">+ Novo papel</button>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-papel" data-i18n="view.papeis.novo">+ Novo papel</button>
           <div id="lista-papeis"></div>
         </div>
         <div class="panel" id="painel-papel">
-          <p class="sub" style="margin:0">Selecione um papel à esquerda ou crie um novo.</p>
+          <p class="sub" style="margin:0" data-i18n="view.papeis.selecione">Selecione um papel à esquerda ou crie um novo.</p>
         </div>
       </div>
     </section>
 
     <!-- ======================= GRUPOS DE USUÁRIOS ======================= -->
     <section class="view" id="view-gusuarios">
-      <h1 class="page">Grupos de usuários</h1>
-      <p class="sub">Cada grupo define o motor e o modelo usados nas <b>Consultas</b> dos seus membros — dá para dar um modelo mais leve/barato a produto e suporte, já que a consulta só explica comportamento (não produz código de produção). Vincule usuários ao grupo na tela Usuários.</p>
+      <h1 class="page" data-i18n="view.gusuarios.titulo">Grupos de usuários</h1>
+      <p class="sub" data-i18n="view.gusuarios.sub">Cada grupo define o motor e o modelo usados nas Consultas dos seus membros — dá para dar um modelo mais leve/barato a produto e suporte, já que a consulta só explica comportamento (não produz código de produção). Vincule usuários ao grupo na tela Usuários.</p>
       <div class="two-col">
         <div>
-          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-gusuario">+ Novo grupo</button>
+          <button class="btn" style="width:100%;margin-bottom:12px" id="btn-novo-gusuario" data-i18n="view.gusuarios.novo">+ Novo grupo</button>
           <div id="lista-gusuarios"></div>
         </div>
         <div class="panel" id="painel-gusuario">
-          <p class="sub" style="margin:0">Selecione um grupo à esquerda ou crie um novo.</p>
+          <p class="sub" style="margin:0" data-i18n="view.gusuarios.selecione">Selecione um grupo à esquerda ou crie um novo.</p>
         </div>
       </div>
     </section>
 
     <!-- ======================= MANUAL ======================= -->
     <section class="view" id="view-manual">
-      <h1 class="page">Manual do desenvolvedor</h1>
-      <p class="sub">Como usar o Praxis Autonomous no dia a dia.</p>
+      <h1 class="page" data-i18n="view.manual.titulo">Manual do desenvolvedor</h1>
+      <p class="sub" data-i18n="view.manual.sub">Como usar o Praxis Autonomous no dia a dia.</p>
       <div class="manual-wrap">
         <nav class="manual-nav" id="manual-nav"></nav>
         <div class="manual" id="manual-corpo"></div>

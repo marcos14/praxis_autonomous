@@ -7,6 +7,7 @@
 // a partir do PRD pronto.
 
 import { api } from "./api.js";
+import { t } from "./i18n.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
 import { abrirCard, setProjetos, pillStatus } from "./demandas.js";
 
@@ -16,13 +17,13 @@ let esProgresso = null; // EventSource do progresso do turno em andamento
 let pollTimer = null;   // fallback: relê o planejamento enquanto status=pensando
 
 const PAPEIS = {
-  user: ["Você", "user"],
-  estrategista: ["Praxis · Estrategista", "agent"],
+  user: [t("consultas.papel_voce"), "user"],
+  estrategista: [t("planejamentos.papel_estrategista"), "agent"],
   sistema: ["", "sys"],
 };
 
-const FOCOS = { prd: "PRD", adr: "ADRs", ambos: "PRD + ADRs" };
-const NIVEIS = { documento: "Documento", apresentacao: "Apresentação", prototipo: "Protótipo" };
+const FOCOS = { prd: t("planejamentos.foco_prd"), adr: t("planejamentos.foco_adr"), ambos: t("planejamentos.foco_ambos") };
+const NIVEIS = { documento: t("planejamentos.nivel_documento"), apresentacao: t("planejamentos.nivel_apresentacao"), prototipo: t("planejamentos.nivel_prototipo") };
 
 export async function montarPlanejamentos() {
   document.getElementById("btn-novo-planejamento").onclick = () => renderNovo();
@@ -54,7 +55,7 @@ async function recarregarLista() {
   bannerErro("");
   const lista = limpar(document.getElementById("lista-planejamentos"));
   if (planejamentos.length === 0) {
-    lista.append(el("p", { class: "sub", text: "Nenhum planejamento ainda. Inicie um novo." }));
+    lista.append(el("p", { class: "sub", text: t("planejamentos.nenhum") }));
     return;
   }
   for (const p of planejamentos) {
@@ -107,8 +108,8 @@ function baixarURL(url) {
 
 function pillStatusPlanejamento(status) {
   const mapa = {
-    ocioso: ["dot-good", "pronto"],
-    pensando: ["dot-warn", "planejando…"],
+    ocioso: ["dot-good", t("planejamentos.status_pronto")],
+    pensando: ["dot-warn", t("planejamentos.status_planejando")],
     falhou: ["dot-crit", "falhou"],
   };
   const [dot, rotulo] = mapa[status] || ["dot-muted", status];
@@ -118,7 +119,7 @@ function pillStatusPlanejamento(status) {
 function limparPainel() {
   pararAcompanhamento();
   const painel = limpar(document.getElementById("painel-planejamento"));
-  painel.append(el("p", { class: "sub", style: "margin:0", text: "Selecione um planejamento à esquerda ou inicie um novo." }));
+  painel.append(el("p", { class: "sub", style: "margin:0", text: t("view.planejamentos.selecione") }));
 }
 
 // ---------- novo planejamento ----------
@@ -128,7 +129,7 @@ async function renderNovo() {
   selecionadoID = null;
   await recarregarLista();
   const painel = limpar(document.getElementById("painel-planejamento"));
-  painel.append(el("h3", {}, "Novo planejamento"));
+  painel.append(el("h3", {}, t("planejamentos.novo_titulo")));
 
   let grupos = [], projetos = [];
   try {
@@ -143,7 +144,7 @@ async function renderNovo() {
   grupos = (grupos || []).filter((g) => g.ativo);
   projetos = (projetos || []).filter((p) => p.ativo);
   if (grupos.length === 0 && projetos.length === 0) {
-    painel.append(el("p", { class: "sub", text: "Nenhum projeto cadastrado. Peça a um administrador para cadastrar em Projetos." }));
+    painel.append(el("p", { class: "sub", text: t("consultas.sem_projetos") }));
     return;
   }
 
@@ -152,19 +153,19 @@ async function renderNovo() {
   for (const p of projetos) sel.append(el("option", { value: "p:" + p.id }, p.nome));
 
   const selFoco = el("select", {},
-    el("option", { value: "prd" }, "PRD — visão de negócio"),
-    el("option", { value: "adr" }, "ADRs — decisões arquiteturais"),
-    el("option", { value: "ambos" }, "PRD + ADRs"),
+    el("option", { value: "prd" }, t("planejamentos.op_prd")),
+    el("option", { value: "adr" }, t("planejamentos.op_adr")),
+    el("option", { value: "ambos" }, t("planejamentos.foco_ambos")),
   );
   const selNivel = el("select", {},
-    el("option", { value: "apresentacao" }, "Apresentação — documento + infográficos/fluxogramas"),
-    el("option", { value: "documento" }, "Documento — só o texto"),
-    el("option", { value: "prototipo" }, "Protótipo — apresentação + simulação navegável das telas"),
+    el("option", { value: "apresentacao" }, t("planejamentos.op_apresentacao")),
+    el("option", { value: "documento" }, t("planejamentos.op_documento")),
+    el("option", { value: "prototipo" }, t("planejamentos.op_prototipo")),
   );
 
   const ed = mdEditor({
     rows: 5,
-    placeholder: "Descreva a necessidade. Ex.: \"Precisamos de um portal de autoatendimento para segunda via de boletos\", \"Definir a arquitetura de integração com o novo gateway de pagamentos\".",
+    placeholder: t("planejamentos.ph_necessidade"),
   });
 
   // Referências opcionais anexadas já na criação (transcrição de reunião, ADR
@@ -174,18 +175,18 @@ async function renderNovo() {
     type: "file", multiple: true, hidden: true,
     accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
   });
-  const listaAnexos = el("span", { class: "hint", text: "nenhum arquivo selecionado" });
-  const btnAnexos = el("button", { class: "btn ghost sm", text: "📎 Selecionar arquivos" });
+  const listaAnexos = el("span", { class: "hint", text: t("planejamentos.nenhum_arquivo") });
+  const btnAnexos = el("button", { class: "btn ghost sm", text: t("planejamentos.selecionar_arquivos") });
   btnAnexos.onclick = (ev) => { ev.preventDefault(); inputAnexos.click(); };
   inputAnexos.onchange = () => {
     const nomes = [...inputAnexos.files].map((f) => f.name);
-    listaAnexos.textContent = nomes.length ? nomes.join(" · ") : "nenhum arquivo selecionado";
+    listaAnexos.textContent = nomes.length ? nomes.join(" · ") : t("planejamentos.nenhum_arquivo");
   };
 
-  const btn = el("button", { class: "btn", text: "Iniciar planejamento" });
+  const btn = el("button", { class: "btn", text: t("planejamentos.iniciar") });
   btn.onclick = async () => {
     const mensagem = ed.ta.value.trim();
-    if (!mensagem) { bannerErro("Descreva a necessidade."); return; }
+    if (!mensagem) { bannerErro(t("planejamentos.descreva")); return; }
     bannerErro("");
     btn.disabled = true;
     const anexos = [...inputAnexos.files];
@@ -207,7 +208,7 @@ async function renderNovo() {
         }
         await api.dispararTurnoPlanejamento(criado.id);
       }
-      toast("Planejamento iniciado — o estrategista está trabalhando.", "ok");
+      toast(t("planejamentos.iniciado"), "ok");
       selecionadoID = criado.id;
       await recarregarLista();
       await abrirPlanejamento(criado.id);
@@ -218,17 +219,17 @@ async function renderNovo() {
   };
 
   painel.append(el("div", { class: "form" },
-    el("div", {}, el("label", {}, "Projeto ou solução"), sel,
-      el("div", { class: "hint", text: "Num grupo, o estrategista enxerga todos os repositórios da solução." })),
+    el("div", {}, el("label", {}, t("consultas.projeto_ou_solucao")), sel,
+      el("div", { class: "hint", text: t("planejamentos.hint_grupo") })),
     el("div", { class: "row" },
-      el("div", {}, el("label", {}, "O que produzir"), selFoco),
-      el("div", {}, el("label", {}, "Nível visual"), selNivel),
+      el("div", {}, el("label", {}, t("planejamentos.o_que_produzir")), selFoco),
+      el("div", {}, el("label", {}, t("planejamentos.nivel_visual")), selNivel),
     ),
-    el("div", {}, el("label", {}, "A necessidade"), ed.no,
-      el("div", { class: "hint", text: "Não precisa estar redondo: o estrategista lê o código e faz perguntas antes de fechar o documento. Você pode mudar o foco e o nível visual a qualquer momento." })),
-    el("div", {}, el("label", {}, "Referências ", el("span", { class: "opt", text: "(opcional)" })),
+    el("div", {}, el("label", {}, t("planejamentos.a_necessidade")), ed.no,
+      el("div", { class: "hint", text: t("planejamentos.hint_necessidade") })),
+    el("div", {}, el("label", {}, "Referências ", el("span", { class: "opt", text: t("configx.opcional") })),
       el("div", { style: "display:flex;align-items:center;gap:10px" }, btnAnexos, inputAnexos, listaAnexos),
-      el("div", { class: "hint", text: "Anexe o material que o estrategista deve tomar como base: transcrição da reunião, ADR de outro projeto, rascunhos… (md, txt, csv, json, pdf, html ou imagem · até 15 MB cada)" })),
+      el("div", { class: "hint", text: t("planejamentos.hint_anexos") })),
     el("div", { class: "acoes" }, btn),
   ));
   ed.ta.focus();
@@ -257,12 +258,12 @@ async function abrirPlanejamento(id, abaInicial) {
     el("div", { style: "display:flex;gap:6px" },
       botaoCriarDemanda(plan),
       el("button", {
-        class: "btn ghost sm", text: "Excluir",
+        class: "btn ghost sm", text: t("consultas.excluir"),
         onclick: async () => {
-          if (!confirm("Excluir este planejamento, com documentos e artefatos?")) return;
+          if (!confirm(t("planejamentos.confirmar_excluir"))) return;
           try {
             await api.excluirPlanejamento(plan.id);
-            toast("Planejamento excluído.", "ok");
+            toast(t("planejamentos.excluido"), "ok");
             selecionadoID = null;
             limparPainel();
             await recarregarLista();
@@ -286,7 +287,7 @@ async function abrirPlanejamento(id, abaInicial) {
   const aoAjustar = async () => {
     try {
       plan = await api.atualizarPlanejamento(plan.id, { foco: selFoco.value, nivel_visual: selNivel.value });
-      toast("Preferências atualizadas — valem a partir do próximo turno.", "ok");
+      toast(t("planejamentos.prefs_atualizadas"), "ok");
     } catch (e) {
       selFoco.value = plan.foco;
       selNivel.value = plan.nivel_visual;
@@ -297,11 +298,11 @@ async function abrirPlanejamento(id, abaInicial) {
   selNivel.onchange = aoAjustar;
   const prefs = el("div", { style: "margin-bottom:10px" },
     el("div", { class: "filtros" },
-      el("span", { class: "hint", text: "Produzir:" }), selFoco,
-      el("span", { class: "hint", text: "Visual:" }), selNivel,
+      el("span", { class: "hint", text: t("planejamentos.rotulo_produzir") }), selFoco,
+      el("span", { class: "hint", text: t("planejamentos.rotulo_visual") }), selNivel,
     ),
     el("div", { class: "hint", style: "margin-top:4px",
-      text: "Trabalho em etapas: o PO pode fechar o PRD e depois o arquiteto muda \"Produzir\" para PRD + ADRs e continua nesta mesma conversa — os documentos ficam." }),
+      text: t("planejamentos.hint_etapas") }),
   );
 
   // Abas: Conversa | Documentos | Artefatos | Referências.
@@ -310,10 +311,10 @@ async function abrirPlanejamento(id, abaInicial) {
   const corpoArts = el("div", { class: "tab-body" });
   const corpoRefs = el("div", { class: "tab-body" });
   const abas = [
-    ["Conversa", corpoConversa, null],
-    ["Documentos", corpoDocs, () => renderDocumentos(corpoDocs, plan)],
-    ["Artefatos", corpoArts, () => renderArtefatos(corpoArts, plan)],
-    ["Referências", corpoRefs, () => renderReferencias(corpoRefs, plan)],
+    [t("planejamentos.aba_conversa"), corpoConversa, null],
+    [t("planejamentos.aba_documentos"), corpoDocs, () => renderDocumentos(corpoDocs, plan)],
+    [t("planejamentos.aba_artefatos"), corpoArts, () => renderArtefatos(corpoArts, plan)],
+    [t("planejamentos.aba_referencias"), corpoRefs, () => renderReferencias(corpoRefs, plan)],
   ];
   const corpos = [corpoConversa, corpoDocs, corpoArts, corpoRefs];
   const barra = el("div", { class: "tabs" });
@@ -335,9 +336,9 @@ async function abrirPlanejamento(id, abaInicial) {
   const progresso = el("div", { class: "hint", hidden: true });
   const acoesTurno = el("div", { style: "margin-top:8px", hidden: true });
   const inp = el("textarea", { rows: "1",
-    placeholder: "Responder ao estrategista ou pedir ajustes no documento… (Shift+Enter quebra linha)" });
+    placeholder: t("planejamentos.ph_resposta") });
   const ajustarAltura = autoCrescer(inp);
-  const btn = el("button", { class: "btn", text: "Enviar" });
+  const btn = el("button", { class: "btn", text: t("consultas.enviar") });
 
   // 📎 anexa referências direto da conversa (fica ativo mesmo com turno em voo:
   // o anexo vale a partir do turno seguinte).
@@ -345,7 +346,7 @@ async function abrirPlanejamento(id, abaInicial) {
     type: "file", multiple: true, hidden: true,
     accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
   });
-  const btnClip = el("button", { class: "btn ghost", text: "📎", title: "Anexar referências (transcrições, ADRs, rascunhos…)" });
+  const btnClip = el("button", { class: "btn ghost", text: "📎", title: t("planejamentos.title_anexar") });
   btnClip.onclick = () => inputClip.click();
   inputClip.onchange = async () => {
     const arquivos = [...inputClip.files];
@@ -380,11 +381,11 @@ async function abrirPlanejamento(id, abaInicial) {
     }
     limpar(box);
     if (msgs.length === 0) {
-      box.append(el("p", { class: "vazio", text: "Nenhuma mensagem ainda." }));
+      box.append(el("p", { class: "vazio", text: t("consultas.sem_mensagens") }));
     }
     for (const m of msgs) box.append(bolha(m, plan));
     if (plan.status === "pensando") {
-      box.append(el("div", { class: "msg sys", text: "O estrategista está lendo o código e trabalhando nos documentos — isso pode levar alguns minutos." }));
+      box.append(el("div", { class: "msg sys", text: t("planejamentos.pensando_aviso") }));
     }
     box.scrollTop = box.scrollHeight;
   }
@@ -397,7 +398,7 @@ async function abrirPlanejamento(id, abaInicial) {
     selNivel.disabled = pensando;
     progresso.hidden = !pensando;
     if (pensando) {
-      progresso.textContent = "trabalhando…";
+      progresso.textContent = t("planejamentos.trabalhando");
       acompanharProgresso();
       agendarPoll();
     } else {
@@ -413,7 +414,7 @@ async function abrirPlanejamento(id, abaInicial) {
         try {
           const d = JSON.parse(ev.data);
           if (d.acao === "concluindo") {
-            progresso.textContent = "concluindo o turno…";
+            progresso.textContent = t("planejamentos.concluindo");
           } else if (d.detalhe) {
             progresso.textContent = d.detalhe + "…";
           }
@@ -455,7 +456,7 @@ async function abrirPlanejamento(id, abaInicial) {
       await abrirPlanejamento(plan.id); // re-renderiza já em modo "pensando"
     } catch (e) {
       if (e.status === 409) {
-        bannerErro("O estrategista ainda está trabalhando — aguarde a resposta.");
+        bannerErro(t("planejamentos.aguarde"));
         await abrirPlanejamento(plan.id);
         return;
       }
@@ -476,9 +477,9 @@ async function abrirPlanejamento(id, abaInicial) {
   }
   if (plan.status === "falhou") {
     if (plan.erro) {
-      bannerErro("Último turno falhou: " + plan.erro);
+      bannerErro(t("planejamentos.turno_falhou", { erro: plan.erro }));
     }
-    const btnRetry = el("button", { class: "btn sm", text: "↻ Tentar novamente" });
+    const btnRetry = el("button", { class: "btn sm", text: t("planejamentos.tentar_novamente") });
     btnRetry.onclick = async () => {
       btnRetry.disabled = true;
       try {
@@ -491,23 +492,23 @@ async function abrirPlanejamento(id, abaInicial) {
     };
     acoesTurno.hidden = false;
     acoesTurno.append(btnRetry,
-      el("span", { class: "hint", style: "margin-left:8px", text: "Reprocessa a conversa atual, sem precisar reenviar a mensagem." }));
+      el("span", { class: "hint", style: "margin-left:8px", text: t("planejamentos.hint_reprocessar") }));
   }
 }
 
 // botaoCriarDemanda monta o botão de handoff do cabeçalho: sem demanda ainda,
-// "Criar demanda"; com demandas geradas, "Demandas (N)". Ambos abrem o diálogo
+// t("nova.criar"); com demandas geradas, "Demandas (N)". Ambos abrem o diálogo
 // de handoff (lista + drift + criação).
 function botaoCriarDemanda(plan) {
   if (plan.demandas_criadas > 0) {
     return el("button", {
       class: "btn ghost sm", text: `Demandas (${plan.demandas_criadas}) ⧉`,
-      title: "Ver demandas geradas / criar outra",
+      title: t("planejamentos.title_demandas"),
       onclick: () => abrirDialogoDemandas(plan),
     });
   }
   return el("button", {
-    class: "btn good sm", text: "Criar demanda",
+    class: "btn good sm", text: t("nova.criar"),
     onclick: () => abrirDialogoDemandas(plan),
   });
 }
@@ -537,7 +538,7 @@ async function abrirDialogoDemandas(plan) {
       bannerErro("Falha ao carregar o grupo: " + e.message);
       return;
     }
-    if (membros.length === 0) { bannerErro("O grupo não tem repositórios."); return; }
+    if (membros.length === 0) { bannerErro(t("planejamentos.grupo_sem_repos")); return; }
   }
 
   const overlay = el("div", { class: "overlay open" });
@@ -551,7 +552,7 @@ async function abrirDialogoDemandas(plan) {
     const lista = el("div");
     for (const v of vinculos) {
       lista.append(el("div", {
-        class: "list-item", title: "Abrir o card da demanda",
+        class: "list-item", title: t("planejamentos.title_abrir_demanda"),
         onclick: () => { fechar(); abrirDemandaModal(v.demand_id); },
       },
         el("b", { text: `Demanda #${v.demand_id}` + (v.demanda_titulo ? " — " + v.demanda_titulo : "") }),
@@ -562,7 +563,7 @@ async function abrirDialogoDemandas(plan) {
         ),
       ));
     }
-    corpo.append(el("div", {}, el("label", {}, "Demandas geradas por este planejamento"), lista));
+    corpo.append(el("div", {}, el("label", {}, t("planejamentos.demandas_geradas")), lista));
 
     corpo.append(el("div", { class: "hint", text: descreverDrift(vinculos, info) }));
 
@@ -579,11 +580,11 @@ async function abrirDialogoDemandas(plan) {
   if (plan.group_id) {
     selMembro = el("select", {},
       ...membros.map((m) => el("option", { value: String(m.project_id) }, m.nome || String(m.project_id))));
-    camposNova.append(el("label", {}, "Repositório que recebe a demanda"), selMembro);
+    camposNova.append(el("label", {}, t("planejamentos.repo_recebe")), selMembro);
   }
   const btnCriar = el("button", {
     class: "btn good",
-    text: vinculos.length > 0 ? "Criar nova demanda completa" : "Criar demanda",
+    text: vinculos.length > 0 ? t("planejamentos.criar_nova_completa") : t("nova.criar"),
   });
   btnCriar.onclick = async () => {
     btnCriar.disabled = true;
@@ -602,10 +603,10 @@ async function abrirDialogoDemandas(plan) {
   };
   camposNova.append(
     el("div", { class: "hint", style: "margin:6px 0",
-      text: "A nova demanda leva TODO o documento atual (demanda completa). A demanda complementar — só o que evoluiu desde uma entrega — chega numa próxima versão." }),
+      text: t("planejamentos.hint_nova_completa") }),
     el("div", { class: "acoes" }, btnCriar),
   );
-  corpo.append(el("div", {}, el("label", {}, vinculos.length > 0 ? "Nova demanda" : "Criar demanda a partir do documento atual"), camposNova));
+  corpo.append(el("div", {}, el("label", {}, vinculos.length > 0 ? t("planejamentos.nova_demanda") : t("planejamentos.criar_do_documento")), camposNova));
 
   overlay.append(el("div", { class: "modal", style: "max-width:640px" },
     el("div", { class: "modal-head" },
@@ -613,7 +614,7 @@ async function abrirDialogoDemandas(plan) {
         el("h2", { text: plan.titulo || `Planejamento #${plan.id}` }),
         el("button", { class: "modal-close", text: "✕", onclick: fechar }),
       ),
-      el("p", { class: "sub", style: "margin:4px 0 14px", text: "Demandas deste planejamento" }),
+      el("p", { class: "sub", style: "margin:4px 0 14px", text: t("planejamentos.demandas_deste") }),
     ),
     corpo,
   ));
@@ -626,7 +627,7 @@ function rotuloRevEntregue(v) {
   const partes = [];
   if (v.prd_rev > 0) partes.push("PRD rev " + v.prd_rev);
   if (v.adrs_rev > 0) partes.push("ADRs rev " + v.adrs_rev);
-  if (partes.length === 0) return "revisão não registrada";
+  if (partes.length === 0) return t("planejamentos.rev_nao_registrada");
   return partes.join(" · ");
 }
 
@@ -634,7 +635,7 @@ function rotuloRevEntregue(v) {
 function descreverDrift(vinculos, info) {
   const ult = vinculos[vinculos.length - 1];
   if (ult.prd_rev === 0 && ult.adrs_rev === 0) {
-    return "A revisão entregue à última demanda não foi registrada (vínculo anterior a esta versão) — compare pela aba Documentos.";
+    return t("planejamentos.drift_nao_registrado");
   }
   const mudancas = [];
   if (info.prd_rev_atual > ult.prd_rev) {
@@ -644,17 +645,17 @@ function descreverDrift(vinculos, info) {
     mudancas.push(`os ADRs estão na revisão ${info.adrs_rev_atual} (a demanda #${ult.demand_id} recebeu a ${ult.adrs_rev})`);
   }
   if (mudancas.length === 0) {
-    return "Os documentos não mudaram desde a última demanda criada.";
+    return t("planejamentos.drift_sem_mudancas");
   }
-  return "Há mudanças não entregues: " + mudancas.join("; ") + ".";
+  return t("planejamentos.drift", { mudancas: mudancas.join("; ") });
 }
 
 // ---------- aba Documentos ----------
 
-const NOMES_DOCS = { "prd.md": "PRD", "adrs.md": "ADRs" };
+const NOMES_DOCS = { "prd.md": t("planejamentos.foco_prd"), "adrs.md": t("planejamentos.foco_adr") };
 
 async function renderDocumentos(corpo, plan) {
-  limpar(corpo).append(el("p", { class: "vazio", text: "Carregando documentos…" }));
+  limpar(corpo).append(el("p", { class: "vazio", text: t("planejamentos.carregando_docs") }));
   let docs;
   try {
     docs = (await api.listarDocumentosPlanejamento(plan.id)) || [];
@@ -664,7 +665,7 @@ async function renderDocumentos(corpo, plan) {
   }
   limpar(corpo);
   if (docs.length === 0) {
-    corpo.append(el("p", { class: "vazio", text: "Nenhum documento ainda — o estrategista os cria conforme a conversa avança." }));
+    corpo.append(el("p", { class: "vazio", text: t("planejamentos.sem_docs") }));
     return;
   }
   for (const doc of docs) corpo.append(cartaoDocumento(plan, doc));
@@ -687,11 +688,11 @@ function cartaoDocumento(plan, doc) {
       revisaoAtual = d.revisao;
       limpar(corpoMD).append(...renderMarkdown(conteudoAtual));
     } catch (e) {
-      bannerErro("Falha ao carregar a revisão: " + e.message);
+      bannerErro(t("planejamentos.falha_revisao", { erro: e.message }));
     }
   };
   const btnBaixar = el("button", {
-    class: "btn ghost sm", text: "Baixar .md", title: "Baixa a revisão exibida",
+    class: "btn ghost sm", text: t("planejamentos.baixar_md"), title: t("planejamentos.title_baixar_rev"),
     onclick: () => baixarTexto(doc.arquivo.replace(/\.md$/, "") + `-rev${revisaoAtual}.md`, conteudoAtual),
   });
   return el("div", { class: "panel", style: "margin-bottom:12px" },
@@ -707,7 +708,7 @@ function cartaoDocumento(plan, doc) {
 // ---------- aba Artefatos ----------
 
 async function renderArtefatos(corpo, plan) {
-  limpar(corpo).append(el("p", { class: "vazio", text: "Carregando artefatos…" }));
+  limpar(corpo).append(el("p", { class: "vazio", text: t("planejamentos.carregando_arts") }));
   let arts;
   try {
     arts = (await api.listarArtefatosPlanejamento(plan.id)) || [];
@@ -717,7 +718,7 @@ async function renderArtefatos(corpo, plan) {
   }
   limpar(corpo);
   if (arts.length === 0) {
-    corpo.append(el("p", { class: "vazio", text: "Nenhum artefato visual ainda. Nos níveis Apresentação e Protótipo, o estrategista os gera junto com o documento." }));
+    corpo.append(el("p", { class: "vazio", text: t("planejamentos.sem_arts") }));
     return;
   }
   for (const a of arts) {
@@ -726,11 +727,11 @@ async function renderArtefatos(corpo, plan) {
         el("b", { text: a.titulo || a.arquivo }),
         el("div", { style: "display:flex;gap:6px" },
           el("button", {
-            class: "btn ghost sm", text: "Baixar",
+            class: "btn ghost sm", text: t("planejamentos.baixar"),
             onclick: () => baixarURL(api.urlDownloadArtefatoPlanejamento(plan.id, a.arquivo)),
           }),
           el("button", {
-            class: "btn sm", text: "Abrir ⧉",
+            class: "btn sm", text: t("planejamentos.abrir"),
             onclick: () => window.open(api.urlArtefatoPlanejamento(plan.id, a.arquivo), "_blank", "noopener"),
           }),
         ),
@@ -743,7 +744,7 @@ async function renderArtefatos(corpo, plan) {
       ),
     ));
   }
-  corpo.append(el("p", { class: "hint", text: "Os artefatos abrem em nova aba, isolados numa sandbox — eles não têm acesso à sua sessão do Praxis." }));
+  corpo.append(el("p", { class: "hint", text: t("planejamentos.hint_sandbox") }));
 }
 
 // ---------- aba Referências ----------
@@ -752,12 +753,12 @@ async function renderArtefatos(corpo, plan) {
 // projetos, transcrições de reunião…) e permite anexar novos — o próximo turno
 // do estrategista já os enxerga.
 async function renderReferencias(corpo, plan) {
-  limpar(corpo).append(el("p", { class: "vazio", text: "Carregando referências…" }));
+  limpar(corpo).append(el("p", { class: "vazio", text: t("planejamentos.carregando_refs") }));
   let refs;
   try {
     refs = (await api.listarReferenciasPlanejamento(plan.id)) || [];
   } catch (e) {
-    limpar(corpo).append(el("p", { class: "vazio", text: "Falha ao carregar referências: " + e.message }));
+    limpar(corpo).append(el("p", { class: "vazio", text: t("planejamentos.falha_refs", { erro: e.message }) }));
     return;
   }
   limpar(corpo);
@@ -766,7 +767,7 @@ async function renderReferencias(corpo, plan) {
     type: "file", multiple: true, hidden: true,
     accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
   });
-  const btnAnexar = el("button", { class: "btn", text: "+ Anexar arquivos" });
+  const btnAnexar = el("button", { class: "btn", text: t("planejamentos.anexar_arquivos") });
   btnAnexar.onclick = () => inputArquivos.click();
   inputArquivos.onchange = async () => {
     const arquivos = [...inputArquivos.files];
@@ -788,11 +789,11 @@ async function renderReferencias(corpo, plan) {
   };
   corpo.append(el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:12px" },
     btnAnexar, inputArquivos,
-    el("span", { class: "hint", text: "md, txt, csv, json, pdf, html ou imagem · até 15 MB cada" }),
+    el("span", { class: "hint", text: t("planejamentos.hint_formatos") }),
   ));
 
   if (refs.length === 0) {
-    corpo.append(el("p", { class: "vazio", text: "Nenhuma referência ainda. Anexe uma ADR de outro projeto, a transcrição de uma reunião ou qualquer material que o estrategista deva tomar como base." }));
+    corpo.append(el("p", { class: "vazio", text: t("planejamentos.sem_refs") }));
     return;
   }
   for (const ref of refs) {
@@ -801,16 +802,16 @@ async function renderReferencias(corpo, plan) {
         el("b", { text: ref.arquivo }),
         el("div", { style: "display:flex;gap:6px" },
           el("button", {
-            class: "btn ghost sm", text: "Baixar",
+            class: "btn ghost sm", text: t("planejamentos.baixar"),
             onclick: () => baixarURL(api.urlReferenciaPlanejamento(plan.id, ref.arquivo)),
           }),
           el("button", {
-            class: "btn ghost sm", text: "Excluir",
+            class: "btn ghost sm", text: t("consultas.excluir"),
             onclick: async () => {
               if (!confirm(`Excluir a referência ${ref.arquivo}?`)) return;
               try {
                 await api.excluirReferenciaPlanejamento(plan.id, ref.arquivo);
-                toast("Referência excluída.", "ok");
+                toast(t("planejamentos.ref_excluida"), "ok");
                 await renderReferencias(corpo, plan);
               } catch (e) {
                 bannerErro("Falha ao excluir: " + e.message);
@@ -824,7 +825,7 @@ async function renderReferencias(corpo, plan) {
       ),
     ));
   }
-  corpo.append(el("p", { class: "hint", text: "As referências ficam na pasta do planejamento como insumo somente leitura: o estrategista as consulta, mas nunca as altera." }));
+  corpo.append(el("p", { class: "hint", text: t("planejamentos.hint_refs_leitura") }));
 }
 
 function formatarTamanho(bytes) {
@@ -849,7 +850,7 @@ function bolha(m, plan) {
     // Chat colaborativo: a fala do usuário mostra QUEM falou (PO, arquiteto…).
     if (m.papel === "user" && meta && meta.autor) rotulo = meta.autor;
     if (meta && meta.tipo === "perguntas") {
-      extras.push(el("div", { class: "hint", text: "Responda no campo abaixo para o estrategista continuar." }));
+      extras.push(el("div", { class: "hint", text: t("planejamentos.responda_abaixo") }));
     }
     if (meta && Array.isArray(meta.documentos) && meta.documentos.length > 0) {
       extras.push(el("div", { class: "hint", text: "Documentos atualizados: " + meta.documentos.join(" · ") + " (aba Documentos)" }));

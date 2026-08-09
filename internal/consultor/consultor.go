@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
 )
@@ -69,6 +70,7 @@ type Consultor struct {
 	AddDirs    []string // repos/diretórios extras liberados (só leitura)
 	BudgetUSD  float64  // teto de custo do turno (0 = sem teto)
 	TimeoutMin int      // timeout do turno
+	Idioma     string   // idioma de saída da IA (preferência de quem criou a consulta)
 
 	// ContextoRepos é o bloco de contexto injetado no prompt: overview(s) do(s)
 	// repositório(s) e, em consulta de grupo, a descrição da solução.
@@ -248,6 +250,7 @@ func (c *Consultor) rodar(ctx context.Context, cons db.Consulta, historico strin
 	prompt := renderPrompt(tpl, map[string]string{
 		"CONTEXTO_REPOS": c.ContextoRepos,
 		"HISTORICO":      historico,
+		"IDIOMA":         i18n.NomeIdiomaOuInstancia(c.Idioma),
 	})
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: c.Dir, DirLogs: c.DirLogs, Prompt: prompt,

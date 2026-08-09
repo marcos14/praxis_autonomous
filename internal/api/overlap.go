@@ -129,7 +129,7 @@ func intersecao(a, b map[string]bool) []string {
 func (s *Servidor) handleOverlaps(w http.ResponseWriter, r *http.Request) {
 	mapa, err := s.mapaSobreposicoes(r.Context(), visibilidadeDaRequisicao(r))
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, mapa)
@@ -144,7 +144,7 @@ func (s *Servidor) handleOverlapDemanda(w http.ResponseWriter, r *http.Request) 
 	}
 	sobre, err := s.sobreposicoesDe(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, sobre)

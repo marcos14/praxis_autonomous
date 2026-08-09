@@ -89,6 +89,11 @@ var migracoes = []migracao{
 		nome:   "planejamento_demandas: um planejamento gera N demandas, com a revisão entregue registrada",
 		sql:    schemaPlanejamentoDemandas,
 	},
+	{
+		versao: 15,
+		nome:   "i18n: idioma preferido do usuário (users.idioma)",
+		sql:    schemaIdiomaUsuario,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -585,7 +590,7 @@ CREATE INDEX ix_demands_criado_por ON demands (criado_por);
 // schemaContaPorRun é a migração 11: registra qual perfil (engine_accounts.alias)
 // executou cada run. É o alias vigente no momento da execução — denormalizado de
 // propósito: renomear/remover o perfil depois não reescreve o histórico. Default
-// '' preserva as linhas existentes e os relatórios atuais (a coluna é aditiva).
+// ” preserva as linhas existentes e os relatórios atuais (a coluna é aditiva).
 const schemaContaPorRun = `
 ALTER TABLE runs          ADD COLUMN conta TEXT NOT NULL DEFAULT '';
 ALTER TABLE consulta_runs ADD COLUMN conta TEXT NOT NULL DEFAULT '';
@@ -709,4 +714,11 @@ CREATE INDEX ix_planejamento_demandas_dem  ON planejamento_demandas (demand_id);
 
 INSERT INTO planejamento_demandas (planejamento_id, demand_id, tipo)
 SELECT id, demand_id, 'completa' FROM planejamentos WHERE demand_id IS NOT NULL;
+`
+
+// Migração 15 — idioma preferido do usuário (i18n). Vazio = sem preferência: a
+// UI cai no idioma do navegador e, por fim, no idioma da instância (config
+// global `idioma`). Valores normalizados pela app: pt-BR, en, es, zh-CN.
+const schemaIdiomaUsuario = `
+ALTER TABLE users ADD COLUMN idioma TEXT NOT NULL DEFAULT '';
 `

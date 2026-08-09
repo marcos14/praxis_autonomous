@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -37,12 +38,11 @@ func (s *Servidor) handleDiffDemanda(w http.ResponseWriter, r *http.Request) {
 	}
 	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	if strings.TrimSpace(dem.Branch) == "" {
-		responderErro(w, http.StatusConflict, "sem_branch",
-			"a demanda ainda não tem branch (ainda não começou a executar)")
+		erroT(w, r, http.StatusConflict, "sem_branch", "erro.integracao_sem_branch")
 		return
 	}
 
@@ -93,12 +93,11 @@ func (s *Servidor) handleMergePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	if strings.TrimSpace(dem.Branch) == "" {
-		responderErro(w, http.StatusConflict, "sem_branch",
-			"a demanda ainda não tem branch (ainda não começou a executar)")
+		erroT(w, r, http.StatusConflict, "sem_branch", "erro.integracao_sem_branch")
 		return
 	}
 
@@ -155,21 +154,20 @@ const numTentativasPush = 3
 func (s *Servidor) acaoPublicarBranch(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
 	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	if strings.TrimSpace(dem.Branch) == "" {
-		responderErro(w, http.StatusConflict, "sem_branch",
-			"a demanda ainda não tem branch para publicar")
+		erroT(w, r, http.StatusConflict, "sem_branch", "erro.integracao_sem_branch_publicar")
 		return
 	}
 	if err := s.git.Push(proj.Pasta, dem.Branch, numTentativasPush); err != nil {
-		s.registrarEventoDemanda(r, dem, "push_falhou", "Praxis: falha ao publicar a branch",
+		s.registrarEventoDemanda(r, dem, "push_falhou", i18n.TI("evento.push_falhou"),
 			"git push de "+dem.Branch+" falhou: "+err.Error())
 		responderErro(w, http.StatusBadGateway, "push_falhou", "falha ao publicar a branch: "+err.Error())
 		return
 	}
-	s.registrarEventoDemanda(r, dem, "branch_publicada", "Praxis: branch publicada",
+	s.registrarEventoDemanda(r, dem, "branch_publicada", i18n.TI("evento.branch_publicada"),
 		"branch "+dem.Branch+" publicada em origin.")
 	s.responderDemandaComFases(w, r, dem)
 }
@@ -213,7 +211,7 @@ func (s *Servidor) marcarConflito(r *http.Request, dem db.Demanda, contexto stri
 		s.log.Error("marcar conflito", "erro", err, "demanda", dem.ID)
 		atual = dem
 	}
-	s.registrarEventoDemanda(r, atual, "conflito", "Praxis: conflito com a main",
+	s.registrarEventoDemanda(r, atual, "conflito", i18n.TI("evento.conflito"),
 		contexto+" — arquivos em conflito: "+strings.Join(arquivos, ", "))
 	return atual
 }
@@ -227,24 +225,22 @@ func (s *Servidor) marcarConflito(r *http.Request, dem db.Demanda, contexto stri
 func (s *Servidor) acaoIntegrar(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
 	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	// Integrar é o fechamento: só de demanda concluída (ou em conflito, após
 	// resolver). Integrar no meio da execução mesclaria trabalho incompleto e
 	// removeria o worktree debaixo do harness.
 	if dem.Status != db.StatusDemandaConcluida && dem.Status != db.StatusDemandaConflito {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"só é possível integrar uma demanda concluída ou em conflito (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.integracao_estado_integrar", "status", dem.Status)
 		return
 	}
 	if strings.TrimSpace(dem.Branch) == "" {
-		responderErro(w, http.StatusConflict, "sem_branch", "a demanda ainda não tem branch para integrar")
+		erroT(w, r, http.StatusConflict, "sem_branch", "erro.integracao_sem_branch_integrar")
 		return
 	}
 	if proj.ModoIntegracao != db.ModoIntegracaoMergeLocal {
-		responderErro(w, http.StatusConflict, "modo_invalido",
-			"integrar local só no modo merge_local; no modo merge_request, abra o MR na plataforma")
+		erroT(w, r, http.StatusConflict, "modo_invalido", "erro.integracao_modo_invalido")
 		return
 	}
 	base := baseDoProjeto(proj)
@@ -273,10 +269,10 @@ func (s *Servidor) acaoIntegrar(w http.ResponseWriter, r *http.Request, dem db.D
 	dem.WorktreePath = ""
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
-	s.registrarEventoDemanda(r, atual, "demanda_integrada", "Praxis: demanda integrada",
+	s.registrarEventoDemanda(r, atual, "demanda_integrada", i18n.TI("evento.demanda_integrada"),
 		"branch "+dem.Branch+" integrada na "+base+" (merge --no-ff).")
 	s.responderDemandaComFases(w, r, atual)
 }
@@ -296,7 +292,7 @@ func (s *Servidor) limparPosIntegracao(r *http.Request, proj db.Projeto, dem db.
 			s.log.Warn("remover branch pós-integração", "erro", err, "demanda", dem.ID)
 		}
 	}
-	s.registrarEventoDemanda(r, dem, "limpeza_pos_integracao", "Praxis: worktree/branch removidos",
+	s.registrarEventoDemanda(r, dem, "limpeza_pos_integracao", i18n.TI("evento.limpeza_pos_integracao"),
 		"worktree e branch "+dem.Branch+" removidos após a integração.")
 }
 
@@ -338,7 +334,7 @@ func (s *Servidor) reconciliarMR(r *http.Request, proj db.Projeto, dem db.Demand
 		s.log.Warn("reconciliar MR: atualizar demanda", "erro", err, "demanda", dem.ID)
 		return dem, false
 	}
-	s.registrarEventoDemanda(r, atual, "demanda_integrada", "Praxis: demanda integrada",
+	s.registrarEventoDemanda(r, atual, "demanda_integrada", i18n.TI("evento.demanda_integrada"),
 		"merge da branch "+dem.Branch+" detectado na "+base+"; demanda integrada.")
 	return atual, true
 }
@@ -350,20 +346,18 @@ func (s *Servidor) reconciliarMR(r *http.Request, proj db.Projeto, dem db.Demand
 func (s *Servidor) acaoAtualizarBranch(w http.ResponseWriter, r *http.Request, dem db.Demanda) {
 	proj, err := s.banco.ObterProjeto(r.Context(), dem.ProjectID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	// Nunca com o scheduler podendo escrever no worktree (mesmo gate da edição
 	// manual): o merge no worktree colidiria com a fase em andamento.
 	switch dem.Status {
 	case db.StatusDemandaPronta, db.StatusDemandaExecutando, db.StatusDemandaAguardandoFranquia:
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"não é possível atualizar a branch com a demanda na fila ou executando — pause-a antes (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.integracao_estado_atualizar", "status", dem.Status)
 		return
 	}
 	if strings.TrimSpace(dem.Branch) == "" || strings.TrimSpace(dem.WorktreePath) == "" {
-		responderErro(w, http.StatusConflict, "sem_branch",
-			"a demanda ainda não tem branch/worktree para atualizar")
+		erroT(w, r, http.StatusConflict, "sem_branch", "erro.integracao_sem_branch_atualizar")
 		return
 	}
 	base := baseDoProjeto(proj)
@@ -402,7 +396,7 @@ func (s *Servidor) acaoAtualizarBranch(w http.ResponseWriter, r *http.Request, d
 	dem.Erro = ""
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	s.registrarEventoDemanda(r, atual, "branch_atualizada", "Praxis: branch atualizada",

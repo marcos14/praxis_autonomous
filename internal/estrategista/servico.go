@@ -185,6 +185,7 @@ func (s *Servico) montarEstrategista(ctx context.Context, planejamentoID int64) 
 	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotorPlanejamento(ctx, plan.CriadoPor, planejamentoID)
 	return &Estrategista{
 		Store:         s.store,
+		Idioma:        s.store.IdiomaDoUsuario(ctx, plan.CriadoPor),
 		Motor:         motorNome,
 		Modelo:        modelo,
 		Esforco:       esforco,

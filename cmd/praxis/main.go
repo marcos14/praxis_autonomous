@@ -24,9 +24,10 @@ import (
 
 	"github.com/marcos14/praxis-autonomous/internal/api"
 	"github.com/marcos14/praxis-autonomous/internal/consultor"
-	"github.com/marcos14/praxis-autonomous/internal/estrategista"
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/estrategista"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"github.com/marcos14/praxis-autonomous/internal/ide"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/manutencao"
@@ -130,6 +131,19 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 		}
 	}()
 	logger.Info("banco aberto", "caminho", banco.Caminho)
+
+	// i18n: define o idioma da instância (config global `idioma`) — usado por
+	// eventos, notificações e conteúdo gerado sem usuário no contexto. O PUT da
+	// config global o atualiza sem reiniciar. Best-effort: sem config, vale pt-BR.
+	if entradas, err := banco.ObterConfigGlobal(ctx); err == nil {
+		var idioma string
+		if raw, ok := entradas["idioma"]; ok {
+			_ = json.Unmarshal(raw, &idioma)
+		}
+		i18n.DefinirIdiomaInstancia(idioma)
+	} else {
+		logger.Warn("ler idioma da instância", "erro", err)
+	}
 
 	// Garante que o segredo de assinatura do JWT exista já no boot (gerado e
 	// persistido na primeira vez), evitando latência/erro na primeira autenticação.

@@ -79,14 +79,14 @@ func (s *Servidor) handleCriarMotor(w http.ResponseWriter, r *http.Request) {
 	if req.Prioridade == nil {
 		prox, err := s.banco.ProximaPrioridadeMotor(r.Context())
 		if err != nil {
-			s.responderErroMotor(w, err)
+			s.responderErroMotor(w, r, err)
 			return
 		}
 		m.Prioridade = prox
 	}
 	criado, err := s.banco.CriarMotor(r.Context(), m)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, criado)
@@ -96,7 +96,7 @@ func (s *Servidor) handleCriarMotor(w http.ResponseWriter, r *http.Request) {
 func (s *Servidor) handleListarMotores(w http.ResponseWriter, r *http.Request) {
 	motores, err := s.banco.ListarMotores(r.Context())
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, motores)
@@ -110,7 +110,7 @@ func (s *Servidor) handleListarMotores(w http.ResponseWriter, r *http.Request) {
 func (s *Servidor) handleDetectarMotores(w http.ResponseWriter, r *http.Request) {
 	sugestoes, err := s.detectarMotores(r)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, sugestoes)
@@ -123,7 +123,7 @@ func (s *Servidor) handleDetectarMotores(w http.ResponseWriter, r *http.Request)
 func (s *Servidor) handleAutocadastrarMotores(w http.ResponseWriter, r *http.Request) {
 	sugestoes, err := s.detectarMotores(r)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	criados := []db.Motor{}
@@ -133,7 +133,7 @@ func (s *Servidor) handleAutocadastrarMotores(w http.ResponseWriter, r *http.Req
 		}
 		prox, err := s.banco.ProximaPrioridadeMotor(r.Context())
 		if err != nil {
-			s.responderErroMotor(w, err)
+			s.responderErroMotor(w, r, err)
 			return
 		}
 		m, err := s.banco.CriarMotor(r.Context(), db.Motor{
@@ -149,7 +149,7 @@ func (s *Servidor) handleAutocadastrarMotores(w http.ResponseWriter, r *http.Req
 			Params:         json.RawMessage("{}"),
 		})
 		if err != nil {
-			s.responderErroMotor(w, err)
+			s.responderErroMotor(w, r, err)
 			return
 		}
 		for _, c := range sug.Contas {
@@ -193,7 +193,7 @@ func (s *Servidor) handleObterMotor(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := s.banco.ObterMotor(r.Context(), id)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, m)
@@ -208,7 +208,7 @@ func (s *Servidor) handleAtualizarMotor(w http.ResponseWriter, r *http.Request) 
 	}
 	atual, err := s.banco.ObterMotor(r.Context(), id)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	var req reqMotor
@@ -223,7 +223,7 @@ func (s *Servidor) handleAtualizarMotor(w http.ResponseWriter, r *http.Request) 
 	m.ID = id
 	atualizado, err := s.banco.AtualizarMotor(r.Context(), m)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, atualizado)
@@ -236,16 +236,16 @@ func (s *Servidor) handleReordenarMotores(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if len(req.IDs) == 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "ids é obrigatório")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.motor_ids_obrigatorio")
 		return
 	}
 	if err := s.banco.ReordenarMotores(r.Context(), req.IDs); err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	motores, err := s.banco.ListarMotores(r.Context())
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, motores)
@@ -260,7 +260,7 @@ func (s *Servidor) handleCriarConta(w http.ResponseWriter, r *http.Request) {
 	// Confirma que o motor existe para devolver 404 (em vez de erro de FK).
 	m, err := s.banco.ObterMotor(r.Context(), engineID)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	var req reqConta
@@ -274,7 +274,7 @@ func (s *Servidor) handleCriarConta(w http.ResponseWriter, r *http.Request) {
 	}
 	criada, err := s.banco.CriarConta(r.Context(), c)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	// Claude/Codex recebem um perfil isolado, gerenciado quando o caminho foi
@@ -288,7 +288,7 @@ func (s *Servidor) handleCriarConta(w http.ResponseWriter, r *http.Request) {
 			// Não deixa no banco um perfil que não pode ser isolado/preparado.
 			_ = s.banco.RemoverConta(r.Context(), engineID, criada.ID)
 			s.log.Error("preparar diretório do perfil", "motor", m.Nome, "conta", criada.ID, "erro", err)
-			responderErro(w, http.StatusInternalServerError, "perfil_indisponivel", "não foi possível preparar o diretório isolado do perfil")
+			erroT(w, r, http.StatusInternalServerError, "perfil_indisponivel", "erro.motor_perfil_indisponivel")
 			return
 		}
 	}
@@ -307,7 +307,7 @@ func (s *Servidor) handleAtualizarConta(w http.ResponseWriter, r *http.Request) 
 	}
 	atual, err := s.banco.ObterMotor(r.Context(), engineID)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	base, achou := db.Conta{}, false
@@ -318,7 +318,7 @@ func (s *Servidor) handleAtualizarConta(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if !achou {
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "conta não encontrada")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.motor_conta_nao_encontrada")
 		return
 	}
 	var req reqConta
@@ -335,13 +335,13 @@ func (s *Servidor) handleAtualizarConta(w http.ResponseWriter, r *http.Request) 
 	if motor.VendorComPerfilIsolado(atual.Nome) {
 		c, err = s.prepararContaPerfil(atual, c)
 		if err != nil {
-			responderErro(w, http.StatusBadRequest, "perfil_indisponivel", "não foi possível preparar o diretório isolado do perfil")
+			erroT(w, r, http.StatusBadRequest, "perfil_indisponivel", "erro.motor_perfil_indisponivel")
 			return
 		}
 	}
 	atualizada, err := s.banco.AtualizarConta(r.Context(), c)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, atualizada)
@@ -359,10 +359,10 @@ func (s *Servidor) handleRemoverConta(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.banco.RemoverConta(r.Context(), engineID, contaID); err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "conta não encontrada")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.motor_conta_nao_encontrada")
 			return
 		}
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -515,18 +515,18 @@ func lerID(w http.ResponseWriter, r *http.Request, nome string) (int64, bool) {
 }
 
 // responderErroMotor traduz os erros do store de motores/contas para respostas HTTP.
-func (s *Servidor) responderErroMotor(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroMotor(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "motor não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.motor_nao_encontrado")
 	case errors.Is(err, db.ErrNomeDuplicado):
-		responderErro(w, http.StatusConflict, "nome_duplicado", "já existe um motor com esse nome")
+		erroT(w, r, http.StatusConflict, "nome_duplicado", "erro.motor_nome_duplicado")
 	case errors.Is(err, db.ErrAliasDuplicado):
-		responderErro(w, http.StatusConflict, "alias_duplicado", "já existe uma conta com esse alias neste motor")
+		erroT(w, r, http.StatusConflict, "alias_duplicado", "erro.motor_alias_duplicado")
 	case errors.Is(err, db.ErrOrdemInvalida):
 		responderErro(w, http.StatusBadRequest, "invalido", err.Error())
 	default:
 		s.log.Error("erro no store de motores", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

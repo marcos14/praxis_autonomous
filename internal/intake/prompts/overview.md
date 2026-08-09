@@ -4,7 +4,7 @@ contexto de um chat de consulta — ele orienta um assistente (e os leitores) a 
 localizarem no sistema sem conhecer o código.
 
 Leia o README, CLAUDE.md/AGENTS.md (se existirem) e a estrutura do projeto, navegue o
-suficiente para entender o domínio, e produza `overview_md` em markdown pt-BR
+suficiente para entender o domínio, e produza `overview_md` em markdown {IDIOMA}
 (400–900 palavras) com EXATAMENTE estas seções:
 
 1. **Objetivo** — o que o sistema faz e para quem (o problema de negócio que resolve).
@@ -24,3 +24,5 @@ Regras:
   no código e mencione a divergência em uma linha.
 
 Responda APENAS com o JSON estruturado solicitado.
+
+> **Idioma da saída:** escreva o overview inteiramente em **{IDIOMA}**. Nomes de módulos, pastas e símbolos do código permanecem como estão no repositório.

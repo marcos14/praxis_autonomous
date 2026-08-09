@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
 )
@@ -36,6 +37,9 @@ type GeradorOverview struct {
 	AddDirs    []string
 	BudgetUSD  float64
 	TimeoutMin int
+	// Idioma de saída: o overview é artefato do PROJETO, não de um usuário —
+	// vazio faz valer o idioma da instância.
+	Idioma string
 
 	// Seams de teste (nil em produção):
 	Selecionar func(nome string) (motor.Motor, error)
@@ -72,7 +76,7 @@ func (g *GeradorOverview) Gerar(ctx context.Context, projectID int64) error {
 	}
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: g.Dir, DirLogs: g.DirLogs,
-		Prompt: renderPrompt(tpl, map[string]string{"PROJETO": proj.Nome}),
+		Prompt: renderPrompt(tpl, map[string]string{"PROJETO": proj.Nome, "IDIOMA": i18n.NomeIdiomaOuInstancia(g.Idioma)}),
 		Modelo: g.Modelo, Esforco: g.Esforco, PerfilDir: g.ConfigDir,
 		AddDirs: g.AddDirs, BudgetUSD: g.BudgetUSD, TimeoutMin: g.TimeoutMin,
 		Schema: SchemaOverview, SomenteLeitura: true, ProibirCommit: true,

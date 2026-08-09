@@ -3,6 +3,8 @@
 // de api.js — faz seu próprio fetch para as rotas /auth/* — para evitar ciclo de
 // import (api.js importa este módulo para anexar o Bearer e tratar 401).
 
+import { idiomaAtivo } from "./i18n.js";
+
 const CHAVE_TOKEN = "praxis_token";
 
 let _token = localStorage.getItem(CHAVE_TOKEN) || "";
@@ -38,7 +40,7 @@ function guardarToken(t) {
 // reqAuth faz uma requisição às rotas de autenticação, anexando o Bearer quando
 // há token. Lança Error com a mensagem do backend em status >= 400.
 async function reqAuth(metodo, caminho, corpo) {
-  const opts = { method: metodo, headers: {} };
+  const opts = { method: metodo, headers: { "X-Praxis-Idioma": idiomaAtivo() } };
   if (_token) opts.headers["Authorization"] = "Bearer " + _token;
   if (corpo !== undefined) {
     opts.headers["Content-Type"] = "application/json";

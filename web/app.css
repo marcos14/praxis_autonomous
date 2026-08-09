@@ -18,7 +18,7 @@
   --critical: #d03b3b;
   --violet: #9085e9;
   --aqua: #199e70;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: var(--page); color: var(--ink); font-size: 14px; }
@@ -531,3 +531,12 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
 .notif-modo b { font-weight: 600; color: var(--ink); }
 .notif-projeto-eventos { display: grid; gap: 10px; }
 @media (max-width: 640px) { .notif-eventos { grid-template-columns: 1fr; } }
+
+/* ---------- i18n: seletor de idioma (rodapé do menu e portão de login) ---------- */
+.sel-idioma {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 7px; padding: 4px 6px; font-size: 12px; font-family: inherit;
+  margin-top: 8px; width: 100%;
+}
+.auth-idioma { margin-top: 14px; text-align: center; }
+.auth-idioma .sel-idioma { width: auto; margin-top: 0; }

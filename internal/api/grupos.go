@@ -44,7 +44,7 @@ func (s *Servidor) handleCriarGrupo(w http.ResponseWriter, r *http.Request) {
 	}
 	criado, err := s.banco.CriarGrupo(r.Context(), g, ids)
 	if err != nil {
-		s.responderErroGrupo(w, err)
+		s.responderErroGrupo(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, criado)
@@ -53,7 +53,7 @@ func (s *Servidor) handleCriarGrupo(w http.ResponseWriter, r *http.Request) {
 func (s *Servidor) handleListarGrupos(w http.ResponseWriter, r *http.Request) {
 	grupos, err := s.banco.ListarGrupos(r.Context())
 	if err != nil {
-		s.responderErroGrupo(w, err)
+		s.responderErroGrupo(w, r, err)
 		return
 	}
 	// ACL de projetos: um grupo de repositórios só aparece para o usuário
@@ -63,7 +63,7 @@ func (s *Servidor) handleListarGrupos(w http.ResponseWriter, r *http.Request) {
 		for _, g := range grupos {
 			ve, err := s.banco.UsuarioVeGrupoProjetos(r.Context(), *uid, g.ID)
 			if err != nil {
-				s.responderErroGrupo(w, err)
+				s.responderErroGrupo(w, r, err)
 				return
 			}
 			if ve {
@@ -82,7 +82,7 @@ func (s *Servidor) handleObterGrupo(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := s.banco.ObterGrupo(r.Context(), id)
 	if err != nil {
-		s.responderErroGrupo(w, err)
+		s.responderErroGrupo(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, g)
@@ -95,7 +95,7 @@ func (s *Servidor) handleAtualizarGrupo(w http.ResponseWriter, r *http.Request) 
 	}
 	atual, err := s.banco.ObterGrupo(r.Context(), id)
 	if err != nil {
-		s.responderErroGrupo(w, err)
+		s.responderErroGrupo(w, r, err)
 		return
 	}
 	var req reqGrupo
@@ -110,7 +110,7 @@ func (s *Servidor) handleAtualizarGrupo(w http.ResponseWriter, r *http.Request) 
 	g.ID = id
 	atualizado, err := s.banco.AtualizarGrupo(r.Context(), g, ids)
 	if err != nil {
-		s.responderErroGrupo(w, err)
+		s.responderErroGrupo(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, atualizado)
@@ -124,7 +124,7 @@ func (s *Servidor) handleExcluirGrupo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.banco.ExcluirGrupo(r.Context(), id); err != nil {
-		s.responderErroGrupo(w, err)
+		s.responderErroGrupo(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -171,21 +171,21 @@ func montarGrupo(req reqGrupo, base db.Grupo, criando bool) (db.Grupo, []int64, 
 func lerIDGrupo(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "id inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.id_invalido")
 		return 0, false
 	}
 	return id, true
 }
 
 // responderErroGrupo traduz os erros do store de grupos para respostas HTTP.
-func (s *Servidor) responderErroGrupo(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroGrupo(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "grupo ou projeto membro não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.grupo_nao_encontrado")
 	case errors.Is(err, db.ErrSlugDuplicado):
-		responderErro(w, http.StatusConflict, "slug_duplicado", "já existe um grupo com esse slug")
+		erroT(w, r, http.StatusConflict, "slug_duplicado", "erro.grupo_slug_duplicado")
 	default:
 		s.log.Error("erro no store de grupos", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

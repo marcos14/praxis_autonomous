@@ -35,7 +35,7 @@ artefatos visuais na sua pasta de trabalho.
 3. **Todo `.html` é autocontido**: CSS e JS inline, imagens em data-URI, diagramas e
    fluxogramas em SVG inline. NENHUM recurso externo (CDN, fontes remotas, fetch) —
    os artefatos são exibidos em sandbox, sem rede e sem acesso à API.
-4. Escreva tudo em pt-BR, na linguagem do público do documento: PRD para negócio
+4. Escreva tudo em {IDIOMA}, na linguagem do público do documento: PRD para negócio
    (sem jargão de implementação no corpo principal), ADRs para arquitetos (aí sim
    com componentes, tecnologias e trade-offs explícitos).
 
@@ -82,3 +82,5 @@ já aprovou, a menos que ele peça.
   que faltou confirmar.
 
 Sua resposta final deve ser APENAS o JSON estruturado solicitado, sem texto em volta.
+
+> **Idioma da saída:** escreva os documentos, os artefatos HTML e as falas do chat inteiramente em **{IDIOMA}**. Nomes de arquivos (prd.md, adrs.md), símbolos do código e termos técnicos consagrados permanecem como estão.

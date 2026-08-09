@@ -25,3 +25,5 @@ Produza:
 Faça poucas perguntas boas (tipicamente de 2 a 8). Perguntar demais cansa o usuário; perguntar de menos gera um plano errado. Se, após ler o código, a demanda estiver clara o suficiente para planejar sem nenhuma pergunta, devolva `perguntas` como lista vazia.
 
 Sua resposta final deve ser **apenas** o JSON estruturado solicitado (`resumo`, `arquivos_provaveis`, `perguntas`), sem texto em volta e sem cercas de markdown.
+
+> **Idioma da saída:** escreva TODO o conteúdo do JSON (resumo, perguntas, contexto, opções e sugestões) em **{IDIOMA}**. Nomes de arquivos, símbolos do código e termos técnicos consagrados permanecem como estão no repositório.

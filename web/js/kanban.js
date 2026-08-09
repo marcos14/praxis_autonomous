@@ -6,6 +6,7 @@
 import { api } from "./api.js";
 import { el, limpar, bannerErro } from "./ui.js";
 import { abrirCard, setProjetos, pillStatus, dinheiro, STATUS } from "./demandas.js";
+import { t, tn } from "./i18n.js";
 
 // COLUNAS é a ordem das colunas do quadro (subconjunto/ordem dos status).
 const COLUNAS = [
@@ -43,7 +44,7 @@ export function desmontarKanban() {
 function renderFiltros() {
   const cont = limpar(document.getElementById("filtros-kanban"));
   const selProj = el("select", { onchange: (e) => { filtro.project = e.target.value; recarregar(); } },
-    el("option", { value: "", text: "Todos os projetos" }));
+    el("option", { value: "", text: t("comum.todos_projetos") }));
   for (const p of projetos) {
     const o = el("option", { value: String(p.id), text: p.nome });
     if (String(p.id) === filtro.project) o.selected = true;
@@ -51,7 +52,7 @@ function renderFiltros() {
   }
   // O filtro de motor é preenchido a partir dos motores presentes no board.
   const selMotor = el("select", { id: "filtro-motor", onchange: (e) => { filtro.motor = e.target.value; renderColunas(cacheBoard); } },
-    el("option", { value: "", text: "Todos os motores" }));
+    el("option", { value: "", text: t("kanban.todos_motores") }));
   cont.append(selProj, selMotor);
 }
 
@@ -63,7 +64,7 @@ async function recarregar() {
   try {
     board = (await api.board({ project: filtro.project })) || [];
   } catch (e) {
-    bannerErro("Falha ao carregar o quadro: " + e.message);
+    bannerErro(t("kanban.falha_quadro", { erro: e.message }));
     return;
   }
   bannerErro("");
@@ -85,7 +86,7 @@ function atualizarFiltroMotor(board) {
   if (!sel) return;
   const motores = [...new Set(board.map((d) => d.motor).filter(Boolean))].sort();
   const atual = filtro.motor;
-  limpar(sel).append(el("option", { value: "", text: "Todos os motores" }));
+  limpar(sel).append(el("option", { value: "", text: t("kanban.todos_motores") }));
   for (const m of motores) {
     const o = el("option", { value: m, text: m });
     if (m === atual) o.selected = true;
@@ -107,7 +108,7 @@ function renderColunas(board) {
   const outros = visiveis.filter((d) => !conhecidos.has(d.status));
 
   if (visiveis.length === 0) {
-    wrap.append(el("p", { class: "sub", text: "Nenhuma demanda para os filtros atuais." }));
+    wrap.append(el("p", { class: "sub", text: t("kanban.nenhuma_demanda") }));
     return;
   }
 
@@ -118,7 +119,7 @@ function renderColunas(board) {
 }
 
 function colunaEl(status, demandas) {
-  const [rotulo] = STATUS[status] || [status];
+  const [rotulo] = STATUS[status] || [status === "outros" ? t("status.outros") : status];
   const col = el("div", { class: "kb-col" },
     el("div", { class: "kb-col-head" },
       el("span", { class: "kb-col-titulo", text: rotulo }),
@@ -149,25 +150,25 @@ function cardEl(d) {
   });
   card.addEventListener("dragend", () => card.classList.remove("arrastando"));
 
-  card.append(el("div", { class: "proj", text: proj ? proj.nome : "projeto " + d.project_id }));
+  card.append(el("div", { class: "proj", text: proj ? proj.nome : t("comum.projeto_n", { id: d.project_id }) }));
   card.append(el("div", { class: "title", text: `#${d.id} — ${d.titulo}` }));
 
   if (d.fases_total > 0) {
     const frac = d.fases_concluidas / d.fases_total;
     card.append(el("div", { class: "kb-prog" },
       el("div", { class: "kb-prog-bar", style: `width:${Math.round(frac * 100)}%` })));
-    card.append(el("div", { class: "kb-prog-txt", text: `${d.fases_concluidas}/${d.fases_total} fases` }));
+    card.append(el("div", { class: "kb-prog-txt", text: t("kanban.fases", { feitas: d.fases_concluidas, total: d.fases_total }) }));
   }
 
   const meta = el("div", { class: "meta" }, pillStatus(d.status));
   if (d.motor) meta.append(el("span", { class: "pill", text: d.motor }));
   meta.append(el("span", { class: "pill", text: dinheiro(d.custo_usd) }));
-  if (alerta) meta.append(el("span", { class: "pill alerta-pill", text: "precisa de você" }));
+  if (alerta) meta.append(el("span", { class: "pill alerta-pill", text: t("kanban.precisa") }));
   const sobre = cacheOverlaps[String(d.id)];
   if (sobre && sobre.length) {
     const arqs = [...new Set(sobre.flatMap((s) => s.arquivos))];
-    meta.append(el("span", { class: "pill overlap-pill", title: "arquivos em comum: " + arqs.join(", "),
-      text: `⚠ sobrepõe ${sobre.length}` }));
+    meta.append(el("span", { class: "pill overlap-pill", title: t("kanban.arquivos_comum", { arquivos: arqs.join(", ") }),
+      text: tn("kanban.sobrepoe", sobre.length) }));
   }
   card.append(meta);
   return card;
@@ -194,7 +195,7 @@ async function onDrop(e, lista) {
   try {
     await api.reordenarDemandas(ids);
   } catch (err) {
-    bannerErro("Falha ao reordenar: " + err.message);
+    bannerErro(t("kanban.falha_reordenar", { erro: err.message }));
     recarregar();
   }
 }

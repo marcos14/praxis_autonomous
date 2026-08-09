@@ -47,13 +47,13 @@ type respUsoMotores struct {
 func (s *Servidor) handleUsoMotores(w http.ResponseWriter, r *http.Request) {
 	motores, err := s.banco.ListarMotores(r.Context())
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return
 	}
 	usos, err := s.banco.UsoPraxisPorConta(r.Context(), time.Now().UTC())
 	if err != nil {
 		s.log.Error("agregar uso do praxis", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	porChave := map[[2]string]db.UsoPraxis{}

@@ -29,7 +29,7 @@ func (s *Servidor) handleChatDemanda(w http.ResponseWriter, r *http.Request) {
 	}
 	conteudo := strings.TrimSpace(req.Conteudo)
 	if conteudo == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "conteudo é obrigatório")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.chat_conteudo_obrigatorio")
 		return
 	}
 
@@ -39,7 +39,7 @@ func (s *Servidor) handleChatDemanda(w http.ResponseWriter, r *http.Request) {
 		Conteudo: conteudo,
 	})
 	if err != nil {
-		s.responderErroChat(w, err)
+		s.responderErroChat(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, msg)
@@ -54,21 +54,21 @@ func (s *Servidor) handleListarChat(w http.ResponseWriter, r *http.Request) {
 	}
 	msgs, err := s.banco.ListarMensagensChat(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroChat(w, err)
+		s.responderErroChat(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, msgs)
 }
 
 // responderErroChat traduz os erros do store de chat para respostas HTTP.
-func (s *Servidor) responderErroChat(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroChat(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrPapelInvalido):
-		responderErro(w, http.StatusBadRequest, "invalido", "papel de mensagem inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.chat_papel_invalido")
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "demanda não encontrada")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.demanda_nao_encontrada")
 	default:
 		s.log.Error("erro no store de chat", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

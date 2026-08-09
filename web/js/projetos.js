@@ -5,9 +5,18 @@ import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, mdEditor } from "./ui.js";
 import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
 import { GRUPOS_EVENTOS, resolverEventos } from "./notify-events.js";
+import { t } from "./i18n.js";
 
 let projetos = [];
 let selecionadoID = null;
+
+// rotuloValor traduz um valor vindo da API (ex.: modo_integracao, origem) pelo
+// catálogo (prefixo + valor); sem chave correspondente, exibe o valor cru.
+function rotuloValor(prefixo, valor) {
+  const chave = prefixo + valor;
+  const texto = t(chave);
+  return texto === chave ? valor : texto;
+}
 
 export async function montarProjetos() {
   await recarregarLista();
@@ -23,23 +32,23 @@ async function recarregarLista() {
   try {
     projetos = (await api.listarProjetos()) || [];
   } catch (e) {
-    bannerErro("Falha ao carregar projetos: " + e.message);
+    bannerErro(t("projetos.falha_carregar", { erro: e.message }));
     return;
   }
   bannerErro("");
   const lista = limpar(document.getElementById("lista-projetos"));
   if (projetos.length === 0) {
-    lista.append(el("p", { class: "sub", text: "Nenhum projeto cadastrado ainda." }));
+    lista.append(el("p", { class: "sub", text: t("projetos.nenhum") }));
     return;
   }
   for (const p of projetos) {
     const item = el("div", { class: "list-item" + (p.id === selecionadoID ? " sel" : ""), onclick: () => selecionar(p.id) },
       el("b", { text: p.nome }),
-      el("div", { class: "path", text: `${p.pasta} · branch ${p.branch_principal}` }),
+      el("div", { class: "path", text: t("projetos.pasta_branch", { pasta: p.pasta, branch: p.branch_principal }) }),
       el("div", { class: "meta" },
-        p.ativo ? el("span", { class: "pill" }, el("span", { class: "dot dot-good" }), "ativo")
-                : el("span", { class: "pill" }, el("span", { class: "dot dot-muted" }), "inativo"),
-        el("span", { class: "pill", text: p.modo_integracao }),
+        p.ativo ? el("span", { class: "pill" }, el("span", { class: "dot dot-good" }), t("projetos.ativo"))
+                : el("span", { class: "pill" }, el("span", { class: "dot dot-muted" }), t("projetos.inativo")),
+        el("span", { class: "pill", text: rotuloValor("projetos.modo.", p.modo_integracao) }),
       ),
     );
     lista.append(item);
@@ -53,7 +62,7 @@ async function selecionar(id) {
   try {
     p = await api.obterProjeto(id);
   } catch (e) {
-    bannerErro("Falha ao obter projeto: " + e.message);
+    bannerErro(t("projetos.falha_obter", { erro: e.message }));
     return;
   }
   renderEdicao(p);
@@ -61,7 +70,7 @@ async function selecionar(id) {
 
 function limparPainel() {
   const painel = limpar(document.getElementById("painel-projeto"));
-  painel.append(el("p", { class: "sub", style: "margin:0", text: "Selecione um projeto à esquerda ou cadastre um novo." }));
+  painel.append(el("p", { class: "sub", style: "margin:0", text: t("view.projetos.selecione") }));
 }
 
 function abrirNovo() {
@@ -74,33 +83,33 @@ function abrirNovo() {
 // ler() valida e devolve o corpo do projeto (ou lança string de erro).
 function camposCore(p) {
   const nome = el("input", { value: p ? p.nome : "" });
-  const slug = el("input", { value: p ? p.slug : "", placeholder: "derivado do nome se em branco" });
+  const slug = el("input", { value: p ? p.slug : "", placeholder: t("projetos.ph_slug") });
   const branch = el("input", { value: p ? p.branch_principal : "main" });
-  const pasta = el("input", { value: p ? p.pasta : "", placeholder: "C:\\Projetos\\meu-repo" });
+  const pasta = el("input", { value: p ? p.pasta : "", placeholder: t("projetos.ph_pasta") });
   const modo = el("select", {},
-    el("option", { value: "merge_request", selected: !p || p.modo_integracao === "merge_request" }, "merge_request"),
-    el("option", { value: "merge_local", selected: p && p.modo_integracao === "merge_local" }, "merge_local"),
+    el("option", { value: "merge_request", selected: !p || p.modo_integracao === "merge_request" }, t("projetos.modo.merge_request")),
+    el("option", { value: "merge_local", selected: p && p.modo_integracao === "merge_local" }, t("projetos.modo.merge_local")),
   );
-  const url = el("input", { value: p ? p.url_plataforma : "", placeholder: "https://gitlab.empresa.com/grupo/repo" });
-  const addDirs = el("textarea", { placeholder: "um caminho por linha" }, p && p.add_dirs ? p.add_dirs.join("\n") : "");
+  const url = el("input", { value: p ? p.url_plataforma : "", placeholder: t("projetos.ph_url_plataforma") });
+  const addDirs = el("textarea", { placeholder: t("projetos.ph_add_dirs") }, p && p.add_dirs ? p.add_dirs.join("\n") : "");
   const ativo = el("input", { type: "checkbox" });
   ativo.checked = p ? p.ativo : true;
 
   const node = el("div", { class: "form" },
     el("div", { class: "row" },
-      el("div", {}, el("label", {}, "Nome"), nome),
-      el("div", {}, el("label", {}, "Branch principal"), branch),
+      el("div", {}, el("label", {}, t("projetos.nome")), nome),
+      el("div", {}, el("label", {}, t("projetos.branch_principal")), branch),
     ),
-    el("div", {}, el("label", {}, "Slug ", el("span", { class: "opt" }, "(opcional)")), slug),
-    el("div", {}, el("label", {}, "Pasta do projeto"), pasta,
-      el("div", { class: "hint", text: "Precisa ser um repositório git. Os worktrees das demandas são criados fora desta pasta, em %PRAXIS_HOME%\\worktrees." })),
+    el("div", {}, el("label", {}, t("projetos.slug") + " ", el("span", { class: "opt" }, t("projetos.opcional"))), slug),
+    el("div", {}, el("label", {}, t("projetos.pasta")), pasta,
+      el("div", { class: "hint", text: t("projetos.pasta_hint") })),
     el("div", { class: "row" },
-      el("div", {}, el("label", {}, "Modo de integração"), modo),
-      el("div", {}, el("label", {}, "URL da plataforma ", el("span", { class: "opt" }, "(para abrir MR)")), url),
+      el("div", {}, el("label", {}, t("projetos.modo_integracao")), modo),
+      el("div", {}, el("label", {}, t("projetos.url_plataforma") + " ", el("span", { class: "opt" }, t("projetos.url_plataforma_opt"))), url),
     ),
-    el("div", {}, el("label", {}, "Diretórios adicionais (add_dirs)"), addDirs,
-      el("div", { class: "hint", text: "Repositórios extras que o agente pode editar. Um caminho por linha." })),
-    el("label", { style: "display:flex;align-items:center;gap:8px;font-weight:600" }, ativo, "Projeto ativo"),
+    el("div", {}, el("label", {}, t("projetos.add_dirs")), addDirs,
+      el("div", { class: "hint", text: t("projetos.add_dirs_hint") })),
+    el("label", { style: "display:flex;align-items:center;gap:8px;font-weight:600" }, ativo, t("projetos.projeto_ativo")),
   );
 
   function ler() {
@@ -114,8 +123,8 @@ function camposCore(p) {
       add_dirs: addDirs.value.split("\n").map((l) => l.trim()).filter((l) => l !== ""),
       ativo: ativo.checked,
     };
-    if (!v.nome) throw "Nome é obrigatório.";
-    if (!v.pasta) throw "Pasta é obrigatória.";
+    if (!v.nome) throw t("projetos.nome_obrigatorio");
+    if (!v.pasta) throw t("projetos.pasta_obrigatoria");
     return v;
   }
   return { node, ler };
@@ -124,32 +133,32 @@ function camposCore(p) {
 function renderEdicao(p) {
   const painel = limpar(document.getElementById("painel-projeto"));
   const criando = p == null;
-  painel.append(el("h3", {}, criando ? "Novo projeto" : `${p.nome} — parâmetros`));
+  painel.append(el("h3", {}, criando ? t("projetos.novo") : t("projetos.titulo_parametros", { nome: p.nome })));
 
   const core = camposCore(p);
   painel.append(core.node);
 
   const acoes = el("div", { class: "form acoes", style: "margin-top:14px" });
-  const btnSalvar = el("button", { class: "btn" }, criando ? "Cadastrar" : "Salvar");
+  const btnSalvar = el("button", { class: "btn" }, criando ? t("projetos.cadastrar") : t("projetos.salvar"));
   btnSalvar.onclick = () => salvarCore(p, core, btnSalvar);
   acoes.append(btnSalvar);
   painel.append(acoes);
 
   if (!criando) {
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
-    painel.append(el("h3", {}, "Acesso ", el("small", {}, "quem enxerga este projeto")));
+    painel.append(el("h3", {}, t("projetos.sec_acesso") + " ", el("small", {}, t("projetos.sec_acesso_sub"))));
     renderAcesso(painel, p);
 
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
-    painel.append(el("h3", {}, "Overview do repositório ", el("small", {}, "contexto das consultas")));
+    painel.append(el("h3", {}, t("projetos.sec_overview") + " ", el("small", {}, t("projetos.sec_overview_sub"))));
     renderOverview(painel, p);
 
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
-    painel.append(el("h3", {}, "Parâmetros ", el("small", {}, "override do global")));
+    painel.append(el("h3", {}, t("projetos.sec_parametros") + " ", el("small", {}, t("projetos.sec_parametros_sub"))));
     renderOverride(painel, p);
 
     painel.append(el("div", { style: "border-top:1px solid var(--border);margin:20px 0 4px" }));
-    painel.append(el("h3", {}, "Notificações ", el("small", {}, "quais eventos avisam neste projeto")));
+    painel.append(el("h3", {}, t("projetos.sec_notificacoes") + " ", el("small", {}, t("projetos.sec_notificacoes_sub"))));
     renderNotificacoes(painel, p);
   }
 }
@@ -163,7 +172,7 @@ async function renderNotificacoes(painel, p) {
   try {
     [override, global] = await Promise.all([api.obterConfigProjeto(p.id), api.obterConfigGlobal()]);
   } catch (e) {
-    painel.append(el("p", { class: "sub", text: "Falha ao carregar notificações: " + e.message }));
+    painel.append(el("p", { class: "sub", text: t("projetos.notif_falha_carregar", { erro: e.message }) }));
     return;
   }
   const ov = (override && override["notificacoes"]) || {};
@@ -179,8 +188,8 @@ async function renderNotificacoes(painel, p) {
   const chkPersonalizar = el("input", { type: "checkbox" });
   chkPersonalizar.checked = personalizar;
   form.append(el("label", { class: "notif-modo" }, chkPersonalizar,
-    el("span", {}, el("b", {}, "Personalizar notificações deste projeto"),
-      el("div", { class: "hint", style: "margin:2px 0 0", text: "Desmarcado: usa os eventos padrão do sistema. Marcado: escolha abaixo quais eventos deste projeto notificam." }))));
+    el("span", {}, el("b", {}, t("projetos.notif_personalizar")),
+      el("div", { class: "hint", style: "margin:2px 0 0", text: t("projetos.notif_personalizar_hint") }))));
 
   const evtCtl = new Map();
   const box = el("div", { class: "notif-projeto-eventos" });
@@ -202,7 +211,7 @@ async function renderNotificacoes(painel, p) {
   chkPersonalizar.addEventListener("change", sync);
   sync();
 
-  const btn = el("button", { class: "btn", text: "Salvar notificações" });
+  const btn = el("button", { class: "btn", text: t("projetos.notif_salvar") });
   btn.onclick = () => salvarNotificacoesProjeto(p, chkPersonalizar, evtCtl, btn);
   form.append(el("div", { class: "acoes" }, btn));
   painel.append(form);
@@ -223,10 +232,10 @@ async function salvarNotificacoesProjeto(p, chkPersonalizar, evtCtl, btn) {
       delete atual["notificacoes"];
     }
     await api.definirConfigProjeto(p.id, atual);
-    toast(chkPersonalizar.checked ? "Notificações personalizadas salvas." : "Notificações voltaram ao padrão do sistema.", "ok");
+    toast(chkPersonalizar.checked ? t("projetos.notif_salvas") : t("projetos.notif_padrao"), "ok");
   } catch (e) {
-    bannerErro("Falha ao salvar notificações: " + e.message);
-    toast("Falha ao salvar.", "err");
+    bannerErro(t("projetos.notif_falha_salvar", { erro: e.message }));
+    toast(t("projetos.falha_salvar"), "err");
   } finally {
     btn.disabled = false;
   }
@@ -241,7 +250,7 @@ async function renderAcesso(painel, p) {
   try {
     acesso = await api.obterAcessoProjeto(p.id);
   } catch (e) {
-    painel.append(el("p", { class: "sub", text: "Falha ao carregar o acesso: " + e.message }));
+    painel.append(el("p", { class: "sub", text: t("projetos.acesso_falha_carregar", { erro: e.message }) }));
     return;
   }
 
@@ -253,8 +262,8 @@ async function renderAcesso(painel, p) {
   const status = el("div", { class: "hint" });
   const repintarStatus = () => {
     status.textContent = gruposSel.size + usuariosSel.size === 0
-      ? "Sem restrição: todos os usuários autenticados enxergam este projeto."
-      : "Restrito: só os grupos/usuários selecionados (e administradores ou quem gerencia projetos) enxergam este projeto, suas demandas e consultas.";
+      ? t("projetos.acesso_sem_restricao")
+      : t("projetos.acesso_restrito");
   };
 
   // chips toggle (mesmo padrão dos papéis em Usuários).
@@ -263,7 +272,7 @@ async function renderAcesso(painel, p) {
     const repintar = () => {
       limpar(box);
       if (itens.length === 0) {
-        box.append(el("span", { class: "sub", text: "nenhum cadastrado" }));
+        box.append(el("span", { class: "sub", text: t("projetos.nenhum_cadastrado") }));
         return;
       }
       for (const it of itens) {
@@ -278,25 +287,25 @@ async function renderAcesso(painel, p) {
 
   repintarStatus();
 
-  const btnSalvar = el("button", { class: "btn", text: "Salvar acesso" });
+  const btnSalvar = el("button", { class: "btn", text: t("projetos.acesso_salvar") });
   btnSalvar.onclick = async () => {
     btnSalvar.disabled = true;
     try {
       const salvo = await api.definirAcessoProjeto(p.id, {
         grupos: [...gruposSel], usuarios: [...usuariosSel],
       });
-      toast(salvo.restrito ? "Acesso restrito salvo." : "Acesso liberado para todos.", "ok");
+      toast(salvo.restrito ? t("projetos.acesso_restrito_salvo") : t("projetos.acesso_liberado"), "ok");
     } catch (e) {
-      bannerErro("Falha ao salvar o acesso: " + e.message);
-      toast("Falha ao salvar.", "err");
+      bannerErro(t("projetos.acesso_falha_salvar", { erro: e.message }));
+      toast(t("projetos.falha_salvar"), "err");
     } finally {
       btnSalvar.disabled = false;
     }
   };
 
   painel.append(el("div", { class: "form" },
-    el("div", {}, el("label", {}, "Grupos de usuários"), chipsDe(dispGrupos, gruposSel)),
-    el("div", {}, el("label", {}, "Usuários ", el("span", { class: "opt" }, "(acesso individual)")), chipsDe(dispUsuarios, usuariosSel)),
+    el("div", {}, el("label", {}, t("projetos.grupos_usuarios")), chipsDe(dispGrupos, gruposSel)),
+    el("div", {}, el("label", {}, t("projetos.usuarios") + " ", el("span", { class: "opt" }, t("projetos.usuarios_opt"))), chipsDe(dispUsuarios, usuariosSel)),
     status,
     el("div", { class: "acoes" }, btnSalvar),
   ));
@@ -308,48 +317,48 @@ async function renderAcesso(painel, p) {
 function renderOverview(painel, p) {
   const ed = mdEditor({
     rows: 10,
-    placeholder: "Objetivo do sistema, domínio, principais módulos, fluxos de negócio… (markdown, sem código)",
+    placeholder: t("projetos.overview_ph"),
     valor: p.overview_md || "",
     // quem já tem overview quase sempre quer lê-lo, não editá-lo.
     abrirEmPreview: !!(p.overview_md || "").trim(),
   });
   const info = el("div", { class: "hint", text: p.overview_em
-    ? "Última atualização: " + p.overview_em
-    : "Ainda sem overview — as consultas deste projeto terão menos contexto." });
+    ? t("projetos.overview_atualizado", { em: p.overview_em })
+    : t("projetos.overview_vazio") });
 
-  const btnSalvar = el("button", { class: "btn", text: "Salvar overview" });
+  const btnSalvar = el("button", { class: "btn", text: t("projetos.overview_salvar") });
   btnSalvar.onclick = async () => {
     btnSalvar.disabled = true;
     try {
       await api.salvarOverview(p.id, ed.ta.value);
-      toast("Overview salvo.", "ok");
+      toast(t("projetos.overview_salvo"), "ok");
     } catch (e) {
-      bannerErro("Falha ao salvar overview: " + e.message);
+      bannerErro(t("projetos.overview_falha_salvar", { erro: e.message }));
     } finally {
       btnSalvar.disabled = false;
     }
   };
 
-  const btnGerar = el("button", { class: "btn ghost", text: "Gerar com o Praxis" });
+  const btnGerar = el("button", { class: "btn ghost", text: t("projetos.overview_gerar") });
   btnGerar.onclick = async () => {
     btnGerar.disabled = true;
     try {
       await api.gerarOverview(p.id);
-      toast("Gerando overview em background — leva alguns minutos. Use \"Recarregar\" para ver o resultado.", "ok");
+      toast(t("projetos.overview_gerando"), "ok");
     } catch (e) {
-      bannerErro("Falha ao disparar a geração: " + e.message);
+      bannerErro(t("projetos.overview_falha_gerar", { erro: e.message }));
     } finally {
       btnGerar.disabled = false;
     }
   };
 
-  const btnRecarregar = el("button", { class: "btn ghost", text: "Recarregar" });
+  const btnRecarregar = el("button", { class: "btn ghost", text: t("projetos.recarregar") });
   btnRecarregar.onclick = async () => {
     try {
       const atual = await api.obterProjeto(p.id);
       renderEdicao(atual);
     } catch (e) {
-      bannerErro("Falha ao recarregar: " + e.message);
+      bannerErro(t("projetos.falha_recarregar", { erro: e.message }));
     }
   };
 
@@ -372,21 +381,21 @@ async function salvarCore(p, core, btn) {
   try {
     if (p == null) {
       const criado = await api.criarProjeto(corpo);
-      toast("Projeto cadastrado.", "ok");
+      toast(t("projetos.cadastrado"), "ok");
       selecionadoID = criado.id;
       await recarregarLista();
       const completo = await api.obterProjeto(criado.id);
       renderEdicao(completo);
     } else {
       await api.atualizarProjeto(p.id, corpo);
-      toast("Projeto salvo.", "ok");
+      toast(t("projetos.salvo"), "ok");
       await recarregarLista();
       const completo = await api.obterProjeto(p.id);
       renderEdicao(completo);
     }
   } catch (e) {
-    bannerErro("Falha ao salvar projeto: " + e.message);
-    toast("Falha ao salvar.", "err");
+    bannerErro(t("projetos.falha_salvar_projeto", { erro: e.message }));
+    toast(t("projetos.falha_salvar"), "err");
   } finally {
     btn.disabled = false;
   }
@@ -400,7 +409,7 @@ async function renderOverride(painel, p) {
   try {
     override = (await api.obterConfigProjeto(p.id)) || {};
   } catch (e) {
-    painel.append(el("p", { class: "sub", text: "Falha ao carregar overrides: " + e.message }));
+    painel.append(el("p", { class: "sub", text: t("projetos.override_falha_carregar", { erro: e.message }) }));
     return;
   }
   desconhecidas = preservarDesconhecidas(override);
@@ -421,7 +430,7 @@ async function renderOverride(painel, p) {
     const campo = el("div", { class: "cfg-field" + (chkHerda.checked ? " herdado" : "") },
       el("div", { class: "cfg-head" },
         el("label", {}, c.rotulo),
-        el("label", { class: "cfg-herda" }, chkHerda, "herdar do global"),
+        el("label", { class: "cfg-herda" }, chkHerda, t("projetos.herdar_global")),
       ),
       entrada,
       c.hint ? el("div", { class: "hint", text: c.hint }) : null,
@@ -436,8 +445,8 @@ async function renderOverride(painel, p) {
     form.append(campo);
   }
 
-  const btnSalvar = el("button", { class: "btn" }, "Salvar overrides");
-  const btnEfetiva = el("button", { class: "btn ghost", type: "button" }, "Ver config efetiva");
+  const btnSalvar = el("button", { class: "btn" }, t("projetos.override_salvar"));
+  const btnEfetiva = el("button", { class: "btn ghost", type: "button" }, t("projetos.efetiva_ver"));
   const boxEfetiva = el("div", {});
   btnSalvar.onclick = () => salvarOverride(p, controles, desconhecidas, btnSalvar, boxEfetiva);
   btnEfetiva.onclick = () => verEfetiva(p, btnEfetiva, boxEfetiva);
@@ -452,7 +461,7 @@ async function salvarOverride(p, controles, desconhecidas, btn, boxEfetiva) {
     if (ctl.chkHerda.checked) continue; // herdado: não persiste
     const r = textoParaJSON(ctl.entrada.value, ctl.tipo);
     if (ctl.tipo === "number" && !r.ok) {
-      bannerErro(`"${ctl.rotulo}" deve ser um número (ou marque "herdar do global").`);
+      bannerErro(t("projetos.override_numero", { rotulo: ctl.rotulo }));
       return;
     }
     entradas[chave] = r.valor;
@@ -461,12 +470,12 @@ async function salvarOverride(p, controles, desconhecidas, btn, boxEfetiva) {
   btn.disabled = true;
   try {
     await api.definirConfigProjeto(p.id, entradas);
-    toast("Overrides salvos.", "ok");
+    toast(t("projetos.override_salvos"), "ok");
     if (!boxEfetiva.firstChild) return;
     await verEfetiva(p, null, boxEfetiva, true); // atualiza a efetiva se estava aberta
   } catch (e) {
-    bannerErro("Falha ao salvar overrides: " + e.message);
-    toast("Falha ao salvar.", "err");
+    bannerErro(t("projetos.override_falha_salvar", { erro: e.message }));
+    toast(t("projetos.falha_salvar"), "err");
   } finally {
     btn.disabled = false;
   }
@@ -475,7 +484,7 @@ async function salvarOverride(p, controles, desconhecidas, btn, boxEfetiva) {
 async function verEfetiva(p, btn, box, forcar) {
   if (!forcar && box.firstChild) { // toggle: já aberta → fecha
     limpar(box);
-    if (btn) btn.textContent = "Ver config efetiva";
+    if (btn) btn.textContent = t("projetos.efetiva_ver");
     return;
   }
   if (btn) btn.disabled = true;
@@ -487,20 +496,20 @@ async function verEfetiva(p, btn, box, forcar) {
       return el("tr", {},
         el("td", { text: k }),
         el("td", { text: JSON.stringify(v.valor) }),
-        el("td", {}, el("span", { class: `pill origem origem-${v.origem}`, text: v.origem })),
+        el("td", {}, el("span", { class: `pill origem origem-${v.origem}`, text: rotuloValor("projetos.origem.", v.origem) })),
       );
     });
     const conteudo = linhas.length
       ? el("table", { class: "plain" },
-          el("thead", {}, el("tr", {}, el("th", {}, "chave"), el("th", {}, "valor"), el("th", {}, "origem"))),
+          el("thead", {}, el("tr", {}, el("th", {}, t("projetos.efetiva_chave")), el("th", {}, t("projetos.efetiva_valor")), el("th", {}, t("projetos.efetiva_origem")))),
           el("tbody", {}, ...linhas))
-      : el("p", { class: "sub", style: "margin:0", text: "Nenhuma chave de config definida (tudo no default do sistema)." });
+      : el("p", { class: "sub", style: "margin:0", text: t("projetos.efetiva_vazia") });
     box.append(el("div", { class: "efetiva" },
-      el("div", { class: "hint", style: "margin:0 0 8px", text: "Resolução global × override deste projeto (origem indica de onde veio cada chave)." }),
+      el("div", { class: "hint", style: "margin:0 0 8px", text: t("projetos.efetiva_hint") }),
       conteudo));
-    if (btn) btn.textContent = "Ocultar config efetiva";
+    if (btn) btn.textContent = t("projetos.efetiva_ocultar");
   } catch (e) {
-    bannerErro("Falha ao obter config efetiva: " + e.message);
+    bannerErro(t("projetos.efetiva_falha", { erro: e.message }));
   } finally {
     if (btn) btn.disabled = false;
   }

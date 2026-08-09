@@ -39,3 +39,5 @@ Para cada fase informe:
 Ordene as fases na ordem de execução. Não marque nenhuma como concluída — todas nascem pendentes.
 
 Sua resposta final deve ser **apenas** o JSON estruturado solicitado (`plano_md`, `fases`), sem texto em volta e sem cercas de markdown.
+
+> **Idioma da saída:** escreva TODO o conteúdo do JSON (plano_md, títulos, descrições e observações das fases) em **{IDIOMA}**. Códigos de fase, nomes de arquivos, símbolos do código e comandos de gate permanecem como estão.

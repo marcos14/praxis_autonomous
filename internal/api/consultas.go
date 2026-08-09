@@ -51,13 +51,12 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if (req.ProjectID > 0) == (req.GroupID > 0) {
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"informe project_id OU group_id (exatamente um)")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.consulta_alvo_exclusivo")
 		return
 	}
 	mensagem := strings.TrimSpace(req.Mensagem)
 	if mensagem == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "mensagem é obrigatória")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.consulta_mensagem_obrigatoria")
 		return
 	}
 	// ACL de projetos: um usuário restrito não abre consulta sobre projeto (ou
@@ -73,11 +72,11 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 			ve, err = s.banco.UsuarioVeGrupoProjetos(r.Context(), *uid, req.GroupID)
 		}
 		if err != nil {
-			s.responderErroConsulta(w, err)
+			s.responderErroConsulta(w, r, err)
 			return
 		}
 		if !ve {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "projeto ou grupo não encontrado")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.consulta_projeto_ou_grupo_nao_encontrado")
 			return
 		}
 	}
@@ -99,7 +98,7 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 	criada, _, err := s.banco.CriarConsultaComChat(r.Context(), cons,
 		db.MensagemConsulta{Papel: db.PapelConsultaUser, Conteudo: mensagem})
 	if err != nil {
-		s.responderErroConsulta(w, err)
+		s.responderErroConsulta(w, r, err)
 		return
 	}
 	if s.consultor != nil {
@@ -115,12 +114,12 @@ func (s *Servidor) handleListarConsultas(w http.ResponseWriter, r *http.Request)
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group"), 10, 64)
 	consultas, err := s.banco.ListarConsultas(r.Context(), projectID, groupID)
 	if err != nil {
-		s.responderErroConsulta(w, err)
+		s.responderErroConsulta(w, r, err)
 		return
 	}
 	if uid := visibilidadeDaRequisicao(r); uid != nil {
 		if consultas, err = s.filtrarConsultasVisiveis(r.Context(), *uid, consultas); err != nil {
-			s.responderErroConsulta(w, err)
+			s.responderErroConsulta(w, r, err)
 			return
 		}
 	}
@@ -183,12 +182,11 @@ func (s *Servidor) handleExcluirConsulta(w http.ResponseWriter, r *http.Request)
 	pr := principalDaRequisicao(r)
 	dono := cons.CriadoPor != nil && pr.userID == *cons.CriadoPor
 	if !dono && !pr.tem(db.PermCuringa) {
-		responderErro(w, http.StatusForbidden, "sem_permissao",
-			"só quem criou a consulta (ou um administrador) pode excluí-la")
+		erroT(w, r, http.StatusForbidden, "sem_permissao", "erro.consulta_excluir_sem_permissao")
 		return
 	}
 	if err := s.banco.ExcluirConsulta(r.Context(), cons.ID); err != nil {
-		s.responderErroConsulta(w, err)
+		s.responderErroConsulta(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -201,7 +199,7 @@ func (s *Servidor) handleListarChatConsulta(w http.ResponseWriter, r *http.Reque
 	}
 	msgs, err := s.banco.ListarMensagensConsulta(r.Context(), cons.ID)
 	if err != nil {
-		s.responderErroConsulta(w, err)
+		s.responderErroConsulta(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, msgs)
@@ -216,8 +214,7 @@ func (s *Servidor) handleChatConsulta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cons.Status == db.StatusConsultaPensando {
-		responderErro(w, http.StatusConflict, "pensando",
-			"o consultor ainda está analisando a pergunta anterior — aguarde a resposta")
+		erroT(w, r, http.StatusConflict, "pensando", "erro.consulta_pensando")
 		return
 	}
 	var req reqChatConsulta
@@ -226,7 +223,7 @@ func (s *Servidor) handleChatConsulta(w http.ResponseWriter, r *http.Request) {
 	}
 	conteudo := strings.TrimSpace(req.Conteudo)
 	if conteudo == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "conteudo é obrigatório")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.chat_conteudo_obrigatorio")
 		return
 	}
 
@@ -234,7 +231,7 @@ func (s *Servidor) handleChatConsulta(w http.ResponseWriter, r *http.Request) {
 		ConsultaID: cons.ID, Papel: db.PapelConsultaUser, Conteudo: conteudo,
 	})
 	if err != nil {
-		s.responderErroConsulta(w, err)
+		s.responderErroConsulta(w, r, err)
 		return
 	}
 	cons.Status = db.StatusConsultaPensando
@@ -265,7 +262,7 @@ func (s *Servidor) handleProgressoConsulta(w http.ResponseWriter, r *http.Reques
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		responderErro(w, http.StatusInternalServerError, "sem_streaming", "streaming não suportado por esta conexão")
+		erroT(w, r, http.StatusInternalServerError, "sem_streaming", "erro.sem_streaming")
 		return
 	}
 
@@ -426,26 +423,26 @@ func tituloDaMensagem(msg string) string {
 func (s *Servidor) obterConsultaOu404(w http.ResponseWriter, r *http.Request) (db.Consulta, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "id inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.id_invalido")
 		return db.Consulta{}, false
 	}
 	cons, err := s.banco.ObterConsulta(r.Context(), id)
 	if err != nil {
-		s.responderErroConsulta(w, err)
+		s.responderErroConsulta(w, r, err)
 		return db.Consulta{}, false
 	}
 	return cons, true
 }
 
 // responderErroConsulta traduz os erros do store de consultas para respostas HTTP.
-func (s *Servidor) responderErroConsulta(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroConsulta(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "consulta, projeto ou grupo não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.consulta_nao_encontrada")
 	case errors.Is(err, db.ErrPapelInvalido):
-		responderErro(w, http.StatusBadRequest, "invalido", "papel de mensagem inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.chat_papel_invalido")
 	default:
 		s.log.Error("erro no store de consultas", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

@@ -79,7 +79,7 @@ func (s *Servidor) handleObterAcesso(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := s.montarRespAcesso(r, id)
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, resp)
@@ -98,16 +98,15 @@ func (s *Servidor) handleDefinirAcesso(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.banco.DefinirAcessoProjeto(r.Context(), id, req.Usuarios, req.Grupos); err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
-			responderErro(w, http.StatusNotFound, "nao_encontrado",
-				"projeto, usuário ou grupo não encontrado")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.projeto_usuario_ou_grupo_nao_encontrado")
 			return
 		}
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	resp, err := s.montarRespAcesso(r, id)
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, resp)
@@ -147,12 +146,12 @@ func (s *Servidor) handleSalvarOverview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.banco.AtualizarOverview(r.Context(), id, strings.TrimSpace(req.OverviewMD)); err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	p, err := s.banco.ObterProjeto(r.Context(), id)
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, p)
@@ -166,17 +165,16 @@ func (s *Servidor) handleGerarOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	if s.consultor == nil {
-		responderErro(w, http.StatusServiceUnavailable, "indisponivel",
-			"o serviço de consultas não está ativo neste servidor")
+		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.consulta_servico_inativo")
 		return
 	}
 	s.consultor.DispararOverview(id)
 	responderJSON(w, http.StatusAccepted, map[string]string{
-		"status": "gerando",
+		"status":  "gerando",
 		"detalhe": "o overview está sendo gerado em background; acompanhe pelo evento overview_gerado",
 	})
 }
@@ -188,10 +186,10 @@ func decodificarCorpo(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {
-			responderErro(w, http.StatusBadRequest, "invalido", "corpo JSON obrigatório")
+			erroT(w, r, http.StatusBadRequest, "invalido", "erro.corpo_obrigatorio")
 			return false
 		}
-		responderErro(w, http.StatusBadRequest, "invalido", "corpo JSON inválido: "+err.Error())
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.corpo_invalido", "detalhe", err.Error())
 		return false
 	}
 	return true
@@ -211,7 +209,7 @@ func (s *Servidor) handleCriarProjeto(w http.ResponseWriter, r *http.Request) {
 	}
 	criado, err := s.banco.CriarProjeto(r.Context(), p)
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, criado)
@@ -231,7 +229,7 @@ func (s *Servidor) handleListarProjetos(w http.ResponseWriter, r *http.Request) 
 		projetos, err = s.banco.ListarProjetos(r.Context())
 	}
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, projetos)
@@ -245,7 +243,7 @@ func (s *Servidor) handleObterProjeto(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.banco.ObterProjeto(r.Context(), id)
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, p)
@@ -260,7 +258,7 @@ func (s *Servidor) handleAtualizarProjeto(w http.ResponseWriter, r *http.Request
 	}
 	atual, err := s.banco.ObterProjeto(r.Context(), id)
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	var req reqProjeto
@@ -275,7 +273,7 @@ func (s *Servidor) handleAtualizarProjeto(w http.ResponseWriter, r *http.Request
 	p.ID = id
 	atualizado, err := s.banco.AtualizarProjeto(r.Context(), p)
 	if err != nil {
-		s.responderErroProjeto(w, err)
+		s.responderErroProjeto(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, atualizado)
@@ -402,21 +400,21 @@ func validarPastaRepoGit(pasta string) string {
 func lerIDProjeto(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "id inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.id_invalido")
 		return 0, false
 	}
 	return id, true
 }
 
 // responderErroProjeto traduz os erros do store para respostas HTTP.
-func (s *Servidor) responderErroProjeto(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroProjeto(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "projeto não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.projeto_nao_encontrado")
 	case errors.Is(err, db.ErrSlugDuplicado):
-		responderErro(w, http.StatusConflict, "slug_duplicado", "já existe um projeto com esse slug")
+		erroT(w, r, http.StatusConflict, "slug_duplicado", "erro.projeto_slug_duplicado")
 	default:
 		s.log.Error("erro no store de projetos", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

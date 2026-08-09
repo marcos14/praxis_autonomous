@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"io"
 	"net/http"
 	"os"
@@ -103,7 +104,7 @@ func (s *Servidor) handleListarDemandasDoPlanejamento(w http.ResponseWriter, r *
 	}
 	vinculos, err := s.banco.ListarDemandasDoPlanejamento(r.Context(), plan.ID)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	resp := respDemandasDoPlanejamento{Demandas: vinculos}
@@ -124,24 +125,22 @@ func (s *Servidor) handleCriarPlanejamento(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if (req.ProjectID > 0) == (req.GroupID > 0) {
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"informe project_id OU group_id (exatamente um)")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.consulta_alvo_exclusivo")
 		return
 	}
 	mensagem := strings.TrimSpace(req.Mensagem)
 	if mensagem == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "mensagem é obrigatória")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.consulta_mensagem_obrigatoria")
 		return
 	}
 	foco := strings.TrimSpace(req.Foco)
 	if foco != "" && !db.FocoPlanejamentoValido(foco) {
-		responderErro(w, http.StatusBadRequest, "invalido", "foco deve ser 'prd', 'adr' ou 'ambos'")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_foco_invalido")
 		return
 	}
 	nivel := strings.TrimSpace(req.NivelVisual)
 	if nivel != "" && !db.NivelVisualValido(nivel) {
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"nivel_visual deve ser 'documento', 'apresentacao' ou 'prototipo'")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_nivel_visual_invalido")
 		return
 	}
 	// ACL de projetos: um usuário restrito não abre planejamento sobre projeto
@@ -157,11 +156,11 @@ func (s *Servidor) handleCriarPlanejamento(w http.ResponseWriter, r *http.Reques
 			ve, err = s.banco.UsuarioVeGrupoProjetos(r.Context(), *uid, req.GroupID)
 		}
 		if err != nil {
-			s.responderErroPlanejamento(w, err)
+			s.responderErroPlanejamento(w, r, err)
 			return
 		}
 		if !ve {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "projeto ou grupo não encontrado")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.consulta_projeto_ou_grupo_nao_encontrado")
 			return
 		}
 	}
@@ -193,7 +192,7 @@ func (s *Servidor) handleCriarPlanejamento(w http.ResponseWriter, r *http.Reques
 		db.MensagemPlanejamento{Papel: db.PapelPlanejamentoUser, Conteudo: mensagem,
 			Meta: metaAutorDaRequisicao(r)})
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	if !req.AnexosPendentes && s.estrategista != nil {
@@ -212,15 +211,14 @@ func (s *Servidor) handleDispararTurnoPlanejamento(w http.ResponseWriter, r *htt
 		return
 	}
 	if plan.Status == db.StatusPlanejamentoPensando {
-		responderErro(w, http.StatusConflict, "pensando",
-			"o estrategista já está trabalhando — aguarde a resposta")
+		erroT(w, r, http.StatusConflict, "pensando", "erro.planejamento_pensando")
 		return
 	}
 	plan.Status = db.StatusPlanejamentoPensando
 	plan.Erro = ""
 	atualizado, err := s.banco.AtualizarPlanejamento(r.Context(), plan)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	if s.estrategista != nil {
@@ -236,12 +234,12 @@ func (s *Servidor) handleListarPlanejamentos(w http.ResponseWriter, r *http.Requ
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group"), 10, 64)
 	planejamentos, err := s.banco.ListarPlanejamentos(r.Context(), projectID, groupID)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	if uid := visibilidadeDaRequisicao(r); uid != nil {
 		if planejamentos, err = s.filtrarPlanejamentosVisiveis(r.Context(), *uid, planejamentos); err != nil {
-			s.responderErroPlanejamento(w, err)
+			s.responderErroPlanejamento(w, r, err)
 			return
 		}
 	}
@@ -301,8 +299,7 @@ func (s *Servidor) handleEditarPlanejamento(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if plan.Status == db.StatusPlanejamentoPensando {
-		responderErro(w, http.StatusConflict, "pensando",
-			"o estrategista está trabalhando — ajuste o planejamento após a resposta")
+		erroT(w, r, http.StatusConflict, "pensando", "erro.planejamento_pensando_editar")
 		return
 	}
 	var req reqEditarPlanejamento
@@ -314,22 +311,21 @@ func (s *Servidor) handleEditarPlanejamento(w http.ResponseWriter, r *http.Reque
 	}
 	if f := strings.TrimSpace(req.Foco); f != "" {
 		if !db.FocoPlanejamentoValido(f) {
-			responderErro(w, http.StatusBadRequest, "invalido", "foco deve ser 'prd', 'adr' ou 'ambos'")
+			erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_foco_invalido")
 			return
 		}
 		plan.Foco = f
 	}
 	if n := strings.TrimSpace(req.NivelVisual); n != "" {
 		if !db.NivelVisualValido(n) {
-			responderErro(w, http.StatusBadRequest, "invalido",
-				"nivel_visual deve ser 'documento', 'apresentacao' ou 'prototipo'")
+			erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_nivel_visual_invalido")
 			return
 		}
 		plan.NivelVisual = n
 	}
 	atualizado, err := s.banco.AtualizarPlanejamento(r.Context(), plan)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, atualizado)
@@ -345,12 +341,11 @@ func (s *Servidor) handleExcluirPlanejamento(w http.ResponseWriter, r *http.Requ
 	pr := principalDaRequisicao(r)
 	dono := plan.CriadoPor != nil && pr.userID == *plan.CriadoPor
 	if !dono && !pr.tem(db.PermCuringa) {
-		responderErro(w, http.StatusForbidden, "sem_permissao",
-			"só quem criou o planejamento (ou um administrador) pode excluí-lo")
+		erroT(w, r, http.StatusForbidden, "sem_permissao", "erro.planejamento_excluir_somente_criador")
 		return
 	}
 	if err := s.banco.ExcluirPlanejamento(r.Context(), plan.ID); err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	// A pasta de trabalho sai junto (best-effort — o banco é a fonte da verdade
@@ -358,7 +353,7 @@ func (s *Servidor) handleExcluirPlanejamento(w http.ResponseWriter, r *http.Requ
 	if s.estrategista != nil {
 		if pasta := s.estrategista.Pasta(plan.ID); pasta != "" {
 			if err := os.RemoveAll(pasta); err != nil {
-				s.log.Warn("remover pasta do planejamento", "erro", err, "planejamento", plan.ID)
+				s.log.Warn("remover pasta do planejamento", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID)
 			}
 		}
 	}
@@ -372,7 +367,7 @@ func (s *Servidor) handleListarChatPlanejamento(w http.ResponseWriter, r *http.R
 	}
 	msgs, err := s.banco.ListarMensagensPlanejamento(r.Context(), plan.ID)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, msgs)
@@ -387,8 +382,7 @@ func (s *Servidor) handleChatPlanejamento(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if plan.Status == db.StatusPlanejamentoPensando {
-		responderErro(w, http.StatusConflict, "pensando",
-			"o estrategista ainda está trabalhando na mensagem anterior — aguarde a resposta")
+		erroT(w, r, http.StatusConflict, "pensando", "erro.planejamento_pensando_chat")
 		return
 	}
 	var req reqChatPlanejamento
@@ -397,7 +391,7 @@ func (s *Servidor) handleChatPlanejamento(w http.ResponseWriter, r *http.Request
 	}
 	conteudo := strings.TrimSpace(req.Conteudo)
 	if conteudo == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "conteudo é obrigatório")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.chat_conteudo_obrigatorio")
 		return
 	}
 
@@ -406,7 +400,7 @@ func (s *Servidor) handleChatPlanejamento(w http.ResponseWriter, r *http.Request
 		Meta: metaAutorDaRequisicao(r),
 	})
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	plan.Status = db.StatusPlanejamentoPensando
@@ -430,7 +424,7 @@ func (s *Servidor) handleProgressoPlanejamento(w http.ResponseWriter, r *http.Re
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		responderErro(w, http.StatusInternalServerError, "sem_streaming", "streaming não suportado por esta conexão")
+		erroT(w, r, http.StatusInternalServerError, "sem_streaming", "erro.sem_streaming")
 		return
 	}
 
@@ -494,7 +488,7 @@ func (s *Servidor) handleListarDocumentosPlanejamento(w http.ResponseWriter, r *
 	}
 	docs, err := s.banco.ListarDocumentosPlanejamento(r.Context(), plan.ID)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, docs)
@@ -511,7 +505,7 @@ func (s *Servidor) handleObterDocumentoPlanejamento(w http.ResponseWriter, r *ht
 	revisao, _ := strconv.ParseInt(r.URL.Query().Get("revisao"), 10, 64)
 	doc, err := s.banco.ObterDocumentoPlanejamento(r.Context(), plan.ID, arquivo, revisao)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, doc)
@@ -524,7 +518,7 @@ func (s *Servidor) handleListarArtefatosPlanejamento(w http.ResponseWriter, r *h
 	}
 	artefatos, err := s.banco.ListarArtefatosPlanejamento(r.Context(), plan.ID)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, artefatos)
@@ -543,27 +537,26 @@ func (s *Servidor) handleServirArtefatoPlanejamento(w http.ResponseWriter, r *ht
 		return
 	}
 	if s.estrategista == nil {
-		responderErro(w, http.StatusServiceUnavailable, "indisponivel",
-			"o serviço de planejamentos não está ativo neste servidor")
+		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.planejamento_indisponivel")
 		return
 	}
 	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
 	if !estrategista.NomeArtefatoValido(arquivo) {
-		responderErro(w, http.StatusBadRequest, "invalido", "nome de artefato inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_artefato_invalido")
 		return
 	}
 	if _, err := s.banco.ObterArtefatoPlanejamento(r.Context(), plan.ID, arquivo); err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 	conteudo, err := os.ReadFile(filepath.Join(s.estrategista.Pasta(plan.ID), arquivo))
 	if err != nil {
 		if os.IsNotExist(err) {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "o arquivo do artefato não está mais na pasta do planejamento")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.planejamento_artefato_sumiu")
 			return
 		}
-		s.log.Error("ler artefato do planejamento", "erro", err, "planejamento", plan.ID, "arquivo", arquivo)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		s.log.Error("ler artefato do planejamento", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID, "arquivo", arquivo)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 
@@ -607,8 +600,7 @@ func (s *Servidor) handleListarReferenciasPlanejamento(w http.ResponseWriter, r 
 	}
 	dir := s.dirReferencias(plan.ID)
 	if dir == "" {
-		responderErro(w, http.StatusServiceUnavailable, "indisponivel",
-			"o serviço de planejamentos não está ativo neste servidor")
+		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.planejamento_indisponivel")
 		return
 	}
 	refs := []respReferencia{}
@@ -642,39 +634,36 @@ func (s *Servidor) handleEnviarReferenciaPlanejamento(w http.ResponseWriter, r *
 	}
 	dir := s.dirReferencias(plan.ID)
 	if dir == "" {
-		responderErro(w, http.StatusServiceUnavailable, "indisponivel",
-			"o serviço de planejamentos não está ativo neste servidor")
+		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.planejamento_indisponivel")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limiteReferencia+(1<<20))
 	if err := r.ParseMultipartForm(limiteReferencia); err != nil {
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"envio inválido ou arquivo grande demais (máx. 15 MB)")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_envio_invalido")
 		return
 	}
 	f, hdr, err := r.FormFile("arquivo")
 	if err != nil {
-		responderErro(w, http.StatusBadRequest, "invalido", "campo multipart 'arquivo' é obrigatório")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_campo_arquivo_obrigatorio")
 		return
 	}
 	defer f.Close()
 
 	nome := filepath.Base(strings.TrimSpace(hdr.Filename))
 	if !estrategista.NomeReferenciaValido(nome) {
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"nome de arquivo inválido — use md, txt, csv, json, pdf, html ou imagem (png/jpg/webp), até 120 caracteres")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_nome_arquivo_invalido")
 		return
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		s.log.Error("criar pasta de referências", "erro", err, "planejamento", plan.ID)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		s.log.Error("criar pasta de referências", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	dst, err := os.Create(filepath.Join(dir, nome))
 	if err != nil {
-		s.log.Error("gravar referência", "erro", err, "planejamento", plan.ID, "arquivo", nome)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		s.log.Error("gravar referência", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID, "arquivo", nome)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	tamanho, err := io.Copy(dst, io.LimitReader(f, limiteReferencia+1))
@@ -683,8 +672,7 @@ func (s *Servidor) handleEnviarReferenciaPlanejamento(w http.ResponseWriter, r *
 	}
 	if err != nil || tamanho > limiteReferencia {
 		_ = os.Remove(filepath.Join(dir, nome))
-		responderErro(w, http.StatusBadRequest, "invalido",
-			"falha ao receber o arquivo (máx. 15 MB)")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_falha_receber_arquivo")
 		return
 	}
 
@@ -704,12 +692,12 @@ func (s *Servidor) handleBaixarReferenciaPlanejamento(w http.ResponseWriter, r *
 	dir := s.dirReferencias(plan.ID)
 	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
 	if dir == "" || !estrategista.NomeReferenciaValido(arquivo) {
-		responderErro(w, http.StatusBadRequest, "invalido", "nome de referência inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_referencia_invalida")
 		return
 	}
 	conteudo, err := os.ReadFile(filepath.Join(dir, arquivo))
 	if err != nil {
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "referência não encontrada")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.planejamento_referencia_nao_encontrada")
 		return
 	}
 	h := w.Header()
@@ -729,16 +717,16 @@ func (s *Servidor) handleExcluirReferenciaPlanejamento(w http.ResponseWriter, r 
 	dir := s.dirReferencias(plan.ID)
 	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
 	if dir == "" || !estrategista.NomeReferenciaValido(arquivo) {
-		responderErro(w, http.StatusBadRequest, "invalido", "nome de referência inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_referencia_invalida")
 		return
 	}
 	if err := os.Remove(filepath.Join(dir, arquivo)); err != nil {
 		if os.IsNotExist(err) {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "referência não encontrada")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.planejamento_referencia_nao_encontrada")
 			return
 		}
-		s.log.Error("remover referência", "erro", err, "planejamento", plan.ID, "arquivo", arquivo)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		s.log.Error("remover referência", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID, "arquivo", arquivo)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	s.registrarFalaReferencia(r, plan.ID,
@@ -756,7 +744,7 @@ func (s *Servidor) registrarFalaReferencia(r *http.Request, planejamentoID int64
 	if _, err := s.banco.CriarMensagemPlanejamento(r.Context(), db.MensagemPlanejamento{
 		PlanejamentoID: planejamentoID, Papel: db.PapelPlanejamentoSistema, Conteudo: texto,
 	}); err != nil {
-		s.log.Warn("registrar fala de referência", "erro", err, "planejamento", planejamentoID)
+		s.log.Warn("registrar fala de referência", "erro", err, i18n.TI("evento.etapa_planejamento"), planejamentoID)
 	}
 }
 
@@ -792,8 +780,7 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 		return
 	}
 	if plan.Status == db.StatusPlanejamentoPensando {
-		responderErro(w, http.StatusConflict, "pensando",
-			"o estrategista está trabalhando — crie a demanda após a resposta (o documento pode mudar)")
+		erroT(w, r, http.StatusConflict, "pensando", "erro.planejamento_pensando_demanda")
 		return
 	}
 	var req reqDemandaDePlanejamento
@@ -810,11 +797,10 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 	prd, prdRev, adrsRev, err := s.montarPRDDoPlanejamento(r.Context(), plan)
 	if err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
-			responderErro(w, http.StatusConflict, "sem_documento",
-				"o planejamento ainda não tem documento gerado — converse com o estrategista primeiro")
+			erroT(w, r, http.StatusConflict, "sem_documento", "erro.planejamento_sem_documento")
 			return
 		}
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return
 	}
 
@@ -842,7 +828,7 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 		Conteudo: prd,
 	})
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
@@ -851,14 +837,14 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 		PlanejamentoID: plan.ID, DemandID: did,
 		Tipo: db.TipoDemandaPlanejamentoCompleta, PRDRev: prdRev, ADRsRev: adrsRev,
 	}); err != nil {
-		s.log.Warn("vincular demanda ao planejamento", "erro", err, "planejamento", plan.ID, "demanda", did)
+		s.log.Warn("vincular demanda ao planejamento", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID, "demanda", did)
 	}
 
 	pid := criada.ProjectID
 	if _, err := s.banco.RegistrarEvento(r.Context(), db.Evento{
 		ProjectID: &pid, DemandID: &did,
 		Tipo:    "demanda_criada",
-		Titulo:  "Praxis: demanda criada",
+		Titulo:  i18n.TI("evento.demanda_criada"),
 		Detalhe: fmt.Sprintf("Demanda criada a partir do planejamento #%d (%s).", plan.ID, plan.Titulo),
 	}); err != nil {
 		s.log.Warn("registrar evento de criação da demanda", "erro", err, "demanda", did)
@@ -934,12 +920,12 @@ func (s *Servidor) montarPRDDoPlanejamento(ctx context.Context, plan db.Planejam
 func (s *Servidor) obterPlanejamentoOu404(w http.ResponseWriter, r *http.Request) (db.Planejamento, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "id inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.id_invalido")
 		return db.Planejamento{}, false
 	}
 	plan, err := s.banco.ObterPlanejamento(r.Context(), id)
 	if err != nil {
-		s.responderErroPlanejamento(w, err)
+		s.responderErroPlanejamento(w, r, err)
 		return db.Planejamento{}, false
 	}
 	return plan, true
@@ -947,16 +933,16 @@ func (s *Servidor) obterPlanejamentoOu404(w http.ResponseWriter, r *http.Request
 
 // responderErroPlanejamento traduz os erros do store de planejamentos para
 // respostas HTTP.
-func (s *Servidor) responderErroPlanejamento(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroPlanejamento(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "planejamento, documento, projeto ou grupo não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.planejamento_nao_encontrado")
 	case errors.Is(err, db.ErrPapelInvalido):
-		responderErro(w, http.StatusBadRequest, "invalido", "papel de mensagem inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.chat_papel_invalido")
 	case errors.Is(err, db.ErrValorInvalido):
-		responderErro(w, http.StatusBadRequest, "invalido", "valor inválido para foco ou nível visual")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_valor_invalido")
 	default:
 		s.log.Error("erro no store de planejamentos", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

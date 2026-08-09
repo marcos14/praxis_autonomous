@@ -17,22 +17,22 @@ import (
 // esses nomes base + diretório isolado do perfil ja foi feita pelo scheduler e chega em
 // ConfigDirs.
 type Config struct {
-	MotorPadrao      string            // motor usado quando a operacao nao especifica um
-	Operacoes        map[string]string // operacao (executar/corrigir/revisar) → motor
-	Modelos          map[string]string // motor → modelo; ausente cai em motor.ModeloPadrao
-	Esforcos         map[string]string // motor → esforco; ausente cai em motor.EsforcoPadrao
-	ConfigDirs       map[string]string // motor → CLAUDE_CONFIG_DIR ou CODEX_HOME do perfil preferido
-	Contas           map[string]string // motor → alias do perfil preferido (registro no run)
+	MotorPadrao string            // motor usado quando a operacao nao especifica um
+	Operacoes   map[string]string // operacao (executar/corrigir/revisar) → motor
+	Modelos     map[string]string // motor → modelo; ausente cai em motor.ModeloPadrao
+	Esforcos    map[string]string // motor → esforco; ausente cai em motor.EsforcoPadrao
+	ConfigDirs  map[string]string // motor → CLAUDE_CONFIG_DIR ou CODEX_HOME do perfil preferido
+	Contas      map[string]string // motor → alias do perfil preferido (registro no run)
 	// Perfis lista TODOS os perfis ativos de cada motor na ordem de uso (o da
 	// afinidade primeiro). O fallback esgota estes perfis um a um antes de trocar
 	// de motor. Ausente/vazio → cai no par ConfigDirs/Contas (um perfil só).
-	Perfis map[string][]PerfilMotor
-	AddDirs          []string          // diretorios extras liberados ao harness
-	BudgetFaseUSD    float64           // teto de custo por fase (0 = sem teto)
-	TimeoutMin       int               // timeout por run do harness
-	MaxCorrecoes     int               // ciclos de corretor por rodada de gates
-	MaxCiclosRevisao int               // ciclos de correcao apos reprovacao do revisor
-	Fallback         Fallback          // troca de motor quando a franquia esgota
+	Perfis           map[string][]PerfilMotor
+	AddDirs          []string // diretorios extras liberados ao harness
+	BudgetFaseUSD    float64  // teto de custo por fase (0 = sem teto)
+	TimeoutMin       int      // timeout por run do harness
+	MaxCorrecoes     int      // ciclos de corretor por rodada de gates
+	MaxCiclosRevisao int      // ciclos de correcao apos reprovacao do revisor
+	Fallback         Fallback // troca de motor quando a franquia esgota
 	// Gates/GatesExtra sao os gates deterministicos resolvidos por demanda (da
 	// config efetiva do projeto). Quando presentes e o Runner nao tem um Gates
 	// fixo (producao), o Runner monta um RunnerGates por fase com estes gates,

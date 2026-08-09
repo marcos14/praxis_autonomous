@@ -1,9 +1,10 @@
-// Tela "Demandas" (Fase 2h): lista as demandas e abre o card (modal) com as abas
+// Tela t("notif.grupo_demandas") (Fase 2h): lista as demandas e abre o card (modal) com as abas
 // Fases (leitura), Log ao vivo (SSE do .jsonl) e Eventos. Não é o kanban (colunas,
 // arrastar, filtros ricos) — isso é o M4; aqui é a porta de entrada para o card.
 
 import { api } from "./api.js";
 import { el, limpar, bannerErro, toast, renderMarkdown, autoCrescer } from "./ui.js";
+import { t, tn, idiomaAtivo } from "./i18n.js";
 
 let projetos = [];
 let filtro = { project: "", status: "" };
@@ -19,22 +20,24 @@ export function setProjetos(lista) {
 // reexportada para as outras telas (kanban/Home) manterem os mesmos rótulos.
 export { STATUS };
 
-// STATUS descreve os estados da demanda: rótulo amigável e classe do "dot" da pill.
+// STATUS descreve os estados da demanda: rótulo traduzido (catálogo i18n, chaves
+// status.<slug>) e classe do "dot" da pill. Os slugs são contrato da API — só o
+// rótulo muda com o idioma.
 const STATUS = {
-  recebida: ["recebida", "dot-muted"],
-  analisando: ["analisando", "dot-wait"],
-  aguardando_respostas: ["aguardando respostas", "dot-wait"],
-  planejando: ["planejando", "dot-wait"],
-  aguardando_aprovacao: ["aguardando aprovação", "dot-wait"],
-  pronta: ["pronta", "dot-blue"],
-  executando: ["executando", "dot-exec"],
-  concluida: ["concluída", "dot-done"],
-  integrada: ["integrada", "dot-done"],
-  pausada: ["pausada", "dot-wait"],
-  aguardando_franquia: ["aguardando franquia", "dot-wait"],
-  falhou: ["falhou", "dot-fail"],
-  conflito: ["conflito", "dot-fail"],
-  cancelada: ["cancelada", "dot-muted"],
+  recebida: [t("status.recebida"), "dot-muted"],
+  analisando: [t("status.analisando"), "dot-wait"],
+  aguardando_respostas: [t("status.aguardando_respostas"), "dot-wait"],
+  planejando: [t("status.planejando"), "dot-wait"],
+  aguardando_aprovacao: [t("status.aguardando_aprovacao"), "dot-wait"],
+  pronta: [t("status.pronta"), "dot-blue"],
+  executando: [t("status.executando"), "dot-exec"],
+  concluida: [t("status.concluida"), "dot-done"],
+  integrada: [t("status.integrada"), "dot-done"],
+  pausada: [t("status.pausada"), "dot-wait"],
+  aguardando_franquia: [t("status.aguardando_franquia"), "dot-wait"],
+  falhou: [t("status.falhou"), "dot-fail"],
+  conflito: [t("status.conflito"), "dot-fail"],
+  cancelada: [t("status.cancelada"), "dot-muted"],
 };
 
 export function pillStatus(status) {
@@ -42,16 +45,21 @@ export function pillStatus(status) {
   return el("span", { class: "pill" }, el("span", { class: "dot " + dot }), rotulo);
 }
 
-// dinheiro formata um valor USD como "US$ 1,50" (pt-BR).
+// fmtUSD formata custos em dólar no padrão do idioma ativo (ex.: "US$ 1,50" em
+// pt-BR, "$1.50" em en, "US$1.50" em zh-CN).
+const fmtUSD = new Intl.NumberFormat(idiomaAtivo(), { style: "currency", currency: "USD" });
+
+// dinheiro formata um valor de custo em USD no idioma ativo.
 export function dinheiro(v) {
-  return "US$ " + Number(v || 0).toFixed(2).replace(".", ",");
+  return fmtUSD.format(Number(v || 0));
 }
 
-// quando formata um timestamp ISO para leitura (pt-BR); devolve o cru se falhar.
+// quando formata um timestamp ISO para leitura no idioma ativo; devolve o cru se
+// falhar o parse.
 export function quando(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d) ? iso : d.toLocaleString("pt-BR");
+  return isNaN(d) ? iso : d.toLocaleString(idiomaAtivo());
 }
 
 export async function montarDemandas() {
@@ -68,7 +76,7 @@ function renderFiltros() {
   const cont = limpar(document.getElementById("filtros-demandas"));
 
   const selProj = el("select", { onchange: (e) => { filtro.project = e.target.value; recarregarLista(); } },
-    el("option", { value: "", text: "Todos os projetos" }));
+    el("option", { value: "", text: t("comum.todos_projetos") }));
   for (const p of projetos) {
     const o = el("option", { value: String(p.id), text: p.nome });
     if (String(p.id) === filtro.project) o.selected = true;
@@ -76,7 +84,7 @@ function renderFiltros() {
   }
 
   const selStatus = el("select", { onchange: (e) => { filtro.status = e.target.value; recarregarLista(); } },
-    el("option", { value: "", text: "Todos os status" }));
+    el("option", { value: "", text: t("demandas.todos_status") }));
   for (const s of Object.keys(STATUS)) {
     const o = el("option", { value: s, text: STATUS[s][0] });
     if (s === filtro.status) o.selected = true;
@@ -92,22 +100,22 @@ async function recarregarLista() {
   try {
     demandas = (await api.listarDemandas(filtro)) || [];
   } catch (e) {
-    bannerErro("Falha ao carregar demandas: " + e.message);
+    bannerErro(t("demandas.falha_carregar", { erro: e.message }));
     return;
   }
   bannerErro("");
   if (demandas.length === 0) {
-    lista.append(el("p", { class: "sub", text: "Nenhuma demanda encontrada com os filtros atuais." }));
+    lista.append(el("p", { class: "sub", text: t("demandas.nenhuma_filtros") }));
     return;
   }
   for (const d of demandas) {
     const proj = projetos.find((p) => p.id === d.project_id);
     const item = el("div", { class: "dem-item", onclick: () => abrirCard(d.id) },
-      el("div", { class: "proj", text: (proj ? proj.nome : "projeto " + d.project_id) + (d.branch ? " · " + d.branch : "") }),
+      el("div", { class: "proj", text: (proj ? proj.nome : t("comum.projeto_n", { id: d.project_id })) + (d.branch ? " · " + d.branch : "") }),
       el("div", { class: "title", text: `#${d.id} — ${d.titulo}` }),
       el("div", { class: "meta" },
         pillStatus(d.status),
-        el("span", { class: "pill", text: dinheiro(d.custo_usd) + (d.budget_usd ? " de " + dinheiro(d.budget_usd) : "") }),
+        el("span", { class: "pill", text: d.budget_usd ? t("demandas.custo_de", { custo: dinheiro(d.custo_usd), orcamento: dinheiro(d.budget_usd) }) : dinheiro(d.custo_usd) }),
       ),
     );
     lista.append(item);
@@ -141,7 +149,7 @@ function assinaturaCard(dados, perguntas) {
     (perguntas || []).length, fases].join("~");
 }
 
-// abrirCard abre o modal da demanda. Exportado para a tela "Nova demanda" abrir o
+// abrirCard abre o modal da demanda. Exportado para a tela t("planejamentos.nova_demanda") abrir o
 // card da demanda recém-criada. O conteúdo se ATUALIZA SOZINHO enquanto aberto
 // (SSE global de eventos): não é preciso fechar e reabrir para ver o progresso.
 export async function abrirCard(id) {
@@ -149,7 +157,7 @@ export async function abrirCard(id) {
   try {
     dados = await api.obterDemanda(id);
   } catch (e) {
-    bannerErro("Falha ao abrir a demanda: " + e.message);
+    bannerErro(t("demandas.falha_abrir", { erro: e.message }));
     return;
   }
   const overlay = el("div", { class: "overlay open" });
@@ -191,25 +199,25 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
     renderPerguntas(corpoPerg, dados, perguntas, overlay);
     abas.push([`Perguntas (${perguntas.length})`, corpoPerg, null]);
   }
-  abas.push(["Chat / PRD", corpoChat, () => ativarChat(corpoChat, id)]);
-  abas.push(["Plano & Fases", corpoFases, null]);
+  abas.push([t("demandas.aba_chat"), corpoChat, () => ativarChat(corpoChat, id)]);
+  abas.push([t("demandas.aba_plano"), corpoFases, null]);
   // Aba Integração (Fases 4c/4d): só quando a branch já foi criada de fato — ou
   // seja, quando existe a worktree (preenchida na preparação) ou a demanda já foi
   // integrada. Não basta ter `branch`: o dev pode ter nomeado a branch na criação
   // antes de a execução criá-la no git.
   const temIntegracao = !!dados.worktree_path || dados.status === "integrada";
   if (temIntegracao) {
-    abas.push(["Integração", corpoIntegr, () => ativarIntegracao(corpoIntegr, id, overlay)]);
+    abas.push([t("demandas.aba_integracao"), corpoIntegr, () => ativarIntegracao(corpoIntegr, id, overlay)]);
   }
   // Aba Diff: mostra o que a demanda alterou no git (todas as fases ou uma só).
   // Só faz sentido enquanto a branch existe no servidor (worktree presente);
   // após integrar, a branch é removida e o diff não fica mais disponível.
   const temDiff = !!dados.worktree_path;
   if (temDiff) {
-    abas.push(["Diff", corpoDiff, () => ativarDiff(corpoDiff, id, dados)]);
+    abas.push([t("demandas.aba_diff"), corpoDiff, () => ativarDiff(corpoDiff, id, dados)]);
   }
-  abas.push(["Log ao vivo", corpoLog, () => ativarLog(corpoLog, id)]);
-  abas.push(["Eventos", corpoEventos, () => ativarEventos(corpoEventos, id)]);
+  abas.push([t("demandas.aba_log"), corpoLog, () => ativarLog(corpoLog, id)]);
+  abas.push([t("demandas.aba_eventos"), corpoEventos, () => ativarEventos(corpoEventos, id)]);
 
   // Aba ativa: preserva a preferida (refresh ao vivo); senão escolhe pelo status
   // (aguardando_aprovacao → Plano & Fases; conflito/concluída → Integração).
@@ -218,10 +226,10 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
   if (idxAtiva < 0) {
     idxAtiva = 0;
     if (dados.status === "aguardando_aprovacao") {
-      const i = abas.findIndex(([nome]) => nome === "Plano & Fases");
+      const i = abas.findIndex(([nome]) => nome === t("demandas.aba_plano"));
       if (i >= 0) idxAtiva = i;
     } else if (temIntegracao && (dados.status === "conflito" || dados.status === "concluida")) {
-      const i = abas.findIndex(([nome]) => nome === "Integração");
+      const i = abas.findIndex(([nome]) => nome === t("demandas.aba_integracao"));
       if (i >= 0) idxAtiva = i;
     }
   }
@@ -253,7 +261,7 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
       el("div", { class: "modal-actions" },
         pillStatus(dados.status),
         el("span", { class: "pill", text: dinheiro(dados.custo_usd) + (dados.budget_usd ? " de " + dinheiro(dados.budget_usd) : "") }),
-        dados.erro ? el("span", { class: "pill", style: "color:var(--critical)", text: "erro", title: dados.erro }) : null,
+        dados.erro ? el("span", { class: "pill", style: "color:var(--critical)", text: t("demandas.erro"), title: dados.erro }) : null,
         ...botoesAcao(dados, overlay),
       ),
     ),
@@ -340,9 +348,9 @@ async function mostrarSobreposicao(modal, id) {
 
 // PAPEIS mapeia o papel de uma fala do chat ao rótulo e à classe visual da bolha.
 const PAPEIS = {
-  user: ["Você", "user"],
-  analista: ["Praxis · Analista", "agent"],
-  planejador: ["Praxis · Planejador", "agent"],
+  user: [t("consultas.papel_voce"), "user"],
+  analista: [t("demandas.papel_analista"), "agent"],
+  planejador: [t("demandas.papel_planejador"), "agent"],
   sistema: ["", "sys"],
 };
 
@@ -364,9 +372,9 @@ async function ativarChat(cont, id) {
   limpar(cont);
   const box = el("div", { class: "chat" });
   const inp = el("textarea", { rows: "1",
-    placeholder: "Complementar a demanda… (Shift+Enter quebra linha)" });
+    placeholder: t("demandas.chat_ph") });
   const ajustarAltura = autoCrescer(inp);
-  const btn = el("button", { class: "btn", text: "Enviar" });
+  const btn = el("button", { class: "btn", text: t("consultas.enviar") });
   cont.append(box, el("div", { class: "chat-input" }, inp, btn));
 
   async function recarregar() {
@@ -379,7 +387,7 @@ async function ativarChat(cont, id) {
     }
     limpar(box);
     if (msgs.length === 0) {
-      box.append(el("p", { class: "vazio", text: "Nenhuma mensagem ainda." }));
+      box.append(el("p", { class: "vazio", text: t("consultas.sem_mensagens") }));
       return;
     }
     for (const m of msgs) box.append(bolha(m));
@@ -422,8 +430,8 @@ function renderPerguntas(cont, dados, perguntas, overlay) {
   limpar(cont);
   const editavel = dados.status === "aguardando_respostas";
   cont.append(el("div", { class: "banner banner-info", text: editavel
-    ? "O analista leu o código e gerou as perguntas abaixo. Sugestões já vêm preenchidas — confirme ou ajuste e gere o plano."
-    : "Perguntas do analista para esta demanda." }));
+    ? t("demandas.perg_banner_editavel")
+    : t("demandas.perg_banner_leitura") }));
 
   const estado = {}; // id da pergunta → valor da resposta corrente (modo editável)
 
@@ -431,7 +439,7 @@ function renderPerguntas(cont, dados, perguntas, overlay) {
     const item = el("div", { class: "q-item" + (!editavel && q.resposta ? " answered" : "") });
     if (q.impacto) {
       const dot = IMPACTO_DOT[q.impacto] || "dot-muted";
-      const rot = q.impacto === "alto" ? "alto impacto" : q.impacto;
+      const rot = q.impacto === "alto" ? t("demandas.imp_alto") : q.impacto;
       item.append(el("span", { class: "imp pill" }, el("span", { class: "dot " + dot }), rot));
     }
     item.append(el("div", { class: "q", text: `${i + 1}. ${q.pergunta}` }));
@@ -441,13 +449,13 @@ function renderPerguntas(cont, dados, perguntas, overlay) {
     if (editavel) {
       estado[q.id] = q.resposta || q.sugestao || "";
       const answer = el("div", { class: "answer" });
-      if (temOpcoes && q.tipo !== "texto") {
+      if (temOpcoes && q.tipo !== t("ui.md_ph_texto")) {
         const chips = [];
         // Campo de texto livre revelado pelo chip "Outro…", para quando nenhuma
         // das opções sugeridas pela IA atende. Se a resposta corrente já não é
         // uma das opções (ex.: resposta digitada antes), começa visível.
         const respostaEhOpcao = q.opcoes.includes(estado[q.id]);
-        const inpOutro = el("input", { type: "text", placeholder: "Digite outra resposta…",
+        const inpOutro = el("input", { type: "text", placeholder: t("demandas.ph_outra_resposta"),
           value: respostaEhOpcao ? "" : estado[q.id] });
         if (respostaEhOpcao) inpOutro.style.display = "none";
         inpOutro.addEventListener("input", () => { estado[q.id] = inpOutro.value; });
@@ -462,7 +470,7 @@ function renderPerguntas(cont, dados, perguntas, overlay) {
           answer.append(chip);
         });
 
-        const chipOutro = el("button", { class: "chip" + (respostaEhOpcao ? "" : " sel"), text: "✎ Outro…",
+        const chipOutro = el("button", { class: "chip" + (respostaEhOpcao ? "" : " sel"), text: t("demandas.chip_outro"),
           onclick: () => {
             if (q.opcoes.includes(estado[q.id])) estado[q.id] = ""; // limpa a opção antes selecionada
             inpOutro.value = estado[q.id];
@@ -479,15 +487,15 @@ function renderPerguntas(cont, dados, perguntas, overlay) {
       }
       item.append(answer);
     } else if (q.resposta) {
-      item.append(el("div", { class: "resp" }, el("b", { text: "✓ Respondida: " }), q.resposta));
+      item.append(el("div", { class: "resp" }, el("b", { text: t("demandas.respondida") }), q.resposta));
     } else {
-      item.append(el("div", { class: "resp", text: q.sugestao ? "Sugestão do analista: " + q.sugestao : "Sem resposta." }));
+      item.append(el("div", { class: "resp", text: q.sugestao ? "Sugestão do analista: " + q.sugestao : t("demandas.sem_resposta") }));
     }
     cont.append(item);
   });
 
   if (editavel) {
-    const btn = el("button", { class: "btn", text: "Responder tudo e gerar plano →" });
+    const btn = el("button", { class: "btn", text: t("demandas.responder_tudo") });
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       const respostas = perguntas.map((q) => ({ id: q.id, resposta: (estado[q.id] || "").trim() }));
@@ -522,12 +530,12 @@ function botoesAcao(dados, overlay) {
     botoes.push(el("button", { class: "btn sm " + classe, text: rotulo,
       onclick: () => executarAcao(dados.id, acao, overlay) }));
 
-  if (AGENDAVEIS.includes(dados.status)) add("pausar", "Pausar", "ghost");
-  if (RETOMAVEIS.includes(dados.status)) add("retomar", "Retomar", "good");
+  if (AGENDAVEIS.includes(dados.status)) add("pausar", t("demandas.acao_pausar"), "ghost");
+  if (RETOMAVEIS.includes(dados.status)) add("retomar", t("demandas.acao_retomar"), "good");
   // falhou é terminal, mas reativável: retoma do estágio que falhou (análise,
   // planejamento ou fases falhadas) — útil após ajustar o budget do motor.
-  if (dados.status === "falhou") add("tentar_novamente", "Tentar novamente", "good");
-  if (!TERMINAIS.includes(dados.status)) add("cancelar", "Cancelar", "danger");
+  if (dados.status === "falhou") add("tentar_novamente", t("demandas.acao_tentar"), "good");
+  if (!TERMINAIS.includes(dados.status)) add("cancelar", t("demandas.acao_cancelar"), "danger");
   return botoes;
 }
 
@@ -554,12 +562,12 @@ async function executarAcao(id, acao, overlay) {
 // faz o merge na main; em qualquer modo, "Atualizar branch" traz a main para a
 // branch (Fase 4d).
 async function ativarIntegracao(cont, id, overlay) {
-  limpar(cont).append(el("p", { class: "sub", text: "Carregando integração…" }));
+  limpar(cont).append(el("p", { class: "sub", text: t("demandas.integr_carregando") }));
   let mp;
   try {
     mp = await api.mergePreview(id);
   } catch (e) {
-    limpar(cont).append(el("div", { class: "banner banner-erro", text: "Falha ao carregar integração: " + e.message }));
+    limpar(cont).append(el("div", { class: "banner banner-erro", text: t("demandas.integr_falha", { erro: e.message }) }));
     return;
   }
   limpar(cont);
@@ -569,15 +577,15 @@ async function ativarIntegracao(cont, id, overlay) {
       el("div", { class: "integr-branch", text: mp.branch }),
       el("div", { class: "sub", style: "margin:2px 0 0", text: `alvo: ${mp.base} · modo: ${mp.modo_integracao}` }),
       mp.worktree_path ? el("div", { class: "sub wt-linha", style: "margin:6px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
-        el("span", { text: "worktree (servidor):" }),
+        el("span", { text: t("demandas.wt_servidor") }),
         el("code", { class: "wt-path", text: mp.worktree_path }),
-        el("button", { class: "btn sm ghost", text: "copiar",
+        el("button", { class: "btn sm ghost", text: t("demandas.copiar"),
           onclick: async () => {
-            try { await navigator.clipboard.writeText(mp.worktree_path); toast("Caminho copiado.", "ok"); }
-            catch { toast("Não foi possível copiar.", "err"); }
+            try { await navigator.clipboard.writeText(mp.worktree_path); toast(t("demandas.caminho_copiado"), "ok"); }
+            catch { toast(t("demandas.copiar_falhou"), "err"); }
           } }),
-        el("button", { class: "btn sm", text: "Editar código ⧉",
-          title: "Abre o VS Code no navegador, direto neste worktree (exige demanda pausada, falhada, em conflito ou encerrada).",
+        el("button", { class: "btn sm", text: t("demandas.editar_codigo"),
+          title: t("demandas.editar_codigo_title"),
           onclick: (ev) => abrirIDEWeb(id, mp.worktree_path, ev.currentTarget) }),
         linkVSCodeLocal(mp.worktree_path),
       ) : null,
@@ -588,7 +596,7 @@ async function ativarIntegracao(cont, id, overlay) {
   if (mp.aviso) {
     cont.append(el("div", { class: "banner banner-info", text: mp.aviso }));
   } else if (mp.limpo) {
-    cont.append(el("div", { class: "banner banner-ok", text: "✓ Sem conflitos com a main — pronto para integrar." }));
+    cont.append(el("div", { class: "banner banner-ok", text: t("demandas.sem_conflitos") }));
   } else {
     const box = el("div", { class: "banner banner-erro" },
       el("div", { text: `⚠ Conflito com a main em ${mp.conflitos.length} arquivo(s):` }));
@@ -600,7 +608,7 @@ async function ativarIntegracao(cont, id, overlay) {
   if (mp.commits_nao_publicados > 0) {
     cont.append(el("div", { class: "banner banner-info", style: "display:flex;align-items:center;gap:10px;justify-content:space-between" },
       el("span", { text: `${mp.commits_nao_publicados} commit(s) não publicado(s).` }),
-      el("button", { class: "btn sm", text: "Publicar branch",
+      el("button", { class: "btn sm", text: t("demandas.publicar_branch"),
         onclick: () => executarAcaoIntegr(id, "publicar_branch", cont, overlay) })));
   }
 
@@ -611,25 +619,25 @@ async function ativarIntegracao(cont, id, overlay) {
   const agendada = AGENDAVEIS.includes(mp.status);
   const acoes = el("div", { class: "integr-acoes" });
   if (integravel && mp.modo_integracao === "merge_request" && mp.url_mr) {
-    acoes.append(el("a", { class: "btn", href: mp.url_mr, target: "_blank", rel: "noopener", text: "Abrir Merge Request ↗" }));
+    acoes.append(el("a", { class: "btn", href: mp.url_mr, target: "_blank", rel: "noopener", text: t("demandas.abrir_mr") }));
   }
   if (integravel && mp.modo_integracao === "merge_local") {
-    acoes.append(el("button", { class: "btn good", text: "Integrar na main",
+    acoes.append(el("button", { class: "btn good", text: t("demandas.integrar_main"),
       onclick: () => executarAcaoIntegr(id, "integrar", cont, overlay) }));
   }
   if (!agendada && !mp.ja_integrada && mp.worktree_path) {
-    acoes.append(el("button", { class: "btn ghost", text: "Atualizar branch (trazer main)",
+    acoes.append(el("button", { class: "btn ghost", text: t("demandas.atualizar_branch"),
       onclick: () => executarAcaoIntegr(id, "atualizar_branch", cont, overlay) }));
   }
   if (!integravel && !mp.ja_integrada) {
-    acoes.append(el("span", { class: "sub", text: "A integração fica disponível quando a demanda concluir." }));
+    acoes.append(el("span", { class: "sub", text: t("demandas.integr_indisponivel") }));
   }
   cont.append(acoes);
 
   // Lista de commits.
   cont.append(el("h3", { style: "margin:18px 0 8px", text: `Commits (${mp.commits.length})` }));
   if (mp.commits.length === 0) {
-    cont.append(el("p", { class: "sub", text: "Nenhum commit à frente da main." }));
+    cont.append(el("p", { class: "sub", text: t("demandas.sem_commits") }));
   } else {
     const lista = el("div", { class: "commits" });
     for (const c of mp.commits) {
@@ -651,7 +659,7 @@ async function ativarIntegracao(cont, id, overlay) {
 async function abrirIDEWeb(id, worktree, btn) {
   const rotulo = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Abrindo…";
+  btn.textContent = t("demandas.abrindo");
   const aba = window.open("", "praxis-ide");
   try {
     await api.sessaoIDE(id); // valida estado/permissão, emite o cookie e sobe o serve-web
@@ -678,9 +686,9 @@ async function abrirIDEWeb(id, worktree, btn) {
 // "Editar código" web.)
 function linkVSCodeLocal(worktree) {
   if (!["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return null;
-  return el("a", { class: "btn sm ghost", text: "Abrir no VS Code local",
+  return el("a", { class: "btn sm ghost", text: t("demandas.abrir_vscode_local"),
     href: "vscode://file/" + encodeURI(worktree.replace(/\\/g, "/")),
-    title: "Requer o Praxis rodando NESTA máquina e o VS Code instalado." });
+    title: t("demandas.vscode_local_title") });
 }
 
 // executarAcaoIntegr dispara uma ação de integração e recarrega o card.
@@ -710,7 +718,7 @@ async function ativarDiff(cont, id, dados) {
 
   const sel = el("select", { class: "diff-fase",
     onchange: (e) => { faseSel = e.target.value; carregar(); } },
-    el("option", { value: "", text: "Todas as alterações" }));
+    el("option", { value: "", text: t("demandas.diff_todas") }));
   for (const f of dados.fases || []) {
     sel.append(el("option", { value: f.codigo, text: `Fase ${f.codigo} — ${f.titulo}` }));
   }
@@ -718,14 +726,14 @@ async function ativarDiff(cont, id, dados) {
   const corpo = el("div", { class: "diff-view" });
   cont.append(
     el("div", { class: "diff-head" },
-      el("span", { class: "sub", text: "Filtrar por fase:" }),
+      el("span", { class: "sub", text: t("demandas.diff_filtrar") }),
       sel,
     ),
     corpo,
   );
 
   async function carregar() {
-    limpar(corpo).append(el("p", { class: "sub", text: "Carregando diff…" }));
+    limpar(corpo).append(el("p", { class: "sub", text: t("demandas.diff_carregando") }));
     let resp;
     try {
       resp = await api.diffDemanda(id, faseSel);
@@ -744,7 +752,7 @@ async function ativarDiff(cont, id, dados) {
 function renderDiffTexto(corpo, texto) {
   limpar(corpo);
   if (!texto || !texto.trim()) {
-    corpo.append(el("p", { class: "vazio", text: "Nenhuma alteração para exibir." }));
+    corpo.append(el("p", { class: "vazio", text: t("demandas.diff_vazio") }));
     return;
   }
   const pre = el("pre", { class: "diff" });
@@ -796,23 +804,23 @@ function renderFases(cont, dados, overlay) {
   limpar(cont);
   const fases = dados.fases || [];
   if (fases.length === 0) {
-    cont.append(el("p", { class: "vazio", text: "Esta demanda ainda não tem fases." }));
+    cont.append(el("p", { class: "vazio", text: t("demandas.fases_vazio") }));
   }
 
   // Aviso quando há fase(s) que exigem intervenção humana ainda por fazer: o
   // scheduler nunca as executa sozinho; alguém precisa fazer o trabalho manual e
-  // clicar em "Marcar como feito ✓" para liberar a execução das próximas fases.
+  // clicar em t("demandas.marcar_feito") para liberar a execução das próximas fases.
   const pendenteHumano = (f) => f.requer_humano && f.status !== "concluida" && f.status !== "falhou";
   if (!TERMINAIS.includes(dados.status) && fases.some(pendenteHumano)) {
     cont.append(el("div", { class: "banner banner-warn" },
-      "✋ Esta demanda tem fase(s) que exigem intervenção humana. Faça o trabalho da fase e clique em “Marcar como feito ✓” para liberar a execução."));
+      t("demandas.fase_humana_banner")));
   }
 
   for (const f of fases) {
     const dep = (f.depende_de && f.depende_de.length) ? "dep: " + f.depende_de.join("+") : "";
     let custo = "";
     if (f.status === "concluida" || f.custo_usd) custo = dinheiro(f.custo_usd);
-    else if (f.requer_humano) custo = "exige humano";
+    else if (f.requer_humano) custo = t("demandas.exige_humano");
     else if (dep) custo = dep;
     const classe = f.status === "concluida" ? "done" : (f.status === "executando" ? "run" : "");
 
@@ -820,8 +828,8 @@ function renderFases(cont, dados, overlay) {
     // enquanto a demanda não está encerrada.
     let botaoFeito = null;
     if (pendenteHumano(f) && !TERMINAIS.includes(dados.status)) {
-      botaoFeito = el("button", { class: "btn sm good", text: "Marcar como feito ✓",
-        title: "Conclui esta fase manualmente e libera a execução das próximas.",
+      botaoFeito = el("button", { class: "btn sm good", text: t("demandas.marcar_feito"),
+        title: t("demandas.marcar_feito_title"),
         onclick: async (ev) => {
           const b = ev.currentTarget;
           b.disabled = true;
@@ -846,8 +854,8 @@ function renderFases(cont, dados, overlay) {
     let botaoReiniciar = null;
     const reiniciavel = !f.requer_humano && ["executando", "pausada", "falhou"].includes(f.status);
     if (reiniciavel && !TERMINAIS.includes(dados.status)) {
-      botaoReiniciar = el("button", { class: "btn sm", text: "Reiniciar ↻",
-        title: "Interrompe o run em andamento, descarta o trabalho não commitado desta fase e a recomeça do zero.",
+      botaoReiniciar = el("button", { class: "btn sm", text: t("demandas.reiniciar"),
+        title: t("demandas.reiniciar_title"),
         onclick: async (ev) => {
           if (!confirm(`Reiniciar a fase ${f.codigo} do zero? O run em andamento é interrompido e o trabalho não commitado desta fase é descartado.`)) return;
           const b = ev.currentTarget;
@@ -880,14 +888,14 @@ function renderFases(cont, dados, overlay) {
 }
 
 // renderFasesEditavel monta o editor do plano para uma demanda aguardando
-// aprovação: uma linha por fase (código, título, dependências, "exige humano"),
+// aprovação: uma linha por fase (código, título, dependências, t("demandas.exige_humano")),
 // mover para cima/baixo, remover, adicionar; e as ações Salvar / Aprovar /
-// Rejeitar (com comentário). A edição é local até "Salvar alterações"; Aprovar
+// Rejeitar (com comentário). A edição é local até t("demandas.salvar_alteracoes"); Aprovar
 // exige salvar antes (o backend valida o conjunto atual).
 function renderFasesEditavel(cont, dados, overlay) {
   limpar(cont);
   cont.append(el("div", { class: "banner banner-info",
-    text: "O planejador gerou o plano abaixo. Ajuste as fases (título, código, dependências, exige humano), salve e aprove para executar — ou rejeite com um comentário para replanejar." }));
+    text: t("demandas.plano_banner") }));
 
   // estado local editável: cópia rasa das fases.
   const fases = (dados.fases || []).map((f) => ({
@@ -906,14 +914,14 @@ function renderFasesEditavel(cont, dados, overlay) {
   function redesenhar() {
     limpar(lista);
     if (fases.length === 0) {
-      lista.append(el("p", { class: "vazio", text: "Sem fases. Adicione ao menos uma antes de aprovar." }));
+      lista.append(el("p", { class: "vazio", text: t("demandas.plano_sem_fases") }));
     }
     fases.forEach((f, i) => {
-      const inCodigo = el("input", { class: "f-cod", type: "text", value: f.codigo, placeholder: "cód" });
+      const inCodigo = el("input", { class: "f-cod", type: "text", value: f.codigo, placeholder: t("demandas.ph_cod") });
       inCodigo.addEventListener("input", () => { f.codigo = inCodigo.value; });
-      const inTitulo = el("input", { class: "f-tit", type: "text", value: f.titulo, placeholder: "título da fase" });
+      const inTitulo = el("input", { class: "f-tit", type: "text", value: f.titulo, placeholder: t("demandas.ph_titulo_fase") });
       inTitulo.addEventListener("input", () => { f.titulo = inTitulo.value; });
-      const inDep = el("input", { class: "f-dep", type: "text", value: f.depende_de.join(", "), placeholder: "depende de (ex.: 1, 2a)" });
+      const inDep = el("input", { class: "f-dep", type: "text", value: f.depende_de.join(", "), placeholder: t("demandas.ph_depende") });
       inDep.addEventListener("input", () => {
         f.depende_de = inDep.value.split(",").map((s) => s.trim()).filter(Boolean);
       });
@@ -921,23 +929,23 @@ function renderFasesEditavel(cont, dados, overlay) {
       chkHum.checked = f.requer_humano;
       chkHum.addEventListener("change", () => { f.requer_humano = chkHum.checked; });
 
-      const btnUp = el("button", { class: "btn sm ghost", text: "↑", title: "subir",
+      const btnUp = el("button", { class: "btn sm ghost", text: "↑", title: t("demandas.subir"),
         onclick: () => { if (i > 0) { [fases[i - 1], fases[i]] = [fases[i], fases[i - 1]]; redesenhar(); } } });
-      const btnDown = el("button", { class: "btn sm ghost", text: "↓", title: "descer",
+      const btnDown = el("button", { class: "btn sm ghost", text: "↓", title: t("demandas.descer"),
         onclick: () => { if (i < fases.length - 1) { [fases[i + 1], fases[i]] = [fases[i], fases[i + 1]]; redesenhar(); } } });
-      const btnDel = el("button", { class: "btn sm danger", text: "✕", title: "remover",
+      const btnDel = el("button", { class: "btn sm danger", text: "✕", title: t("demandas.remover"),
         onclick: () => { fases.splice(i, 1); redesenhar(); } });
 
       lista.append(el("div", { class: "fase-edit-row" },
         inCodigo, inTitulo, inDep,
-        el("label", { class: "f-hum", title: "exige humano" }, chkHum, "✋"),
+        el("label", { class: "f-hum", title: t("demandas.exige_humano") }, chkHum, "✋"),
         el("div", { class: "f-btns" }, btnUp, btnDown, btnDel),
       ));
     });
   }
   redesenhar();
 
-  const btnAdd = el("button", { class: "btn sm ghost", text: "+ Adicionar fase",
+  const btnAdd = el("button", { class: "btn sm ghost", text: t("demandas.add_fase"),
     onclick: () => { fases.push({ codigo: "", titulo: "", depende_de: [], requer_humano: false, gate_extra: "", modelo: "", observacao: "" }); redesenhar(); } });
   cont.append(el("div", { class: "fases-edit-add" }, btnAdd));
 
@@ -952,7 +960,7 @@ function renderFasesEditavel(cont, dados, overlay) {
     requer_humano: f.requer_humano, gate_extra: f.gate_extra, modelo: f.modelo, observacao: f.observacao,
   }));
 
-  const btnSalvar = el("button", { class: "btn ghost", text: "Salvar alterações" });
+  const btnSalvar = el("button", { class: "btn ghost", text: t("demandas.salvar_alteracoes") });
   btnSalvar.addEventListener("click", async () => {
     btnSalvar.disabled = true;
     try {
@@ -966,7 +974,7 @@ function renderFasesEditavel(cont, dados, overlay) {
     await reabrir();
   });
 
-  const btnAprovar = el("button", { class: "btn good", text: "Aprovar e executar →" });
+  const btnAprovar = el("button", { class: "btn good", text: t("demandas.aprovar_executar") });
   btnAprovar.addEventListener("click", async () => {
     btnAprovar.disabled = true;
     try {
@@ -982,9 +990,9 @@ function renderFasesEditavel(cont, dados, overlay) {
     await reabrir();
   });
 
-  const btnRejeitar = el("button", { class: "btn danger", text: "Rejeitar…" });
+  const btnRejeitar = el("button", { class: "btn danger", text: t("demandas.rejeitar") });
   btnRejeitar.addEventListener("click", async () => {
-    const comentario = (prompt("O que ajustar no plano? (o planejador vai refazê-lo com base neste comentário)") || "").trim();
+    const comentario = (prompt(t("demandas.rejeitar_prompt")) || "").trim();
     if (!comentario) return;
     btnRejeitar.disabled = true;
     try {
@@ -1007,7 +1015,7 @@ function ativarLog(cont, id) {
   if (sseAtual) return; // já conectado enquanto o card está aberto
   limpar(cont);
   const box = el("div", { class: "log" });
-  const foot = el("div", { class: "log-foot", text: "Conectando ao streaming ao vivo (SSE)…" });
+  const foot = el("div", { class: "log-foot", text: t("demandas.log_conectando") });
   cont.append(box, foot);
 
   const empurrar = (no) => {
@@ -1019,10 +1027,10 @@ function ativarLog(cont, id) {
 
   const es = new EventSource(api.urlLogsDemanda(id));
   sseAtual = es;
-  es.onopen = () => { foot.textContent = "Streaming ao vivo (SSE) · log completo salvo no banco."; };
+  es.onopen = () => { foot.textContent = t("demandas.log_conectado"); };
   es.onmessage = (ev) => { formatarLinha(ev.data).forEach(empurrar); };
   es.addEventListener("exec", (ev) => empurrar(separadorExec(ev.data)));
-  es.onerror = () => { foot.textContent = "Conexão do log interrompida — tentando reconectar…"; };
+  es.onerror = () => { foot.textContent = t("demandas.log_interrompido"); };
 }
 
 // separadorExec cria a linha que marca a troca de execução/etapa (evento `exec`).
@@ -1030,7 +1038,7 @@ function separadorExec(raw) {
   let m = {};
   try { m = JSON.parse(raw); } catch { /* ignora */ }
   const motor = m.engine ? m.engine + (m.conta ? ":" + m.conta : "") + (m.modelo ? "/" + m.modelo : "") : "";
-  const txt = `▶ ${m.operacao || "execução"}${motor ? " · " + motor : ""}`;
+  const txt = `▶ ${m.operacao || t("demandas.execucao")}${motor ? " · " + motor : ""}`;
   return el("span", { class: "ln sep", text: txt });
 }
 
@@ -1053,10 +1061,10 @@ function formatarLinha(raw) {
   }
   if (ev.type === "result") {
     if (ev.is_error) {
-      nos.push(el("span", { class: "ln" }, el("span", { class: "err", text: "✗ " + (ev.subtype || "erro") })));
+      nos.push(el("span", { class: "ln" }, el("span", { class: "err", text: "✗ " + (ev.subtype || t("demandas.erro")) })));
     } else {
       const r = (ev.result || "").trim();
-      nos.push(el("span", { class: "ln" }, el("span", { class: "ok", text: "✓ concluído" }), r ? " — " + primeiraLinha(r) : ""));
+      nos.push(el("span", { class: "ln" }, el("span", { class: "ok", text: t("demandas.log_concluido") }), r ? " — " + primeiraLinha(r) : ""));
     }
     return nos;
   }
@@ -1074,7 +1082,7 @@ function primeiraLinha(s) {
 
 async function ativarEventos(cont, id) {
   limpar(cont);
-  cont.append(el("p", { class: "vazio", text: "Carregando eventos…" }));
+  cont.append(el("p", { class: "vazio", text: t("demandas.eventos_carregando") }));
   let eventos;
   try {
     eventos = (await api.eventosDemanda(id)) || [];
@@ -1084,7 +1092,7 @@ async function ativarEventos(cont, id) {
   }
   limpar(cont);
   if (eventos.length === 0) {
-    cont.append(el("p", { class: "vazio", text: "Nenhum evento registrado ainda." }));
+    cont.append(el("p", { class: "vazio", text: t("demandas.eventos_vazio") }));
     return;
   }
   for (const e of eventos) {

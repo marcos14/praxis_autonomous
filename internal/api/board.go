@@ -24,7 +24,7 @@ func (s *Servidor) handleBoard(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(r.URL.Query().Get("project")); v != "" {
 		pid, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || pid <= 0 {
-			responderErro(w, http.StatusBadRequest, "invalido", "project inválido")
+			erroT(w, r, http.StatusBadRequest, "invalido", "erro.project_invalido")
 			return
 		}
 		filtro.ProjectID = &pid
@@ -34,7 +34,7 @@ func (s *Servidor) handleBoard(w http.ResponseWriter, r *http.Request) {
 
 	resumos, err := s.banco.ListarDemandasResumo(r.Context(), filtro)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, resumos)
@@ -48,11 +48,11 @@ func (s *Servidor) handleReordenarDemandas(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if len(req.IDs) == 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "informe ao menos um id em 'ids'")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.ordem_sem_ids")
 		return
 	}
 	if err := s.banco.ReordenarDemandas(r.Context(), req.IDs); err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, map[string]any{"ok": true})

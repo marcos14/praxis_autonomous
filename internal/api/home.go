@@ -42,7 +42,7 @@ func (s *Servidor) handleMetricas(w http.ResponseWriter, r *http.Request) {
 		visibilidadeDaRequisicao(r))
 	if err != nil {
 		s.log.Error("resumo home", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	responderJSON(w, http.StatusOK, respMetricas{ResumoHome: resumo, Hoje: agora.Format(iso)})
@@ -63,7 +63,7 @@ func (s *Servidor) handlePendencias(w http.ResponseWriter, r *http.Request) {
 	vis := visibilidadeDaRequisicao(r)
 	demandas, err := s.banco.ListarDemandasPorStatus(r.Context(), statusPrecisaDeVoce, vis)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
@@ -73,7 +73,7 @@ func (s *Servidor) handlePendencias(w http.ResponseWriter, r *http.Request) {
 	// então filtramos por fase para não poluir a lista "Precisa de você".
 	pausadas, err := s.banco.ListarDemandasPorStatus(r.Context(), []string{db.StatusDemandaPausada}, vis)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	for _, d := range pausadas {
@@ -119,7 +119,7 @@ func (s *Servidor) handleAtividade(w http.ResponseWriter, r *http.Request) {
 		Limite: limite, VisiveisPara: visibilidadeDaRequisicao(r)})
 	if err != nil {
 		s.log.Error("listar atividade", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	responderJSON(w, http.StatusOK, eventos)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"strings"
 	"time"
 
@@ -64,6 +65,7 @@ type Analista struct {
 	AddDirs    []string // diretórios extras liberados ao harness (só leitura)
 	BudgetUSD  float64  // teto de custo do run (0 = sem teto)
 	TimeoutMin int      // timeout do run
+	Idioma     string   // idioma de saída da IA (preferência do criador; vazio = idioma da instância)
 
 	// Seams de teste (nil em produção):
 	Selecionar func(nome string) (motor.Motor, error) // default: motor.Selecionar
@@ -95,12 +97,12 @@ func (a *Analista) Analisar(ctx context.Context, demandaID int64) error {
 		return err
 	}
 	if strings.TrimSpace(prd) == "" {
-		return a.falhar(ctx, dem, "análise sem PRD: a demanda não tem mensagem do usuário para analisar")
+		return a.falhar(ctx, dem, i18n.TI("evento.analise_sem_prd"))
 	}
 
 	// recebida → analisando
 	a.marcarStatus(ctx, &dem, db.StatusDemandaAnalisando)
-	a.registrarEvento(dem, "analise_iniciada", "Praxis: análise iniciada",
+	a.registrarEvento(dem, "analise_iniciada", i18n.TI("evento.analise_iniciada"),
 		fmt.Sprintf("Analista (%s%s), modo somente leitura.", a.Motor, sufixoModelo(a.Modelo)))
 
 	res, motorUsado, custo, err := a.rodar(ctx, dem, prd)
@@ -108,7 +110,7 @@ func (a *Analista) Analisar(ctx context.Context, demandaID int64) error {
 		return a.falhar(ctx, dem, fmt.Sprintf("análise falhou: %v", err))
 	}
 	if res.IsError {
-		return a.falhar(ctx, dem, motivoRunErro("análise", res))
+		return a.falhar(ctx, dem, motivoRunErro(i18n.TI("evento.etapa_analise"), res))
 	}
 
 	var saida SaidaAnalista
@@ -135,7 +137,7 @@ func (a *Analista) Analisar(ctx context.Context, demandaID int64) error {
 
 	// analisando → aguardando_respostas
 	a.marcarStatus(ctx, &dem, db.StatusDemandaAguardandoRespostas)
-	a.registrarEvento(dem, "analise_concluida", "Praxis: análise concluída",
+	a.registrarEvento(dem, "analise_concluida", i18n.TI("evento.analise_concluida"),
 		fmt.Sprintf("%d pergunta(s) gerada(s) · custo US$ %.2f", len(perguntas), custo))
 	return nil
 }
@@ -162,7 +164,7 @@ func (a *Analista) rodar(ctx context.Context, dem db.Demanda, prd string) (*moto
 		return nil, a.Motor, 0, err
 	}
 	res, runErr := m.Rodar(motor.OpcoesRun{
-		Dir: a.Dir, DirLogs: a.DirLogs, Prompt: renderPrompt(tpl, map[string]string{"PRD": prd}),
+		Dir: a.Dir, DirLogs: a.DirLogs, Prompt: renderPrompt(tpl, map[string]string{"PRD": prd, "IDIOMA": i18n.NomeIdiomaOuInstancia(a.Idioma)}),
 		Modelo: a.Modelo, Esforco: a.Esforco, PerfilDir: a.ConfigDir,
 		AddDirs: a.AddDirs, BudgetUSD: a.BudgetUSD, TimeoutMin: a.TimeoutMin,
 		Schema: SchemaAnalista, SomenteLeitura: true, ProibirCommit: true,
@@ -189,7 +191,7 @@ func (a *Analista) rodar(ctx context.Context, dem db.Demanda, prd string) (*moto
 		exec.IsError = true
 	}
 	if _, err := a.Store.AtualizarExecucao(ctx, exec); err != nil {
-		a.registrarEvento(dem, "aviso", "Praxis: falha ao registrar execução do analista", err.Error())
+		a.registrarEvento(dem, "aviso", i18n.TI("evento.falha_registrar_execucao_analista"), err.Error())
 	}
 	if runErr != nil {
 		return res, m.Nome(), custo, runErr
@@ -224,7 +226,7 @@ func (a *Analista) registrarFalaAnalista(ctx context.Context, dem db.Demanda, sa
 	} else if texto != "" {
 		texto += "\n\nSem perguntas: a demanda está clara o suficiente para planejar."
 	} else {
-		texto = "Análise concluída."
+		texto = i18n.TI("chat.analise_concluida")
 	}
 
 	meta, err := json.Marshal(map[string]any{
@@ -239,7 +241,7 @@ func (a *Analista) registrarFalaAnalista(ctx context.Context, dem db.Demanda, sa
 	if _, err := a.Store.CriarMensagemChat(ctx, db.MensagemChat{
 		DemandID: dem.ID, Papel: db.PapelAnalista, Conteudo: texto, Meta: meta,
 	}); err != nil {
-		a.registrarEvento(dem, "aviso", "Praxis: falha ao registrar fala do analista", err.Error())
+		a.registrarEvento(dem, "aviso", i18n.TI("evento.falha_registrar_fala_analista"), err.Error())
 	}
 }
 
@@ -248,7 +250,7 @@ func (a *Analista) registrarFalaAnalista(ctx context.Context, dem db.Demanda, sa
 func (a *Analista) falhar(ctx context.Context, dem db.Demanda, motivo string) error {
 	dem.Erro = motivo
 	a.marcarStatus(ctx, &dem, db.StatusDemandaFalhou)
-	a.registrarEvento(dem, "analise_falhou", "Praxis: análise falhou", motivo)
+	a.registrarEvento(dem, "analise_falhou", i18n.TI("evento.analise_falhou"), motivo)
 	return nil
 }
 
@@ -258,7 +260,7 @@ func (a *Analista) marcarStatus(ctx context.Context, dem *db.Demanda, status str
 	dem.Status = status
 	atual, err := a.Store.AtualizarDemanda(ctx, *dem)
 	if err != nil {
-		a.registrarEvento(*dem, "aviso", "Praxis: falha ao atualizar status da demanda", err.Error())
+		a.registrarEvento(*dem, "aviso", i18n.TI("evento.falha_atualizar_status_demanda"), err.Error())
 		return
 	}
 	*dem = atual

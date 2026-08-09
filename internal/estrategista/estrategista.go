@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
 )
@@ -142,6 +143,7 @@ type Estrategista struct {
 	DirsExtras  []string // add_dirs extras dos projetos (leitura, sem git)
 	BudgetUSD   float64  // teto de custo do turno (0 = sem teto)
 	TimeoutMin  int      // timeout do turno
+	Idioma      string   // idioma de saída da IA (preferência de quem criou o planejamento)
 
 	// ContextoRepos é o bloco de contexto injetado no prompt: overview(s) do(s)
 	// repositório(s) e, em planejamento de grupo, a descrição da solução.
@@ -269,6 +271,7 @@ func (e *Estrategista) rodar(ctx context.Context, plan db.Planejamento, historic
 		"FOCO":           fragmentoFoco(plan.Foco),
 		"NIVEL_VISUAL":   fragmentoNivelVisual(plan.NivelVisual),
 		"REFERENCIAS":    e.listarReferencias(),
+		"IDIOMA":         i18n.NomeIdiomaOuInstancia(e.Idioma),
 	})
 	protegidos := append(append([]string{}, e.Repos...), e.DirsExtras...)
 	res, runErr := m.Rodar(motor.OpcoesRun{

@@ -73,8 +73,7 @@ func (s *Servidor) comAuth(next http.Handler) http.Handler {
 		pr, err := s.resolverPrincipal(r)
 		if err != nil {
 			if errors.Is(err, errNaoAutorizado) {
-				responderErro(w, http.StatusUnauthorized, "nao_autenticado",
-					"autenticação necessária: faça login")
+				erroT(w, r, http.StatusUnauthorized, "nao_autenticado", "erro.autenticacao_necessaria")
 				return
 			}
 			// Cliente desistiu da requisição (navegou/fechou): a resolução do
@@ -84,12 +83,11 @@ func (s *Servidor) comAuth(next http.Handler) http.Handler {
 				return
 			}
 			s.log.Error("resolver principal", "erro", err)
-			responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+			erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 			return
 		}
 		if permReq != "" && !pr.tem(permReq) {
-			responderErro(w, http.StatusForbidden, "sem_permissao",
-				"você não tem permissão para esta operação (requer '"+permReq+"')")
+			erroT(w, r, http.StatusForbidden, "sem_permissao", "erro.sem_permissao", "permissao", permReq)
 			return
 		}
 		// ACL de projetos: barra, por caminho, recursos de projetos que a ACL
@@ -101,11 +99,11 @@ func (s *Servidor) comAuth(next http.Handler) http.Handler {
 				return
 			}
 			s.log.Error("checar visibilidade de projeto", "erro", err)
-			responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+			erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 			return
 		}
 		if !visivel {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "recurso não encontrado")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.recurso_nao_encontrado")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chaveCtxPrincipal, pr)))
@@ -414,7 +412,6 @@ func exigirPermissao(w http.ResponseWriter, r *http.Request, perm string) bool {
 	if temPermissao(r, perm) {
 		return true
 	}
-	responderErro(w, http.StatusForbidden, "sem_permissao",
-		"você não tem permissão para esta operação (requer '"+perm+"')")
+	erroT(w, r, http.StatusForbidden, "sem_permissao", "erro.sem_permissao", "permissao", perm)
 	return false
 }

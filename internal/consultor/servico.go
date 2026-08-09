@@ -205,6 +205,7 @@ func (s *Servico) montarConsultor(ctx context.Context, consultaID int64) (*Consu
 	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotorConsulta(ctx, cons.CriadoPor, consultaID)
 	return &Consultor{
 		Store:         s.store,
+		Idioma:        s.store.IdiomaDoUsuario(ctx, cons.CriadoPor),
 		Motor:         motorNome,
 		Modelo:        modelo,
 		Esforco:       esforco,

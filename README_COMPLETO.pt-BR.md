@@ -212,9 +212,34 @@ Chaves reconhecidas (todas herdam do global quando não definidas no projeto):
 | `max_fases_novas` | Teto de fases descobertas inseridas por rodada. |
 | `budget_demanda_usd` | Teto de custo por demanda. |
 | `gates` | Comandos de validação (um por linha), ex.: `go build ./...`, `go test ./...`. Uma fase só conclui com todos verdes. |
+| `idioma` | Idioma da **instância** (`pt-BR`, `en`, `es`, `zh-CN`; padrão `pt-BR`). Vale para o que não tem um usuário no contexto: eventos gravados, notificações nos canais e o overview do repositório. Só global; aplica sem reiniciar. |
 
 > Os **gates** rodam no repositório-alvo, então use os comandos daquele projeto
 > (build/lint/test). Sem gates configurados, a fase depende só da autoverificação do harness.
+
+### 5.3 Idiomas (i18n)
+
+O Praxis fala **português, inglês, espanhol e chinês simplificado**. A escolha é
+por pessoa e vale para a interface inteira, o manual embutido e o idioma em que a
+IA responde.
+
+- **Preferência do usuário** — o seletor no rodapé do menu (e na tela de login)
+  grava o idioma no seu usuário; ele te acompanha em qualquer dispositivo.
+- **Antes do login** — vale o idioma do navegador (`Accept-Language`) e, na
+  falta, o padrão `pt-BR`.
+- **Idioma da instância** — a chave global `idioma` (§5.2) decide o que não tem
+  dono: eventos gravados, notificações nos canais do time e o overview do
+  repositório.
+- **Respostas da IA** — consultas, planejamentos e as perguntas do analista saem
+  no idioma de **quem criou** a conversa; via API sem usuário, no idioma da
+  instância. O código, os comentários e as mensagens de commit seguem a língua do
+  repositório, não a do usuário.
+- **API** — a UI envia o header `X-Praxis-Idioma`; sem ele, o servidor usa o
+  `Accept-Language`. O campo `erro.codigo` é estável e **não** muda com o
+  idioma — só `erro.mensagem` é traduzida. Para gravar a preferência de forma
+  programática: `PUT /api/v1/auth/idioma` com `{"idioma":"en"}`.
+- **Manual** — cada seção cai no texto em pt-BR enquanto não houver tradução
+  daquela página, então a navegação nunca fica com buracos.
 
 ---
 

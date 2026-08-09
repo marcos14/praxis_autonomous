@@ -13,12 +13,12 @@ import (
 // vem ordenado por ordem: o membro 0 é o repo principal (cwd do harness numa
 // consulta de grupo); os demais entram como diretórios extras (--add-dir).
 type Grupo struct {
-	ID        int64        `json:"id"`
-	Nome      string       `json:"nome"`
-	Slug      string       `json:"slug"`
-	Descricao string       `json:"descricao"`
-	Ativo     bool         `json:"ativo"`
-	CriadoEm  string       `json:"criado_em"`
+	ID        int64         `json:"id"`
+	Nome      string        `json:"nome"`
+	Slug      string        `json:"slug"`
+	Descricao string        `json:"descricao"`
+	Ativo     bool          `json:"ativo"`
+	CriadoEm  string        `json:"criado_em"`
 	Membros   []MembroGrupo `json:"membros"`
 }
 

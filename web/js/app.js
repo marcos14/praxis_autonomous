@@ -21,6 +21,7 @@ import { montarUsuarios, montarPapeis } from "./usuarios.js";
 import { montarGruposUsuarios } from "./gusuarios.js";
 import { bannerErro, el, limpar } from "./ui.js";
 import * as auth from "./auth.js";
+import { t, aplicarTraducoes, seletorIdioma, adotarIdiomaDoUsuario } from "./i18n.js";
 
 // views mapeia o nome da view à sua função de montagem (chamada a cada exibição,
 // para refletir o estado atual do banco).
@@ -88,7 +89,7 @@ async function irPara(nome) {
   try {
     await views[nome]();
   } catch (e) {
-    bannerErro("Erro ao montar a tela: " + (e && e.message ? e.message : e));
+    bannerErro(t("shell.erro_montar", { erro: e && e.message ? e.message : e }));
   }
 }
 
@@ -110,10 +111,10 @@ async function atualizarRodape() {
     const h = await resp.json();
     const online = resp.ok && h.banco !== undefined ? h.banco === "ok" : resp.ok;
     const cor = online ? "var(--good)" : "var(--critical)";
-    const rotulo = online ? "online" : "banco indisponível";
+    const rotulo = online ? t("foot.online") : t("foot.banco_indisponivel");
     foot.innerHTML = `v${h.versao || "dev"}<br><span style="color:${cor}">●</span> ${rotulo}`;
   } catch {
-    foot.innerHTML = `<span style="color:var(--critical)">●</span> offline`;
+    foot.innerHTML = `<span style="color:var(--critical)">●</span> ${t("foot.offline")}`;
   }
 }
 
@@ -133,7 +134,8 @@ function aplicarPermissoes() {
     limpar(box);
     box.append(
       el("div", { class: "quem" }, el("b", { text: u.nome || u.email }), el("span", { text: u.email })),
-      el("button", { class: "btn ghost sm", text: "Sair", onclick: () => auth.logout() }),
+      el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => auth.logout() }),
+      seletorIdioma(() => auth.tokenAtual()),
     );
     box.hidden = false;
   }
@@ -165,13 +167,13 @@ function renderAuthCard(modo, setupNecessario) {
   limpar(card);
   const erro = el("div", { class: "banner banner-erro", hidden: true });
 
-  const inpNome = el("input", { type: "text", placeholder: "Seu nome", autocomplete: "name" });
-  const inpEmail = el("input", { type: "email", placeholder: "e-mail", autocomplete: "username" });
-  const inpSenha = el("input", { type: "password", placeholder: "senha", autocomplete: modo === "setup" ? "new-password" : "current-password" });
+  const inpNome = el("input", { type: "text", placeholder: t("auth.ph_nome"), autocomplete: "name" });
+  const inpEmail = el("input", { type: "email", placeholder: t("auth.ph_email"), autocomplete: "username" });
+  const inpSenha = el("input", { type: "password", placeholder: t("auth.ph_senha"), autocomplete: modo === "setup" ? "new-password" : "current-password" });
 
   const mostrarErro = (msg) => { erro.textContent = msg; erro.hidden = !msg; };
 
-  const btn = el("button", { class: "btn" }, modo === "setup" ? "Criar admin e entrar" : "Entrar");
+  const btn = el("button", { class: "btn" }, modo === "setup" ? t("auth.criar_admin") : t("auth.entrar"));
   const submeter = async () => {
     mostrarErro("");
     btn.disabled = true;
@@ -190,7 +192,7 @@ function renderAuthCard(modo, setupNecessario) {
         renderAuthCard("login", false);
         return;
       }
-      mostrarErro(e && e.message ? e.message : "falha ao autenticar");
+      mostrarErro(e && e.message ? e.message : t("auth.falha"));
       btn.disabled = false;
     }
   };
@@ -199,16 +201,15 @@ function renderAuthCard(modo, setupNecessario) {
     i.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submeter(); }));
 
   const form = el("div", { class: "form" });
-  if (modo === "setup") form.append(rotulado("Nome", inpNome));
-  form.append(rotulado("E-mail", inpEmail), rotulado("Senha", inpSenha), btn);
+  if (modo === "setup") form.append(rotulado(t("auth.nome"), inpNome));
+  form.append(rotulado(t("auth.email"), inpEmail), rotulado(t("auth.senha"), inpSenha), btn);
 
   card.append(
-    el("h2", { text: modo === "setup" ? "Bem-vindo ao Praxis" : "Praxis Autonomous" }),
-    el("p", { class: "sub", text: modo === "setup"
-      ? "Nenhum usuário ainda. Crie o administrador inicial desta instalação."
-      : "Entre com seu e-mail e senha." }),
+    el("h2", { text: modo === "setup" ? t("auth.titulo_setup") : "Praxis Autonomous" }),
+    el("p", { class: "sub", text: modo === "setup" ? t("auth.sub_setup") : t("auth.sub_login") }),
     erro,
     form,
+    el("div", { class: "auth-idioma" }, seletorIdioma(() => "")),
   );
 
   // Alternância login/setup só faz sentido quando o setup NÃO é obrigatório
@@ -237,6 +238,9 @@ async function iniciar() {
   // antes do portão de login/criação de admin aparecer.
   document.querySelector(".app").style.display = "none";
 
+  // Traduz os textos estáticos do index.html (data-i18n) para o idioma ativo.
+  aplicarTraducoes(document);
+
   // Sair derruba a sessão: recarrega para reinicializar tudo (fecha SSEs, limpa
   // estado das views) e cair de novo no portão.
   auth.aoDeslogar(() => location.reload());
@@ -250,6 +254,9 @@ async function iniciar() {
     await mostrarPortao();
     return;
   }
+  // Preferência de idioma do usuário (servidor) difere do ativo → recarrega uma
+  // vez para reavaliar os módulos no idioma certo.
+  if (u.idioma && adotarIdiomaDoUsuario(u.idioma)) return;
   entrarNaApp();
 }
 

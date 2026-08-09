@@ -7,6 +7,7 @@ import (
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 )
 
 // KillerOrfaos mata as arvores de processos de harness orfaos que sobreviveram a
@@ -128,8 +129,8 @@ func refilarPosRestart(ctx context.Context, store *db.DB, dem db.Demanda) error 
 		ProjectID: &pid,
 		DemandID:  &did,
 		Tipo:      "recuperada_pos_restart",
-		Titulo:    "Praxis: execução recuperada após reinício",
-		Detalhe:   "O serviço reiniciou durante a execução desta demanda. Transição executando → pausada → refila: a demanda foi re-enfileirada e o scheduler a retomará a partir da próxima fase pendente.",
+		Titulo:    i18n.TI("evento.recuperada_pos_restart.titulo"),
+		Detalhe:   i18n.TI("evento.recuperada_pos_restart.detalhe"),
 	})
 	return nil
 }

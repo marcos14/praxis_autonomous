@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"strings"
 	"time"
 
@@ -194,7 +195,7 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 			OnLogPath: func(caminho string) {
 				exec.LogRef = caminho
 				if _, err := c.Store.AtualizarExecucao(ctx, exec); err != nil {
-					c.registrarEvento("aviso", "Praxis: falha ao registrar log da execucao", err.Error())
+					c.registrarEvento("aviso", i18n.TI("evento.falha_registrar_log"), err.Error())
 				}
 			},
 		}
@@ -216,7 +217,7 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 		}
 		if _, err := c.Store.AtualizarExecucao(ctx, exec); err != nil {
 			// falha ao atualizar o registro nao invalida o run em si; loga como evento.
-			c.registrarEvento("aviso", "Praxis: falha ao registrar execucao", err.Error())
+			c.registrarEvento("aviso", i18n.TI("evento.falha_registrar_execucao"), err.Error())
 		}
 		if runErr != nil {
 			return res, motorUsado, runErr
@@ -411,7 +412,7 @@ func (c *ContextoExec) finalizarFranquia(f *db.Fase, custo float64, ef *ErroFran
 	if err := c.persistirFase(context.Background(), f); err != nil {
 		perr = err
 	}
-	c.registrarEvento("franquia_esgotada", "Praxis: franquia de tokens esgotada",
+	c.registrarEvento("franquia_esgotada", i18n.TI("evento.franquia_esgotada"),
 		fmt.Sprintf("Fase %s — %s\n%s\nRetomo automatico apos o reset.", f.Codigo, f.Titulo, ef.Detalhe))
 	return ResultadoFase{Situacao: SituacaoAguardandoFranquia, CustoUSD: custo, RetomarEm: ef.RetomarEm}, perr
 }

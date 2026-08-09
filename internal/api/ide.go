@@ -17,6 +17,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -96,14 +97,12 @@ func statusPermiteEdicaoManual(status string) bool {
 // repetindo o POST até receber 200 com a URL.
 func (s *Servidor) handleCriarSessaoIDE(w http.ResponseWriter, r *http.Request) {
 	if s.ideWeb == nil {
-		responderErro(w, http.StatusServiceUnavailable, "ide_indisponivel",
-			"IDE web indisponível neste servidor (PRAXIS_HOME não resolvido)")
+		erroT(w, r, http.StatusServiceUnavailable, "ide_indisponivel", "erro.ide_indisponivel")
 		return
 	}
 	pr := principalDaRequisicao(r)
 	if pr.userID <= 0 {
-		responderErro(w, http.StatusForbidden, "sem_usuario",
-			"o IDE web exige um usuário logado (tokens de API não abrem sessão)")
+		erroT(w, r, http.StatusForbidden, "sem_usuario", "erro.ide_sem_usuario")
 		return
 	}
 	var req reqSessaoIDE
@@ -113,11 +112,11 @@ func (s *Servidor) handleCriarSessaoIDE(w http.ResponseWriter, r *http.Request) 
 	dem, err := s.banco.ObterDemanda(r.Context(), req.DemandID)
 	if err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "demanda não encontrada")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.demanda_nao_encontrada")
 			return
 		}
 		s.log.Error("obter demanda para IDE", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	// ACL de projetos: o id veio no corpo, então a visibilidade não foi checada
@@ -126,23 +125,21 @@ func (s *Servidor) handleCriarSessaoIDE(w http.ResponseWriter, r *http.Request) 
 		ve, err := s.banco.UsuarioVeDemanda(r.Context(), *uid, dem.ID)
 		if err != nil {
 			s.log.Error("checar visibilidade para IDE", "erro", err)
-			responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+			erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 			return
 		}
 		if !ve {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "demanda não encontrada")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.demanda_nao_encontrada")
 			return
 		}
 	}
 	if !statusPermiteEdicaoManual(dem.Status) {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"edição manual só com a demanda pausada, falhada, em conflito ou encerrada — pause a demanda antes de editar (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.ide_estado_invalido", "status", dem.Status)
 		return
 	}
 	worktree := strings.TrimSpace(dem.WorktreePath)
 	if worktree == "" {
-		responderErro(w, http.StatusConflict, "sem_worktree",
-			"a demanda ainda não tem worktree (a execução não começou)")
+		erroT(w, r, http.StatusConflict, "sem_worktree", "erro.ide_sem_worktree")
 		return
 	}
 	if _, err := os.Stat(worktree); err != nil {
@@ -155,13 +152,13 @@ func (s *Servidor) handleCriarSessaoIDE(w http.ResponseWriter, r *http.Request) 
 	secret, err := s.segredoJWT(r.Context())
 	if err != nil {
 		s.log.Error("segredo do jwt para IDE", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	tok, err := auth.Assinar(pr.userID, ttlSessaoIDE, secret)
 	if err != nil {
 		s.log.Error("assinar sessão do IDE", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -210,7 +207,7 @@ func urlIDEParaWorktree(worktree string) string {
 // trilha de auditoria de quem abriu o IDE em qual demanda.
 func (s *Servidor) registrarEventoIDE(r *http.Request, dem db.Demanda) {
 	pr := principalDaRequisicao(r)
-	ev := db.Evento{Tipo: "codigo_acessado", Titulo: "Praxis: código aberto no IDE web",
+	ev := db.Evento{Tipo: "codigo_acessado", Titulo: i18n.TI("evento.codigo_acessado"),
 		Detalhe: fmt.Sprintf("%s abriu o worktree da demanda d%d no IDE web.", pr.nome, dem.ID)}
 	if dem.ProjectID > 0 {
 		pid := dem.ProjectID

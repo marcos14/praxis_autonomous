@@ -10,6 +10,7 @@ import (
 
 	"github.com/marcos14/praxis-autonomous/internal/auth"
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 )
 
 // ttlToken é a validade do JWT emitido no login/setup. Expirado, o cliente
@@ -24,6 +25,7 @@ func (s *Servidor) registrarRotasAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/login", s.handleAuthLogin)
 	mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
 	mux.HandleFunc("PUT /api/v1/auth/senha", s.handleTrocarSenha)
+	mux.HandleFunc("PUT /api/v1/auth/idioma", s.handleDefinirIdioma)
 }
 
 // respUsuario é a projeção de um usuário exposta à UI: sem hash, com as
@@ -33,6 +35,7 @@ type respUsuario struct {
 	Nome       string     `json:"nome"`
 	Email      string     `json:"email"`
 	Ativo      bool       `json:"ativo"`
+	Idioma     string     `json:"idioma"`
 	Permissoes []string   `json:"permissoes"`
 	Papeis     []db.Papel `json:"papeis"`
 }
@@ -77,7 +80,7 @@ func (s *Servidor) respostaAutenticado(ctx context.Context, u db.Usuario) (respA
 	return respAuth{
 		Token: token,
 		Usuario: respUsuario{
-			ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo,
+			ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo, Idioma: u.Idioma,
 			Permissoes: permsOrdenadas(perms), Papeis: u.Papeis,
 		},
 	}, nil
@@ -89,7 +92,7 @@ func (s *Servidor) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	n, err := s.banco.ContarUsuarios(r.Context())
 	if err != nil {
 		s.log.Error("contar usuários", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	responderJSON(w, http.StatusOK, map[string]bool{"setup_necessario": n == 0})
@@ -117,29 +120,28 @@ func (s *Servidor) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
 	n, err := s.banco.ContarUsuarios(r.Context())
 	if err != nil {
 		s.log.Error("contar usuários", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	if n > 0 {
-		responderErro(w, http.StatusConflict, "setup_concluido",
-			"a instalação já tem usuários; use a tela de login")
+		erroT(w, r, http.StatusConflict, "setup_concluido", "erro.setup_concluido")
 		return
 	}
 	adminID, err := s.banco.IDPapelPorNome(r.Context(), "admin")
 	if err != nil {
 		s.log.Error("obter papel admin", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	u, err := s.banco.CriarUsuario(r.Context(), req.Nome, req.Email, req.Senha, []int64{adminID})
 	if err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	resp, err := s.respostaAutenticado(r.Context(), u)
 	if err != nil {
 		s.log.Error("emitir token no setup", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	responderJSON(w, http.StatusCreated, resp)
@@ -154,18 +156,17 @@ func (s *Servidor) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	u, err := s.banco.AutenticarUsuario(r.Context(), req.Email, req.Senha)
 	if err != nil {
 		if errors.Is(err, db.ErrCredenciais) {
-			responderErro(w, http.StatusUnauthorized, "credenciais_invalidas",
-				"e-mail ou senha incorretos")
+			erroT(w, r, http.StatusUnauthorized, "credenciais_invalidas", "erro.credenciais_invalidas")
 			return
 		}
 		s.log.Error("autenticar usuário", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	resp, err := s.respostaAutenticado(r.Context(), u)
 	if err != nil {
 		s.log.Error("emitir token no login", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
 	responderJSON(w, http.StatusOK, resp)
@@ -179,11 +180,11 @@ func (s *Servidor) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	if pr.userID > 0 {
 		u, err := s.banco.ObterUsuario(r.Context(), pr.userID)
 		if err != nil {
-			s.responderErroUsuario(w, err)
+			s.responderErroUsuario(w, r, err)
 			return
 		}
 		responderJSON(w, http.StatusOK, respUsuario{
-			ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo,
+			ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo, Idioma: u.Idioma,
 			Permissoes: permsOrdenadas(pr.permissoes), Papeis: u.Papeis,
 		})
 		return
@@ -192,6 +193,40 @@ func (s *Servidor) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		Nome: "integração (token de API)", Ativo: true,
 		Permissoes: permsOrdenadas(pr.permissoes), Papeis: []db.Papel{},
 	})
+}
+
+// reqIdioma é o corpo de PUT /auth/idioma.
+type reqIdioma struct {
+	Idioma string `json:"idioma"`
+}
+
+// handleDefinirIdioma grava o idioma preferido da UI do próprio usuário logado.
+// Vazio limpa a preferência (volta a valer navegador/instância); qualquer outro
+// valor é normalizado para um idioma suportado ou rejeitado. Principais de token
+// de API não têm preferência de idioma → 400.
+func (s *Servidor) handleDefinirIdioma(w http.ResponseWriter, r *http.Request) {
+	pr := principalDaRequisicao(r)
+	if pr.userID == 0 {
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.credencial_sem_idioma")
+		return
+	}
+	var req reqIdioma
+	if !decodificarCorpo(w, r, &req) {
+		return
+	}
+	idioma := ""
+	if strings.TrimSpace(req.Idioma) != "" {
+		if idioma = i18n.Normalizar(req.Idioma); idioma == "" {
+			erroT(w, r, http.StatusBadRequest, "idioma_invalido", "erro.idioma_invalido",
+				"idiomas", strings.Join(i18n.Suportados, ", "))
+			return
+		}
+	}
+	if err := s.banco.DefinirIdiomaUsuario(r.Context(), pr.userID, idioma); err != nil {
+		s.responderErroUsuario(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // reqTrocarSenha é o corpo de PUT /auth/senha.
@@ -205,7 +240,7 @@ type reqTrocarSenha struct {
 func (s *Servidor) handleTrocarSenha(w http.ResponseWriter, r *http.Request) {
 	pr := principalDaRequisicao(r)
 	if pr.userID == 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "esta credencial não tem senha para trocar")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.credencial_sem_senha")
 		return
 	}
 	var req reqTrocarSenha
@@ -213,16 +248,16 @@ func (s *Servidor) handleTrocarSenha(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Nova) == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "a nova senha não pode ser vazia")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.senha_vazia")
 		return
 	}
 	// Reautentica com a senha atual antes de trocar.
 	if _, err := s.banco.AutenticarUsuario(r.Context(), pr.email, req.Atual); err != nil {
-		responderErro(w, http.StatusForbidden, "senha_atual_invalida", "a senha atual está incorreta")
+		erroT(w, r, http.StatusForbidden, "senha_atual_invalida", "erro.senha_atual_invalida")
 		return
 	}
 	if err := s.banco.DefinirSenha(r.Context(), pr.userID, req.Nova); err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

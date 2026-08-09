@@ -13,7 +13,7 @@ autonomous execution, merge request.
 
 *Pure Go · single binary · embedded SQLite · 100% web UI*
 
-> **Note:** the web UI is currently in Brazilian Portuguese — i18n is on the roadmap.
+*Available in English, Português, Español and 简体中文.*
 
 ---
 
@@ -117,6 +117,10 @@ per-phase cost — and can pause, resume, or cancel at any time.
   Slack, and Google Chat.
 - **Simple to operate** — a single Go binary with embedded SQLite: no Docker, no
   external database, no runtime dependencies.
+- **Speaks your team's language** — the interface, the built-in manual, and the
+  AI's own answers come in English, Portuguese, Spanish, or Chinese, chosen per
+  user: the same query answered in Portuguese for support in Brazil and in
+  Chinese for the team in Shenzhen.
 
 ---
 

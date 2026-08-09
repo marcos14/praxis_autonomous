@@ -13,6 +13,8 @@ IA, plano em fases, execução autônoma, merge request.
 
 *Go puro · um binário · SQLite embutido · interface 100% web*
 
+*Disponível em português, English, español e 简体中文.*
+
 ---
 
 ## O problema — respostas trancadas no código, acesso distribuído sem necessidade
@@ -114,6 +116,10 @@ momento.
   Telegram, Discord, Slack e Google Chat.
 - **Operação simples** — um binário Go com SQLite embutido: sem Docker, sem banco
   externo, sem dependências de runtime.
+- **Fala a língua do seu time** — a interface, o manual embutido e as próprias
+  respostas da IA saem em português, inglês, espanhol ou chinês, escolhidos por
+  usuário: a mesma consulta respondida em português para o suporte no Brasil e
+  em chinês para o time em Shenzhen.
 
 ---
 

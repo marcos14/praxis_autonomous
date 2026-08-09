@@ -31,18 +31,18 @@ func (s *Servidor) registrarRotasUsuarios(mux *http.ServeMux) {
 // ---------------------------------------------------------------------------
 
 type reqUsuario struct {
-	Nome   string  `json:"nome"`
-	Email  string  `json:"email"`
-	Senha  string  `json:"senha"`
-	Ativo  bool    `json:"ativo"`
-	Papeis []int64 `json:"papeis"`   // ids dos papéis
-	GrupoID *int64 `json:"grupo_id"` // grupo de usuários (consultas); nil/0 = sem grupo
+	Nome    string  `json:"nome"`
+	Email   string  `json:"email"`
+	Senha   string  `json:"senha"`
+	Ativo   bool    `json:"ativo"`
+	Papeis  []int64 `json:"papeis"`   // ids dos papéis
+	GrupoID *int64  `json:"grupo_id"` // grupo de usuários (consultas); nil/0 = sem grupo
 }
 
 func (s *Servidor) handleListarUsuarios(w http.ResponseWriter, r *http.Request) {
 	usuarios, err := s.banco.ListarUsuarios(r.Context())
 	if err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, usuarios)
@@ -55,11 +55,11 @@ func (s *Servidor) handleCriarUsuario(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.banco.CriarUsuario(r.Context(), req.Nome, req.Email, req.Senha, req.Papeis)
 	if err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	if u, err = s.aplicarGrupoDoUsuario(r, u.ID, req.GrupoID); err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, u)
@@ -95,11 +95,11 @@ func (s *Servidor) handleAtualizarUsuario(w http.ResponseWriter, r *http.Request
 	}
 	u, err := s.banco.AtualizarUsuario(r.Context(), id, req.Nome, req.Email, req.Ativo, req.Papeis)
 	if err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	if u, err = s.aplicarGrupoDoUsuario(r, u.ID, req.GrupoID); err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, u)
@@ -119,7 +119,7 @@ func (s *Servidor) handleResetarSenha(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.banco.DefinirSenha(r.Context(), id, req.Nova); err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -132,7 +132,7 @@ func (s *Servidor) handleExcluirUsuario(w http.ResponseWriter, r *http.Request) 
 	}
 	// Não permitir excluir a si mesmo (evita o admin se auto-remover por engano) ...
 	if pr := principalDaRequisicao(r); pr.userID == id {
-		responderErro(w, http.StatusConflict, "auto_exclusao", "você não pode excluir o próprio usuário")
+		erroT(w, r, http.StatusConflict, "auto_exclusao", "erro.usuario_auto_exclusao")
 		return
 	}
 	// ... nem remover o último admin ativo.
@@ -141,7 +141,7 @@ func (s *Servidor) handleExcluirUsuario(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.banco.ExcluirUsuario(r.Context(), id); err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -216,7 +216,7 @@ type reqPapel struct {
 func (s *Servidor) handleListarPapeis(w http.ResponseWriter, r *http.Request) {
 	papeis, err := s.banco.ListarPapeis(r.Context())
 	if err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, papeis)
@@ -229,7 +229,7 @@ func (s *Servidor) handleCriarPapel(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.banco.CriarPapel(r.Context(), req.Nome, req.Descricao, req.Permissoes)
 	if err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, p)
@@ -246,7 +246,7 @@ func (s *Servidor) handleAtualizarPapel(w http.ResponseWriter, r *http.Request) 
 	}
 	p, err := s.banco.AtualizarPapel(r.Context(), id, req.Nome, req.Descricao, req.Permissoes)
 	if err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, p)
@@ -258,7 +258,7 @@ func (s *Servidor) handleExcluirPapel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.banco.ExcluirPapel(r.Context(), id); err != nil {
-		s.responderErroUsuario(w, err)
+		s.responderErroUsuario(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -279,17 +279,17 @@ func (s *Servidor) handleListarPermissoes(w http.ResponseWriter, r *http.Request
 func idDaRota(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		responderErro(w, http.StatusBadRequest, "invalido", "id inválido")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.id_invalido")
 		return 0, false
 	}
 	return id, true
 }
 
 // responderErroUsuario mapeia os erros da camada db (usuários/papéis) para HTTP.
-func (s *Servidor) responderErroUsuario(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroUsuario(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "registro não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.usuario_registro_nao_encontrado")
 	case errors.Is(err, db.ErrEmailDuplicado):
 		responderErro(w, http.StatusConflict, "email_duplicado", err.Error())
 	case errors.Is(err, db.ErrPapelDuplicado):
@@ -304,6 +304,6 @@ func (s *Servidor) responderErroUsuario(w http.ResponseWriter, err error) {
 		responderErro(w, http.StatusBadRequest, "senha_vazia", err.Error())
 	default:
 		s.log.Error("operação de usuários/papéis", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

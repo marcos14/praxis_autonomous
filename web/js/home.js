@@ -5,6 +5,7 @@
 import { api } from "./api.js";
 import { el, limpar, bannerErro } from "./ui.js";
 import { abrirCard, setProjetos, dinheiro, quando, STATUS } from "./demandas.js";
+import { t } from "./i18n.js";
 
 let projetos = [];
 let sseEventos = null;
@@ -26,7 +27,7 @@ export function desmontarHome() {
 
 function nomeProjeto(id) {
   const p = projetos.find((x) => x.id === id);
-  return p ? p.nome : "projeto " + id;
+  return p ? p.nome : t("comum.projeto_n", { id });
 }
 
 function tile(rot, val, sub2) {
@@ -42,16 +43,16 @@ async function carregarMetricas() {
   try {
     m = await api.metricas();
   } catch (e) {
-    bannerErro("Falha ao carregar métricas: " + e.message);
+    bannerErro(t("home.falha_metricas", { erro: e.message }));
     return;
   }
   const tiles = limpar(document.getElementById("home-tiles"));
   tiles.append(
-    tile("Gasto no mês", dinheiro(m.gasto_mes)),
-    tile("Demandas ativas", String(m.demandas_ativas)),
-    tile("Fases concluídas (7d)", String(m.fases_concluidas_7d)),
-    tile("Integradas no mês", String(m.integradas_mes)),
-    tile("Aguardando franquia", String(m.aguardando_franquia)),
+    tile(t("home.gasto_mes"), dinheiro(m.gasto_mes)),
+    tile(t("home.demandas_ativas"), String(m.demandas_ativas)),
+    tile(t("home.fases_7d"), String(m.fases_concluidas_7d)),
+    tile(t("home.integradas_mes"), String(m.integradas_mes)),
+    tile(t("home.aguardando_franquia"), String(m.aguardando_franquia)),
   );
   renderGrafico(m.gastos_por_dia || []);
   renderPorProjeto(m.por_projeto || []);
@@ -59,9 +60,9 @@ async function carregarMetricas() {
 
 function renderGrafico(dias) {
   const cont = limpar(document.getElementById("home-grafico"));
-  cont.append(el("h3", { text: "Gastos por dia" }));
+  cont.append(el("h3", { text: t("home.gastos_dia") }));
   if (dias.length === 0) {
-    cont.append(el("p", { class: "sub", style: "margin:8px 0 0", text: "Sem gastos registrados na janela." }));
+    cont.append(el("p", { class: "sub", style: "margin:8px 0 0", text: t("home.sem_gastos") }));
     return;
   }
   const max = Math.max(...dias.map((d) => d.custo_usd), 0.0001);
@@ -78,14 +79,14 @@ function renderGrafico(dias) {
 
 function renderPorProjeto(linhas) {
   const cont = limpar(document.getElementById("home-projetos"));
-  cont.append(el("h3", { text: "Por projeto" }));
+  cont.append(el("h3", { text: t("home.por_projeto") }));
   if (linhas.length === 0) {
-    cont.append(el("p", { class: "sub", style: "margin:8px 0 0", text: "Nenhum projeto com demandas ainda." }));
+    cont.append(el("p", { class: "sub", style: "margin:8px 0 0", text: t("home.nenhum_projeto") }));
     return;
   }
   const tbl = el("table", { class: "plain" },
     el("thead", {}, el("tr", {},
-      el("th", { text: "Projeto" }), el("th", { text: "Ativas" }), el("th", { text: "Custo" }))));
+      el("th", { text: t("home.col_projeto") }), el("th", { text: t("home.col_ativas") }), el("th", { text: t("home.col_custo") }))));
   const tb = el("tbody");
   for (const l of linhas) {
     tb.append(el("tr", {},
@@ -100,16 +101,16 @@ function renderPorProjeto(linhas) {
 
 async function carregarPendencias() {
   const cont = limpar(document.getElementById("home-precisa"));
-  cont.append(el("h3", { text: "Precisa de você" }));
+  cont.append(el("h3", { text: t("home.precisa") }));
   let pend;
   try {
     pend = (await api.pendencias()) || [];
   } catch (e) {
-    cont.append(el("p", { class: "sub", text: "Falha ao carregar: " + e.message }));
+    cont.append(el("p", { class: "sub", text: t("comum.falha_carregar", { erro: e.message }) }));
     return;
   }
   if (pend.length === 0) {
-    cont.append(el("p", { class: "sub", style: "margin:8px 0 0", text: "Nada pendente. 🎉" }));
+    cont.append(el("p", { class: "sub", style: "margin:8px 0 0", text: t("home.nada_pendente") }));
     return;
   }
   for (const d of pend) {
@@ -123,18 +124,18 @@ async function carregarPendencias() {
 
 async function carregarAtividade() {
   const cont = limpar(document.getElementById("home-atividade"));
-  cont.append(el("h3", { text: "Atividade recente" }));
+  cont.append(el("h3", { text: t("home.atividade") }));
   const lista = el("div", { id: "home-ativ-lista" });
   cont.append(lista);
   let evs;
   try {
     evs = (await api.atividade(20)) || [];
   } catch (e) {
-    lista.append(el("p", { class: "sub", text: "Falha ao carregar: " + e.message }));
+    lista.append(el("p", { class: "sub", text: t("comum.falha_carregar", { erro: e.message }) }));
     return;
   }
   if (evs.length === 0) {
-    lista.append(el("p", { class: "sub", style: "margin:8px 0 0", text: "Sem atividade ainda." }));
+    lista.append(el("p", { class: "sub", style: "margin:8px 0 0", text: t("home.sem_atividade") }));
     return;
   }
   for (const ev of evs) lista.append(itemAtividade(ev));

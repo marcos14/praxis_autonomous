@@ -44,9 +44,9 @@ type configClassica struct {
 type Resultado struct {
 	Nome      string `json:"nome"`
 	ProjectID int64  `json:"project_id"`
-	Criado    bool   `json:"criado"`     // false = já existia (idempotência)
-	Fases     int    `json:"fases"`      // fases pendentes importadas para a demanda
-	DemandID  int64  `json:"demand_id"`  // 0 se nenhuma demanda foi criada
+	Criado    bool   `json:"criado"`    // false = já existia (idempotência)
+	Fases     int    `json:"fases"`     // fases pendentes importadas para a demanda
+	DemandID  int64  `json:"demand_id"` // 0 se nenhuma demanda foi criada
 }
 
 // Store é o mínimo do banco que o importador usa.

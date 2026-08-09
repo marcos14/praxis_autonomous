@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"github.com/marcos14/praxis-autonomous/internal/pipeline"
 )
 
@@ -97,8 +98,8 @@ func (e *ExecutorDemanda) Executar(ctx context.Context, item Item, conta string)
 		// fases explicam a pausa); escrever aqui acendia o badge de erro da UI.
 		e.marcarDemanda(ctx, dem, db.StatusDemandaPausada, "")
 		e.registrarEvento(ctx, dem, "aguardando_humano",
-			"Praxis: demanda aguardando intervenção humana",
-			"A próxima fase exige um humano (requer_humano) e não pode ser executada automaticamente.")
+			i18n.TI("evento.aguardando_humano.titulo"),
+			i18n.TI("evento.aguardando_humano.detalhe"))
 		return Desfecho{Concluido: true}, nil
 	case filaProntaParaRodar:
 		// segue abaixo.
@@ -320,8 +321,9 @@ func (e *ExecutorDemanda) enfileirarFasesNovas(ctx context.Context, dem db.Deman
 			continue
 		}
 		e.registrarEvento(ctx, dem, "fase_nova",
-			"Praxis: fase nova sugerida pelo revisor",
-			codigo+": "+strings.TrimSpace(nv.Titulo))
+			i18n.TI("evento.fase_nova.titulo"),
+			i18n.TI("evento.fase_nova.detalhe",
+				"codigo", codigo, "titulo", strings.TrimSpace(nv.Titulo)))
 	}
 }
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"net/http"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -15,7 +16,7 @@ func (s *Servidor) handleListarPerguntas(w http.ResponseWriter, r *http.Request)
 	}
 	perguntas, err := s.banco.ListarPerguntas(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, perguntas)
@@ -41,8 +42,7 @@ func (s *Servidor) handleResponderPerguntas(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if dem.Status != db.StatusDemandaAguardandoRespostas {
-		responderErro(w, http.StatusConflict, "estado_invalido",
-			"só é possível responder uma demanda aguardando respostas (status atual: "+dem.Status+")")
+		erroT(w, r, http.StatusConflict, "estado_invalido", "erro.respostas_estado_invalido", "status", dem.Status)
 		return
 	}
 
@@ -53,7 +53,7 @@ func (s *Servidor) handleResponderPerguntas(w http.ResponseWriter, r *http.Reque
 
 	if len(req.Respostas) > 0 {
 		if _, err := s.banco.ResponderPerguntas(r.Context(), dem.ID, req.Respostas); err != nil {
-			s.responderErroDemanda(w, err)
+			s.responderErroDemanda(w, r, err)
 			return
 		}
 	}
@@ -61,7 +61,7 @@ func (s *Servidor) handleResponderPerguntas(w http.ResponseWriter, r *http.Reque
 	dem.Status = db.StatusDemandaPlanejando
 	atual, err := s.banco.AtualizarDemanda(r.Context(), dem)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
@@ -69,8 +69,8 @@ func (s *Servidor) handleResponderPerguntas(w http.ResponseWriter, r *http.Reque
 	pid, did := atual.ProjectID, atual.ID
 	ev := db.Evento{
 		Tipo:    "respostas_recebidas",
-		Titulo:  "Praxis: respostas recebidas",
-		Detalhe: "Usuário respondeu as perguntas; demanda encaminhada ao planejador.",
+		Titulo:  i18n.TI("evento.respostas_recebidas.titulo"),
+		Detalhe: i18n.TI("evento.respostas_recebidas.detalhe"),
 	}
 	if pid > 0 {
 		ev.ProjectID = &pid

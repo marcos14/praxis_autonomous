@@ -1,8 +1,9 @@
-// Tela "Grupos de usuários" — cada grupo define o motor/modelo usados nas
+// Tela t("projetos.grupos_usuarios") — cada grupo define o motor/modelo usados nas
 // CONSULTAS dos seus membros (rigor menor que análise/execução: a consulta só
 // explica comportamento). O vínculo usuário↔grupo é feito na tela Usuários.
 
 import { api } from "./api.js";
+import { t } from "./i18n.js";
 import { el, limpar, toast, bannerErro } from "./ui.js";
 
 let grupos = [];
@@ -16,7 +17,7 @@ export async function montarGruposUsuarios() {
       api.listarMotores().catch(() => []),
     ]);
   } catch (e) {
-    bannerErro("Falha ao carregar grupos de usuários: " + e.message);
+    bannerErro(t("gusuarios.falha_carregar", { erro: e.message }));
     return;
   }
   bannerErro("");
@@ -32,11 +33,11 @@ export async function montarGruposUsuarios() {
 function limparPainel() {
   selID = null;
   limpar(document.getElementById("painel-gusuario"))
-    .append(el("p", { class: "sub", style: "margin:0", text: "Selecione um grupo à esquerda ou crie um novo." }));
+    .append(el("p", { class: "sub", style: "margin:0", text: t("view.gusuarios.selecione") }));
 }
 
 function nomeMotor(engineID) {
-  if (engineID == null) return "motor padrão";
+  if (engineID == null) return t("gusuarios.motor_padrao");
   const m = motores.find((x) => x.id === engineID);
   return m ? m.nome : "motor #" + engineID;
 }
@@ -44,18 +45,18 @@ function nomeMotor(engineID) {
 function renderLista() {
   const lista = limpar(document.getElementById("lista-gusuarios"));
   if ((grupos || []).length === 0) {
-    lista.append(el("p", { class: "sub", text: "Nenhum grupo de usuários ainda." }));
+    lista.append(el("p", { class: "sub", text: t("gusuarios.nenhum") }));
     return;
   }
   for (const g of grupos) {
-    const detalhe = [nomeMotor(g.engine_id), g.modelo ? "modelo " + g.modelo : "modelo do motor"].join(" · ");
+    const detalhe = [nomeMotor(g.engine_id), g.modelo ? "modelo " + g.modelo : t("gusuarios.modelo_do_motor")].join(" · ");
     lista.append(el("div", {
       class: "list-item" + (g.id === selID ? " sel" : ""),
       onclick: () => { selID = g.id; renderLista(); renderForm(g); },
     },
       el("b", { text: g.nome }),
       el("div", { class: "path", text: detalhe }),
-      el("div", { class: "hint", text: (g.usuarios || []).join(", ") || "sem usuários vinculados" }),
+      el("div", { class: "hint", text: (g.usuarios || []).join(", ") || t("gusuarios.sem_usuarios") }),
     ));
   }
 }
@@ -64,20 +65,20 @@ function renderForm(g) {
   const painel = limpar(document.getElementById("painel-gusuario"));
   const criando = g == null;
   if (criando) selID = null;
-  painel.append(el("h3", {}, criando ? "Novo grupo de usuários" : `${g.nome} — grupo`));
+  painel.append(el("h3", {}, criando ? t("gusuarios.novo") : `${g.nome} — grupo`));
 
   const nome = el("input", { value: g ? g.nome : "" });
-  const descricao = el("textarea", { rows: "2", placeholder: "ex.: time de suporte N1" }, g ? g.descricao : "");
+  const descricao = el("textarea", { rows: "2", placeholder: t("gusuarios.ph_descricao") }, g ? g.descricao : "");
 
   const selMotor = el("select", {},
-    el("option", { value: "" }, "motor padrão (ordem de fallback)"),
+    el("option", { value: "" }, t("gusuarios.motor_padrao_opcao")),
     ...motores.map((m) => el("option", { value: m.id, selected: g && g.engine_id === m.id }, m.nome)),
   );
-  const modelo = el("input", { value: g ? g.modelo : "", placeholder: "vazio = modelo de consultas do motor" });
+  const modelo = el("input", { value: g ? g.modelo : "", placeholder: t("gusuarios.ph_modelo") });
 
-  const btnSalvar = el("button", { class: "btn", text: criando ? "Criar grupo" : "Salvar" });
+  const btnSalvar = el("button", { class: "btn", text: criando ? t("grupos.criar") : t("configx.salvar") });
   btnSalvar.onclick = async () => {
-    if (!nome.value.trim()) { bannerErro("Nome do grupo é obrigatório."); return; }
+    if (!nome.value.trim()) { bannerErro(t("grupos.nome_obrigatorio")); return; }
     bannerErro("");
     btnSalvar.disabled = true;
     const corpo = {
@@ -90,10 +91,10 @@ function renderForm(g) {
       if (criando) {
         const criado = await api.criarGrupoUsuarios(corpo);
         selID = criado.id;
-        toast("Grupo criado.", "ok");
+        toast(t("grupos.criado"), "ok");
       } else {
         await api.atualizarGrupoUsuarios(g.id, corpo);
-        toast("Grupo salvo.", "ok");
+        toast(t("grupos.salvo"), "ok");
       }
       await montarGruposUsuarios();
     } catch (e) {
@@ -105,11 +106,11 @@ function renderForm(g) {
 
   const acoes = el("div", { class: "acoes" }, btnSalvar);
   if (!criando) {
-    acoes.append(el("button", { class: "btn ghost", text: "Excluir", onclick: async () => {
+    acoes.append(el("button", { class: "btn ghost", text: t("consultas.excluir"), onclick: async () => {
       if (!confirm(`Excluir o grupo "${g.nome}"? Os usuários vinculados voltam ao motor padrão das consultas.`)) return;
       try {
         await api.excluirGrupoUsuarios(g.id);
-        toast("Grupo excluído.", "ok");
+        toast(t("grupos.excluido"), "ok");
         limparPainel();
         await montarGruposUsuarios();
       } catch (e) {
@@ -119,13 +120,13 @@ function renderForm(g) {
   }
 
   painel.append(el("div", { class: "form" },
-    el("div", {}, el("label", {}, "Nome"), nome),
-    el("div", {}, el("label", {}, "Descrição ", el("span", { class: "opt" }, "(opcional)")), descricao),
+    el("div", {}, el("label", {}, t("motores.nome")), nome),
+    el("div", {}, el("label", {}, "Descrição ", el("span", { class: "opt" }, t("configx.opcional"))), descricao),
     el("div", { class: "row" },
-      el("div", {}, el("label", {}, "Motor das consultas"), selMotor),
-      el("div", {}, el("label", {}, "Modelo das consultas"), modelo),
+      el("div", {}, el("label", {}, t("gusuarios.motor_consultas")), selMotor),
+      el("div", {}, el("label", {}, t("gusuarios.modelo_consultas")), modelo),
     ),
-    el("div", { class: "hint", text: "Precedência do modelo: modelo do grupo → modelo de consultas do motor → modelo de análise. Membros são vinculados na tela Usuários." }),
+    el("div", { class: "hint", text: t("gusuarios.hint_precedencia") }),
     acoes,
   ));
 }

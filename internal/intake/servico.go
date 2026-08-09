@@ -3,6 +3,7 @@ package intake
 import (
 	"context"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"sync"
 	"time"
 
@@ -138,6 +139,7 @@ func (s *Servico) montarPlanejador(ctx context.Context, demandaID int64) (*Plane
 
 	return &Planejador{
 		Store:      s.store,
+		Idioma:     s.store.IdiomaDoUsuario(ctx, dem.CriadoPor),
 		Motor:      motorNome,
 		Modelo:     modelo,
 		Esforco:    esforco,
@@ -178,6 +180,7 @@ func (s *Servico) montarAnalista(ctx context.Context, demandaID int64) (*Analist
 
 	return &Analista{
 		Store:      s.store,
+		Idioma:     s.store.IdiomaDoUsuario(ctx, dem.CriadoPor),
 		Motor:      motorNome,
 		Modelo:     modelo,
 		Esforco:    esforco,
@@ -211,7 +214,7 @@ func (s *Servico) prepararRepo(ctx context.Context, dem db.Demanda, proj db.Proj
 	pid, did := proj.ID, dem.ID
 	_, _ = s.store.RegistrarEvento(ctx, db.Evento{
 		ProjectID: &pid, DemandID: &did, Tipo: "aviso",
-		Titulo:  "Praxis: repositório não pôde ser totalmente atualizado",
+		Titulo:  i18n.TI("evento.repo_nao_atualizado"),
 		Detalhe: aviso,
 	})
 }

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,7 +112,7 @@ func (r *Runner) Preparar(ctx context.Context, dem db.Demanda) (db.Demanda, erro
 		if err := r.Git.Fetch(repo, base); err != nil {
 			// resiliencia: sem a main remota atualizada, parte da main local.
 			r.registrarEvento(ctx, dem, "aviso",
-				"Praxis: fetch da main falhou — usando main local",
+				i18n.TI("evento.fetch_main_falhou"),
 				fmt.Sprintf("Projeto %s (%s): %v", proj.Nome, base, err))
 		} else {
 			base = "origin/" + base

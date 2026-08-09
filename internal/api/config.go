@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 )
 
 // registrarRotasConfig registra as rotas de config em camadas: global,
@@ -23,7 +25,7 @@ func (s *Servidor) registrarRotasConfig(mux *http.ServeMux) {
 func (s *Servidor) handleObterConfigGlobal(w http.ResponseWriter, r *http.Request) {
 	cfg, err := s.banco.ObterConfigGlobal(r.Context())
 	if err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, cfg)
@@ -37,12 +39,19 @@ func (s *Servidor) handleDefinirConfigGlobal(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := s.banco.DefinirConfigGlobal(r.Context(), entradas); err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
+	// i18n: a chave global `idioma` alimenta o idioma da instância (eventos e
+	// notificações) — aplica sem reiniciar; ausente/inválida volta ao padrão.
+	var idioma string
+	if raw, ok := entradas["idioma"]; ok {
+		_ = json.Unmarshal(raw, &idioma)
+	}
+	i18n.DefinirIdiomaInstancia(idioma)
 	cfg, err := s.banco.ObterConfigGlobal(r.Context())
 	if err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, cfg)
@@ -56,12 +65,12 @@ func (s *Servidor) handleObterConfigProjeto(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	cfg, err := s.banco.ObterConfigProjeto(r.Context(), id)
 	if err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, cfg)
@@ -75,7 +84,7 @@ func (s *Servidor) handleDefinirConfigProjeto(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	entradas, ok := lerConfigBody(w, r)
@@ -83,12 +92,12 @@ func (s *Servidor) handleDefinirConfigProjeto(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := s.banco.DefinirConfigProjeto(r.Context(), id, entradas); err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	cfg, err := s.banco.ObterConfigProjeto(r.Context(), id)
 	if err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, cfg)
@@ -102,12 +111,12 @@ func (s *Servidor) handleConfigEfetiva(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	efetiva, err := s.banco.ConfigEfetiva(r.Context(), id)
 	if err != nil {
-		s.responderErroConfig(w, err)
+		s.responderErroConfig(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, efetiva)
@@ -140,6 +149,6 @@ func lerConfigBody(w http.ResponseWriter, r *http.Request) (map[string]json.RawM
 }
 
 // responderErroConfig traduz os erros do store de config para respostas HTTP.
-func (s *Servidor) responderErroConfig(w http.ResponseWriter, err error) {
-	s.responderErroProjeto(w, err)
+func (s *Servidor) responderErroConfig(w http.ResponseWriter, r *http.Request, err error) {
+	s.responderErroProjeto(w, r, err)
 }

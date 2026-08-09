@@ -34,6 +34,9 @@ type Usuario struct {
 	CriadoEm     string  `json:"criado_em"`
 	AtualizadoEm string  `json:"atualizado_em"`
 	Papeis       []Papel `json:"papeis"`
+	// Idioma preferido da UI (i18n): pt-BR, en, es ou zh-CN. Vazio = sem
+	// preferência (a UI decide pelo navegador/instância).
+	Idioma string `json:"idioma"`
 	// Grupo de usuários (feature de consultas): define o motor/modelo das
 	// consultas do usuário. Nulo = sem grupo (motor padrão).
 	GrupoID   *int64 `json:"grupo_id"`
@@ -100,7 +103,7 @@ func (d *DB) CriarUsuario(ctx context.Context, nome, email, senha string, roleID
 // ErrNaoEncontrado. Não carrega o hash da senha.
 func (d *DB) ObterUsuario(ctx context.Context, id int64) (Usuario, error) {
 	u, err := scanUsuario(d.Leitor.QueryRowContext(ctx,
-		`SELECT id, nome, email, ativo, criado_em, atualizado_em FROM users WHERE id = ?`, id))
+		`SELECT id, nome, email, ativo, criado_em, atualizado_em, idioma FROM users WHERE id = ?`, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Usuario{}, ErrNaoEncontrado
@@ -126,7 +129,7 @@ func (d *DB) ObterUsuario(ctx context.Context, id int64) (Usuario, error) {
 func (d *DB) obterUsuarioPorEmail(ctx context.Context, email string) (Usuario, error) {
 	email = normalizarEmail(email)
 	u, err := scanUsuarioComHash(d.Leitor.QueryRowContext(ctx,
-		`SELECT id, nome, email, ativo, criado_em, atualizado_em, senha_hash FROM users WHERE email = ?`, email))
+		`SELECT id, nome, email, ativo, criado_em, atualizado_em, idioma, senha_hash FROM users WHERE email = ?`, email))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Usuario{}, ErrNaoEncontrado
@@ -170,7 +173,7 @@ func (d *DB) IDUsuarioPorEmail(ctx context.Context, email string) (int64, error)
 // papéis. Slice não-nil, sem hash.
 func (d *DB) ListarUsuarios(ctx context.Context) ([]Usuario, error) {
 	rows, err := d.Leitor.QueryContext(ctx,
-		`SELECT id, nome, email, ativo, criado_em, atualizado_em FROM users ORDER BY id`)
+		`SELECT id, nome, email, ativo, criado_em, atualizado_em, idioma FROM users ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("listar usuários: %w", err)
 	}
@@ -255,6 +258,39 @@ func (d *DB) DefinirSenha(ctx context.Context, id int64, nova string) error {
 		return ErrNaoEncontrado
 	}
 	return nil
+}
+
+// DefinirIdiomaUsuario grava o idioma preferido da UI do usuário id (string já
+// normalizada pela app; vazia = limpar a preferência). Inexistente →
+// ErrNaoEncontrado.
+func (d *DB) DefinirIdiomaUsuario(ctx context.Context, id int64, idioma string) error {
+	res, err := d.Escritor.ExecContext(ctx,
+		`UPDATE users SET idioma = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		idioma, id)
+	if err != nil {
+		return fmt.Errorf("definir idioma: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNaoEncontrado
+	}
+	return nil
+}
+
+// IdiomaDoUsuario devolve a preferência de idioma do usuário id (string vazia
+// quando não há preferência, o id é nulo ou o usuário não existe mais). É o que
+// decide o idioma de saída da IA nas conversas (consultas, planejamentos e o
+// intake da demanda); erro de leitura degrada para "" — o chamador cai no idioma
+// da instância, nunca falha a operação por causa de idioma.
+func (d *DB) IdiomaDoUsuario(ctx context.Context, id *int64) string {
+	if d == nil || id == nil || *id <= 0 {
+		return ""
+	}
+	var idioma string
+	if err := d.Leitor.QueryRowContext(ctx,
+		`SELECT idioma FROM users WHERE id = ?`, *id).Scan(&idioma); err != nil {
+		return ""
+	}
+	return idioma
 }
 
 // ExcluirUsuario remove o usuário id (CASCADE limpa user_roles). Inexistente →
@@ -360,7 +396,7 @@ func scanUsuario(sc interface{ Scan(...any) error }) (Usuario, error) {
 		u     Usuario
 		ativo int
 	)
-	if err := sc.Scan(&u.ID, &u.Nome, &u.Email, &ativo, &u.CriadoEm, &u.AtualizadoEm); err != nil {
+	if err := sc.Scan(&u.ID, &u.Nome, &u.Email, &ativo, &u.CriadoEm, &u.AtualizadoEm, &u.Idioma); err != nil {
 		return Usuario{}, err
 	}
 	u.Ativo = ativo != 0
@@ -375,7 +411,7 @@ func scanUsuarioComHash(sc interface{ Scan(...any) error }) (Usuario, error) {
 		u     Usuario
 		ativo int
 	)
-	if err := sc.Scan(&u.ID, &u.Nome, &u.Email, &ativo, &u.CriadoEm, &u.AtualizadoEm, &u.senhaHash); err != nil {
+	if err := sc.Scan(&u.ID, &u.Nome, &u.Email, &ativo, &u.CriadoEm, &u.AtualizadoEm, &u.Idioma, &u.senhaHash); err != nil {
 		return Usuario{}, err
 	}
 	u.Ativo = ativo != 0

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"strings"
 	"time"
 
@@ -61,6 +62,7 @@ type Planejador struct {
 	AddDirs    []string // diretórios extras liberados ao harness (só leitura)
 	BudgetUSD  float64  // teto de custo do run (0 = sem teto)
 	TimeoutMin int      // timeout do run
+	Idioma     string   // idioma de saída da IA (preferência do criador; vazio = idioma da instância)
 
 	// Seams de teste (nil em produção):
 	Selecionar func(nome string) (motor.Motor, error) // default: motor.Selecionar
@@ -91,7 +93,7 @@ func (p *Planejador) Planejar(ctx context.Context, demandaID int64) error {
 		return err
 	}
 	if strings.TrimSpace(prd) == "" {
-		return p.falhar(ctx, dem, "planejamento sem PRD: a demanda não tem mensagem do usuário para planejar")
+		return p.falhar(ctx, dem, i18n.TI("evento.planejamento_sem_prd"))
 	}
 	qa, err := p.montarQA(ctx, demandaID)
 	if err != nil {
@@ -100,7 +102,7 @@ func (p *Planejador) Planejar(ctx context.Context, demandaID int64) error {
 
 	// planejando (garante o estado mesmo vindo de aguardando_aprovacao/replanejar)
 	p.marcarStatus(ctx, &dem, db.StatusDemandaPlanejando)
-	p.registrarEvento(dem, "planejamento_iniciado", "Praxis: planejamento iniciado",
+	p.registrarEvento(dem, "planejamento_iniciado", i18n.TI("evento.planejamento_iniciado"),
 		fmt.Sprintf("Planejador (%s%s), modo somente leitura.", p.Motor, sufixoModelo(p.Modelo)))
 
 	res, motorUsado, custo, err := p.rodar(ctx, dem, prd, qa)
@@ -108,7 +110,7 @@ func (p *Planejador) Planejar(ctx context.Context, demandaID int64) error {
 		return p.falhar(ctx, dem, fmt.Sprintf("planejamento falhou: %v", err))
 	}
 	if res.IsError {
-		return p.falhar(ctx, dem, motivoRunErro("planejamento", res))
+		return p.falhar(ctx, dem, motivoRunErro(i18n.TI("evento.etapa_planejamento"), res))
 	}
 
 	var saida SaidaPlanejador
@@ -121,7 +123,7 @@ func (p *Planejador) Planejar(ctx context.Context, demandaID int64) error {
 		return p.falhar(ctx, dem, "planejamento inválido: "+msg)
 	}
 	if len(fases) == 0 {
-		return p.falhar(ctx, dem, "o planejador não retornou nenhuma fase")
+		return p.falhar(ctx, dem, i18n.TI("evento.planejamento_sem_fases"))
 	}
 
 	if _, err := p.Store.SubstituirFases(ctx, demandaID, fases); err != nil {
@@ -138,7 +140,7 @@ func (p *Planejador) Planejar(ctx context.Context, demandaID int64) error {
 	dem = atual
 
 	p.registrarFalaPlanejador(ctx, dem, saida, motorUsado, custo, len(fases))
-	p.registrarEvento(dem, "planejamento_concluido", "Praxis: plano gerado",
+	p.registrarEvento(dem, "planejamento_concluido", i18n.TI("evento.planejamento_concluido"),
 		fmt.Sprintf("%d fase(s) · custo US$ %.2f · aguardando aprovação", len(fases), custo))
 	return nil
 }
@@ -152,7 +154,7 @@ func montarFasesDaSaida(brutas []FasePlanejada) ([]db.Fase, string) {
 	for _, fp := range brutas {
 		codigo := strings.TrimSpace(fp.Codigo)
 		if codigo == "" {
-			return nil, "toda fase precisa de um código"
+			return nil, i18n.TI("evento.fase_sem_codigo")
 		}
 		if strings.TrimSpace(fp.Titulo) == "" {
 			return nil, "a fase " + codigo + " precisa de um título"
@@ -205,7 +207,7 @@ func (p *Planejador) rodar(ctx context.Context, dem db.Demanda, prd, qa string) 
 	}
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: p.Dir, DirLogs: p.DirLogs,
-		Prompt: renderPrompt(tpl, map[string]string{"PRD": prd, "QA": qa}),
+		Prompt: renderPrompt(tpl, map[string]string{"PRD": prd, "QA": qa, "IDIOMA": i18n.NomeIdiomaOuInstancia(p.Idioma)}),
 		Modelo: p.Modelo, Esforco: p.Esforco, PerfilDir: p.ConfigDir,
 		AddDirs: p.AddDirs, BudgetUSD: p.BudgetUSD, TimeoutMin: p.TimeoutMin,
 		Schema: SchemaPlanejador, SomenteLeitura: true, ProibirCommit: true,
@@ -232,7 +234,7 @@ func (p *Planejador) rodar(ctx context.Context, dem db.Demanda, prd, qa string) 
 		exec.IsError = true
 	}
 	if _, err := p.Store.AtualizarExecucao(ctx, exec); err != nil {
-		p.registrarEvento(dem, "aviso", "Praxis: falha ao registrar execução do planejador", err.Error())
+		p.registrarEvento(dem, "aviso", i18n.TI("evento.falha_registrar_execucao_planejador"), err.Error())
 	}
 	if runErr != nil {
 		return res, m.Nome(), custo, runErr
@@ -301,7 +303,7 @@ func (p *Planejador) registrarFalaPlanejador(ctx context.Context, dem db.Demanda
 	if _, err := p.Store.CriarMensagemChat(ctx, db.MensagemChat{
 		DemandID: dem.ID, Papel: db.PapelPlanejador, Conteudo: texto, Meta: meta,
 	}); err != nil {
-		p.registrarEvento(dem, "aviso", "Praxis: falha ao registrar fala do planejador", err.Error())
+		p.registrarEvento(dem, "aviso", i18n.TI("evento.falha_registrar_fala_planejador"), err.Error())
 	}
 }
 
@@ -310,7 +312,7 @@ func (p *Planejador) registrarFalaPlanejador(ctx context.Context, dem db.Demanda
 func (p *Planejador) falhar(ctx context.Context, dem db.Demanda, motivo string) error {
 	dem.Erro = motivo
 	p.marcarStatus(ctx, &dem, db.StatusDemandaFalhou)
-	p.registrarEvento(dem, "planejamento_falhou", "Praxis: planejamento falhou", motivo)
+	p.registrarEvento(dem, "planejamento_falhou", i18n.TI("evento.planejamento_falhou"), motivo)
 	return nil
 }
 
@@ -319,7 +321,7 @@ func (p *Planejador) marcarStatus(ctx context.Context, dem *db.Demanda, status s
 	dem.Status = status
 	atual, err := p.Store.AtualizarDemanda(ctx, *dem)
 	if err != nil {
-		p.registrarEvento(*dem, "aviso", "Praxis: falha ao atualizar status da demanda", err.Error())
+		p.registrarEvento(*dem, "aviso", i18n.TI("evento.falha_atualizar_status_demanda"), err.Error())
 		return
 	}
 	*dem = atual

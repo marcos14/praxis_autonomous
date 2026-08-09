@@ -222,10 +222,36 @@ Recognized keys (all inherit from global when not set on the project):
 | `max_fases_novas` | Cap of discovered phases inserted per round. |
 | `budget_demanda_usd` | Cost cap per demand. |
 | `gates` | Validation commands (one per line), e.g. `go build ./...`, `go test ./...`. A phase only completes with all of them green. |
+| `idioma` | The **instance** language (`pt-BR`, `en`, `es`, `zh-CN`; default `pt-BR`). Applies to whatever has no user in context: stored events, channel notifications, and the repository overview. Global only; takes effect without a restart. |
 
 > The **gates** run in the target repository, so use that project's commands
 > (build/lint/test). Without gates configured, a phase relies only on the harness's
 > self-verification.
+
+### 5.3 Languages (i18n)
+
+Praxis speaks **Portuguese, English, Spanish, and Simplified Chinese**. The choice
+is per person and covers the whole interface, the built-in manual, and the
+language the AI answers in.
+
+- **User preference** — the selector in the menu footer (and on the login screen)
+  stores the language on your user; it follows you to any device.
+- **Before login** — the browser language (`Accept-Language`) applies, falling
+  back to `pt-BR`.
+- **Instance language** — the global `idioma` key (§5.2) decides what has no
+  owner: stored events, notifications to the team's channels, and the repository
+  overview.
+- **AI answers** — queries, plannings, and the analyst's questions come out in the
+  language of **whoever created** the conversation; through the API with no user,
+  in the instance language. Code, comments, and commit messages follow the
+  repository's language, not the user's.
+- **API** — the UI sends the `X-Praxis-Idioma` header; without it, the server
+  falls back to `Accept-Language`. The `erro.codigo` field is stable and does
+  **not** change with the language — only `erro.mensagem` is translated. To store
+  the preference programmatically: `PUT /api/v1/auth/idioma` with
+  `{"idioma":"en"}`.
+- **Manual** — each section falls back to the pt-BR text while that page has no
+  translation, so navigation never has holes.
 
 ---
 

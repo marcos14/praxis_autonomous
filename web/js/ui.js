@@ -1,4 +1,6 @@
-// Helpers de DOM e feedback ao usuário — sem dependências externas.
+// Helpers de DOM e feedback ao usuário — única dependência interna: i18n (textos).
+
+import { t } from "./i18n.js";
 
 // el cria um elemento com atributos e filhos. Atributos especiais: `class`,
 // `html` (innerHTML), `text` (textContent) e handlers `onX` (ex.: onclick).
@@ -41,7 +43,12 @@ export function toast(msg, tipo = "ok") {
 // innerHTML), então é seguro contra injeção mesmo com conteúdo não confiável.
 export function renderMarkdown(md) {
   const nos = [];
-  const linhas = String(md || "").split("\n");
+  // Normaliza CRLF/CR para LF antes de qualquer coisa: o \r sobrevive ao split
+  // por "\n" e envenena os padrões ancorados em $ (um "## Título\r" deixa de
+  // casar como título e cai no ramo de parágrafo, que então não consome nada).
+  // Chega conteúdo com CRLF de todo lado — arquivos versionados em Windows e,
+  // sobretudo, PRDs colados pelo usuário.
+  const linhas = String(md || "").replace(/\r\n?/g, "\n").split("\n");
   let i = 0;
   while (i < linhas.length) {
     const linha = linhas[i];
@@ -125,6 +132,13 @@ export function renderMarkdown(md) {
            !RE_ITEM.test(linhas[i]) && !/^\s*>/.test(linhas[i]) &&
            !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(linhas[i]) &&
            !(linhas[i].includes("|") && ehSepTabela(linhas[i + 1]))) {
+      buf.push(linhas[i]);
+      i++;
+    }
+    // Rede de segurança: se nenhum ramo consumiu a linha, o buf sai vazio e o
+    // laço externo reprocessaria a MESMA linha para sempre. Trata a linha como
+    // texto e avança — conteúdo estranho vira parágrafo, nunca trava a tela.
+    if (buf.length === 0) {
       buf.push(linhas[i]);
       i++;
     }
@@ -283,7 +297,7 @@ export function mdEditor({ placeholder = "", valor = "", rows = 10, abrirEmPrevi
 
   function inserirLink() {
     const i = ta.selectionStart, f = ta.selectionEnd;
-    const sel = ta.value.slice(i, f) || "texto";
+    const sel = ta.value.slice(i, f) || t("ui.md_ph_texto");
     ta.setRangeText(`[${sel}](https://)`, i, f);
     const u = i + sel.length + 3; // depois de "[sel]("
     ta.setSelectionRange(u, u + "https://".length);
@@ -292,27 +306,28 @@ export function mdEditor({ placeholder = "", valor = "", rows = 10, abrirEmPrevi
 
   function codigo() {
     const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd);
-    if (sel.includes("\n")) envolver("```\n", "\n```", "código");
-    else envolver("`", "`", "código");
+    if (sel.includes("\n")) envolver("```\n", "\n```", t("ui.md_ph_codigo"));
+    else envolver("`", "`", t("ui.md_ph_codigo"));
   }
 
   const FERRAMENTAS = [
-    ["B", "Negrito (Ctrl+B)", () => envolver("**", "**", "negrito")],
-    ["I", "Itálico (Ctrl+I)", () => envolver("*", "*", "itálico")],
-    ["<>", "Código", codigo],
-    ["H", "Título", () => prefixarLinhas("## ")],
-    ["•", "Lista", () => prefixarLinhas("- ")],
-    ["1.", "Lista numerada", () => prefixarLinhas((k) => `${k + 1}. `)],
-    ["❝", "Citação", () => prefixarLinhas("> ")],
-    ["🔗", "Link", inserirLink],
-    ["⊞", "Tabela", () => inserirBloco("| Coluna | Coluna |\n|---|---|\n|  |  |")],
+    ["B", t("ui.md_dica_negrito"), () => envolver("**", "**", t("ui.md_ph_negrito"))],
+    ["I", t("ui.md_dica_italico"), () => envolver("*", "*", t("ui.md_ph_italico"))],
+    ["<>", t("ui.md_dica_codigo"), codigo],
+    ["H", t("ui.md_dica_titulo"), () => prefixarLinhas("## ")],
+    ["•", t("ui.md_dica_lista"), () => prefixarLinhas("- ")],
+    ["1.", t("ui.md_dica_lista_num"), () => prefixarLinhas((k) => `${k + 1}. `)],
+    ["❝", t("ui.md_dica_citacao"), () => prefixarLinhas("> ")],
+    ["🔗", t("ui.md_dica_link"), inserirLink],
+    ["⊞", t("ui.md_dica_tabela"), () =>
+      inserirBloco(`| ${t("ui.md_coluna")} | ${t("ui.md_coluna")} |\n|---|---|\n|  |  |`)],
   ];
   const tools = el("div", { class: "md-editor-tools" },
     ...FERRAMENTAS.map(([rotulo, dica, acao]) =>
       el("button", { type: "button", title: dica, text: rotulo, onclick: acao })));
 
-  const tabEscrever = el("button", { type: "button", class: "active", text: "Escrever" });
-  const tabVisualizar = el("button", { type: "button", text: "Visualizar" });
+  const tabEscrever = el("button", { type: "button", class: "active", text: t("ui.md_tab_escrever") });
+  const tabVisualizar = el("button", { type: "button", text: t("ui.md_tab_visualizar") });
   function mostrar(edicao) {
     tabEscrever.classList.toggle("active", edicao);
     tabVisualizar.classList.toggle("active", !edicao);
@@ -325,7 +340,7 @@ export function mdEditor({ placeholder = "", valor = "", rows = 10, abrirEmPrevi
     }
     limpar(preview);
     if (ta.value.trim()) preview.append(...renderMarkdown(ta.value));
-    else preview.append(el("p", { class: "vazio", text: "Nada para visualizar ainda." }));
+    else preview.append(el("p", { class: "vazio", text: t("ui.md_sem_preview") }));
   }
   tabEscrever.addEventListener("click", () => mostrar(true));
   tabVisualizar.addEventListener("click", () => mostrar(false));
@@ -333,8 +348,8 @@ export function mdEditor({ placeholder = "", valor = "", rows = 10, abrirEmPrevi
   ta.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     const k = e.key.toLowerCase();
-    if (k === "b") { e.preventDefault(); envolver("**", "**", "negrito"); }
-    else if (k === "i") { e.preventDefault(); envolver("*", "*", "itálico"); }
+    if (k === "b") { e.preventDefault(); envolver("**", "**", t("ui.md_ph_negrito")); }
+    else if (k === "i") { e.preventDefault(); envolver("*", "*", t("ui.md_ph_italico")); }
   });
 
   const no = el("div", { class: "md-editor" },

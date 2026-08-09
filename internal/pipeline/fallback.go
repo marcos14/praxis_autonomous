@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"strings"
 	"time"
 
@@ -125,7 +126,7 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 			}
 			return nil, motorAtual, "", &ErroFranquia{
 				Motor:     motorAtual,
-				Detalhe:   "todos os perfis disponiveis esgotaram a franquia",
+				Detalhe:   i18n.TI("evento.motivo_perfis_esgotados"),
 				RetomarEm: c.agora().Add(EsperaResetFranquia),
 			}
 		}
@@ -144,7 +145,7 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 		if res.FalhaAutenticacao {
 			detalhe = strings.TrimSpace(res.Resultado)
 			if detalhe == "" {
-				detalhe = "conta deslogada/credencial invalida"
+				detalhe = i18n.TI("evento.motivo_conta_deslogada")
 			}
 			c.registrarEvento("conta_deslogada",
 				fmt.Sprintf("Praxis: conta %s:%s deslogada", motorAtual, rotuloConta(perfil.Conta)),
@@ -153,7 +154,7 @@ func (c *ContextoExec) rodarComFallback(operacao, motorPrimario string, op motor
 		} else {
 			detalhe = strings.TrimSpace(res.DetalheLimite)
 			if detalhe == "" {
-				detalhe = "limite de sessao/uso atingido"
+				detalhe = i18n.TI("evento.motivo_limite_sessao")
 			}
 		}
 
@@ -222,7 +223,7 @@ func (c *ContextoExec) proximoMotorLivre(atual string, estado *EstadoFallback) s
 // usa o perfil default do CLI) nos eventos de troca.
 func rotuloConta(conta string) string {
 	if strings.TrimSpace(conta) == "" {
-		return "(perfil padrao)"
+		return i18n.TI("evento.perfil_padrao")
 	}
 	return conta
 }
@@ -231,7 +232,7 @@ func rotuloConta(conta string) string {
 // eventos de conta deslogada.
 func rotuloDir(dir string) string {
 	if strings.TrimSpace(dir) == "" {
-		return "perfil default do CLI"
+		return i18n.TI("evento.perfil_default_cli")
 	}
 	return dir
 }

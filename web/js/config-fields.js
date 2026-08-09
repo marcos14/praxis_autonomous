@@ -9,24 +9,30 @@
 //   "text"   → JSON string
 //   "lines"  → JSON array de strings (uma por linha no textarea; vazias ignoradas)
 
+import { t } from "./i18n.js";
+
 // CAMPOS é a lista canônica de chaves conhecidas, na ordem de exibição.
 // `escopo` indica onde o campo aparece: "ambos" (global + override) ou "global".
+// Rótulos e hints vêm do catálogo i18n (chaves config.<chave> / .hint); as
+// chaves de config em si são contrato e não mudam com o idioma.
 export const CAMPOS = [
-  { chave: "motor_preferido", rotulo: "Motor preferido", tipo: "text", escopo: "ambos",
-    hint: "Nome do motor a tentar primeiro. Em branco, usa a ordem de prioridade dos motores." },
-  { chave: "execucoes_simultaneas", rotulo: "Execuções simultâneas", tipo: "number", escopo: "ambos",
-    hint: "Demandas executando ao mesmo tempo (global: máquina; projeto: neste projeto)." },
-  { chave: "gates_simultaneos", rotulo: "Gates simultâneos", tipo: "number", escopo: "global",
-    hint: "Builds/testes pesados rodando em paralelo — 1 evita saturar a máquina." },
-  { chave: "max_correcoes", rotulo: "Máx. correções por fase", tipo: "number", escopo: "ambos" },
-  { chave: "max_ciclos_revisao", rotulo: "Máx. ciclos de revisão", tipo: "number", escopo: "ambos" },
-  { chave: "max_fases_novas", rotulo: "Máx. fases novas por demanda", tipo: "number", escopo: "ambos",
-    hint: "Teto de fases que o agente pode criar ao descobrir trabalho fora do escopo." },
-  { chave: "budget_demanda_usd", rotulo: "Budget por demanda (US$)", tipo: "number", escopo: "ambos" },
-  { chave: "gates", rotulo: "Gates (validação determinística)", tipo: "lines", escopo: "ambos",
-    hint: "Um comando por linha. Executados após cada fase; a fase só conclui com todos verdes." },
-  { chave: "uso_intervalo_min", rotulo: "Verificação de franquia (min)", tipo: "number", escopo: "global",
-    hint: "De quanto em quanto tempo o Praxis consulta a franquia de cada perfil dos motores (padrão 5 minutos; mínimo 1). Vale sem reiniciar o serviço." },
+  { chave: "motor_preferido", rotulo: t("config.motor_preferido"), tipo: "text", escopo: "ambos",
+    hint: t("config.motor_preferido.hint") },
+  { chave: "execucoes_simultaneas", rotulo: t("config.execucoes_simultaneas"), tipo: "number", escopo: "ambos",
+    hint: t("config.execucoes_simultaneas.hint") },
+  { chave: "gates_simultaneos", rotulo: t("config.gates_simultaneos"), tipo: "number", escopo: "global",
+    hint: t("config.gates_simultaneos.hint") },
+  { chave: "max_correcoes", rotulo: t("config.max_correcoes"), tipo: "number", escopo: "ambos" },
+  { chave: "max_ciclos_revisao", rotulo: t("config.max_ciclos_revisao"), tipo: "number", escopo: "ambos" },
+  { chave: "max_fases_novas", rotulo: t("config.max_fases_novas"), tipo: "number", escopo: "ambos",
+    hint: t("config.max_fases_novas.hint") },
+  { chave: "budget_demanda_usd", rotulo: t("config.budget_demanda_usd"), tipo: "number", escopo: "ambos" },
+  { chave: "gates", rotulo: t("config.gates"), tipo: "lines", escopo: "ambos",
+    hint: t("config.gates.hint") },
+  { chave: "uso_intervalo_min", rotulo: t("config.uso_intervalo_min"), tipo: "number", escopo: "global",
+    hint: t("config.uso_intervalo_min.hint") },
+  { chave: "idioma", rotulo: t("config.idioma"), tipo: "text", escopo: "global",
+    hint: t("config.idioma.hint") },
 ];
 
 // camposDoEscopo devolve os campos visíveis num escopo ("global" ou "project").

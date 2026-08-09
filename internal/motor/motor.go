@@ -43,10 +43,10 @@ type OpcoesRun struct {
 	// best-effort para suas flags; a garantia final e a verificacao git do
 	// orquestrador apos o turno. Ignorado quando SomenteLeitura ja bloqueia tudo.
 	DirsProtegidos []string
-	RotuloLog       string // prefixo do arquivo de log em DirLogs
-	Ctx             context.Context
-	PausaCh         <-chan struct{}
-	OnEspera        func(detalhe string)
+	RotuloLog      string // prefixo do arquivo de log em DirLogs
+	Ctx            context.Context
+	PausaCh        <-chan struct{}
+	OnEspera       func(detalhe string)
 
 	// OnLogPath, quando != nil, e chamado assim que o .jsonl do run e criado
 	// (antes de o harness comecar a emitir). Permite ao chamador gravar o
@@ -63,15 +63,15 @@ type OpcoesRun struct {
 
 // ResultadoRun e a saida normalizada de qualquer motor.
 type ResultadoRun struct {
-	IsError       bool
-	Subtipo       string
-	Resultado     string
-	Estruturado   json.RawMessage
-	CustoUSD      float64
-	NumTurns      int
-	TokensIn      int
-	TokensOut     int
-	LogPath       string
+	IsError     bool
+	Subtipo     string
+	Resultado   string
+	Estruturado json.RawMessage
+	CustoUSD    float64
+	NumTurns    int
+	TokensIn    int
+	TokensOut   int
+	LogPath     string
 	// SessionID identifica a sessao do harness (quando o motor a expoe). Permite
 	// retomar a MESMA conversa (ex.: `claude -p --resume`) — usado no resgate de
 	// saida estruturada do motor claude.

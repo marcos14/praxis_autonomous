@@ -6,6 +6,7 @@
 
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
+import { t } from "./i18n.js";
 
 let consultas = [];
 let selecionadaID = null;
@@ -15,8 +16,8 @@ let pollTimer = null;   // fallback: relê a consulta enquanto status=pensando
 // PAPEIS mapeia o papel de uma fala ao rótulo e à classe visual da bolha
 // (mesmo padrão do chat da demanda).
 const PAPEIS = {
-  user: ["Você", "user"],
-  consultor: ["Praxis · Consultor", "agent"],
+  user: [t("consultas.papel_voce"), "user"],
+  consultor: [t("consultas.papel_consultor"), "agent"],
   sistema: ["", "sys"],
 };
 
@@ -44,26 +45,26 @@ async function recarregarLista() {
   try {
     consultas = (await api.listarConsultas()) || [];
   } catch (e) {
-    bannerErro("Falha ao carregar consultas: " + e.message);
+    bannerErro(t("consultas.falha_carregar", { erro: e.message }));
     return;
   }
   bannerErro("");
   const lista = limpar(document.getElementById("lista-consultas"));
   if (consultas.length === 0) {
-    lista.append(el("p", { class: "sub", text: "Nenhuma consulta ainda. Inicie uma nova." }));
+    lista.append(el("p", { class: "sub", text: t("consultas.nenhuma") }));
     return;
   }
   for (const c of consultas) {
-    const alvo = c.grupo_nome ? "Grupo: " + c.grupo_nome : c.projeto_nome || "";
+    const alvo = c.grupo_nome ? t("consultas.grupo", { nome: c.grupo_nome }) : c.projeto_nome || "";
     lista.append(el("div", {
       class: "list-item" + (c.id === selecionadaID ? " sel" : ""),
       onclick: () => abrirConsulta(c.id),
     },
-      el("b", { text: c.titulo || `Consulta #${c.id}` }),
+      el("b", { text: c.titulo || t("consultas.titulo_n", { id: c.id }) }),
       el("div", { class: "path", text: alvo }),
       el("div", { class: "meta" },
         pillStatusConsulta(c.status),
-        c.custo_usd > 0 ? el("span", { class: "pill", text: "US$ " + c.custo_usd.toFixed(2) }) : null,
+        c.custo_usd > 0 ? el("span", { class: "pill", text: t("consultas.custo", { valor: c.custo_usd.toFixed(2) }) }) : null,
       ),
     ));
   }
@@ -71,9 +72,9 @@ async function recarregarLista() {
 
 function pillStatusConsulta(status) {
   const mapa = {
-    ociosa: ["dot-good", "pronta"],
-    pensando: ["dot-warn", "analisando…"],
-    falhou: ["dot-crit", "falhou"],
+    ociosa: ["dot-good", t("status.pronta")],
+    pensando: ["dot-warn", t("consultas.status_pensando")],
+    falhou: ["dot-crit", t("status.falhou")],
   };
   const [dot, rotulo] = mapa[status] || ["dot-muted", status];
   return el("span", { class: "pill" }, el("span", { class: "dot " + dot }), rotulo);
@@ -82,7 +83,7 @@ function pillStatusConsulta(status) {
 function limparPainel() {
   pararAcompanhamento();
   const painel = limpar(document.getElementById("painel-consulta"));
-  painel.append(el("p", { class: "sub", style: "margin:0", text: "Selecione uma consulta à esquerda ou inicie uma nova." }));
+  painel.append(el("p", { class: "sub", style: "margin:0", text: t("view.consultas.selecione") }));
 }
 
 // ---------- nova consulta ----------
@@ -92,7 +93,7 @@ async function renderNova() {
   selecionadaID = null;
   await recarregarLista();
   const painel = limpar(document.getElementById("painel-consulta"));
-  painel.append(el("h3", {}, "Nova consulta"));
+  painel.append(el("h3", {}, t("consultas.nova_titulo")));
 
   let grupos = [], projetos = [];
   try {
@@ -101,29 +102,29 @@ async function renderNova() {
       api.listarProjetos(),
     ]);
   } catch (e) {
-    painel.append(el("p", { class: "sub", text: "Falha ao carregar projetos: " + e.message }));
+    painel.append(el("p", { class: "sub", text: t("consultas.falha_projetos", { erro: e.message }) }));
     return;
   }
   grupos = (grupos || []).filter((g) => g.ativo);
   projetos = (projetos || []).filter((p) => p.ativo);
   if (grupos.length === 0 && projetos.length === 0) {
-    painel.append(el("p", { class: "sub", text: "Nenhum projeto cadastrado. Peça a um administrador para cadastrar em Projetos." }));
+    painel.append(el("p", { class: "sub", text: t("consultas.sem_projetos") }));
     return;
   }
 
   // Alvo unificado: grupos primeiro (soluções completas), depois projetos.
   const sel = el("select", {});
-  for (const g of grupos) sel.append(el("option", { value: "g:" + g.id }, "Grupo: " + g.nome));
+  for (const g of grupos) sel.append(el("option", { value: "g:" + g.id }, t("consultas.grupo", { nome: g.nome })));
   for (const p of projetos) sel.append(el("option", { value: "p:" + p.id }, p.nome));
 
   const ed = mdEditor({
     rows: 5,
-    placeholder: "O que você quer entender? Ex.: \"Como funciona a baixa de títulos?\", \"Preciso montar um PRD para melhorar a régua de cobrança\", \"Como implantar o Vulcano Chat para um cliente com duas filiais?\"",
+    placeholder: t("consultas.ph_pergunta"),
   });
-  const btn = el("button", { class: "btn", text: "Iniciar consulta" });
+  const btn = el("button", { class: "btn", text: t("consultas.iniciar") });
   btn.onclick = async () => {
     const mensagem = ed.ta.value.trim();
-    if (!mensagem) { bannerErro("Escreva a sua pergunta."); return; }
+    if (!mensagem) { bannerErro(t("consultas.escreva_pergunta")); return; }
     bannerErro("");
     btn.disabled = true;
     try {
@@ -132,21 +133,21 @@ async function renderNova() {
       if (tipo === "g") corpo.group_id = Number(id);
       else corpo.project_id = Number(id);
       const criada = await api.criarConsulta(corpo);
-      toast("Consulta iniciada — o consultor está analisando.", "ok");
+      toast(t("consultas.iniciada"), "ok");
       selecionadaID = criada.id;
       await recarregarLista();
       await abrirConsulta(criada.id);
     } catch (e) {
-      bannerErro("Falha ao iniciar consulta: " + e.message);
+      bannerErro(t("consultas.falha_iniciar", { erro: e.message }));
       btn.disabled = false;
     }
   };
 
   painel.append(el("div", { class: "form" },
-    el("div", {}, el("label", {}, "Projeto ou solução"), sel,
-      el("div", { class: "hint", text: "Num grupo, o consultor enxerga todos os repositórios da solução." })),
-    el("div", {}, el("label", {}, "Sua pergunta"), ed.no,
-      el("div", { class: "hint", text: "Não precisa ser técnico: se faltar contexto, o consultor faz perguntas antes de responder." })),
+    el("div", {}, el("label", {}, t("consultas.projeto_ou_solucao")), sel,
+      el("div", { class: "hint", text: t("consultas.hint_grupo") })),
+    el("div", {}, el("label", {}, t("consultas.sua_pergunta")), ed.no,
+      el("div", { class: "hint", text: t("consultas.hint_pergunta") })),
     el("div", { class: "acoes" }, btn),
   ));
   ed.ta.focus();
@@ -163,39 +164,39 @@ async function abrirConsulta(id) {
   try {
     cons = await api.obterConsulta(id);
   } catch (e) {
-    bannerErro("Falha ao abrir consulta: " + e.message);
+    bannerErro(t("consultas.falha_abrir", { erro: e.message }));
     return;
   }
 
   const painel = limpar(document.getElementById("painel-consulta"));
-  const alvo = cons.grupo_nome ? "Grupo: " + cons.grupo_nome : cons.projeto_nome || "";
+  const alvo = cons.grupo_nome ? t("consultas.grupo", { nome: cons.grupo_nome }) : cons.projeto_nome || "";
   const cab = el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px" },
-    el("h3", { style: "margin:0", text: cons.titulo || `Consulta #${cons.id}` }),
+    el("h3", { style: "margin:0", text: cons.titulo || t("consultas.titulo_n", { id: cons.id }) }),
     el("button", {
-      class: "btn ghost sm", text: "Excluir",
+      class: "btn ghost sm", text: t("consultas.excluir"),
       onclick: async () => {
-        if (!confirm("Excluir esta consulta e toda a conversa?")) return;
+        if (!confirm(t("consultas.confirmar_excluir"))) return;
         try {
           await api.excluirConsulta(cons.id);
-          toast("Consulta excluída.", "ok");
+          toast(t("consultas.excluida"), "ok");
           selecionadaID = null;
           limparPainel();
           await recarregarLista();
         } catch (e) {
-          bannerErro("Falha ao excluir: " + e.message);
+          bannerErro(t("consultas.falha_excluir", { erro: e.message }));
         }
       },
     }),
   );
   const sub = el("p", { class: "sub", style: "margin:4px 0 10px", text: alvo +
-    (cons.custo_usd > 0 ? ` · custo acumulado US$ ${cons.custo_usd.toFixed(2)}` : "") });
+    (cons.custo_usd > 0 ? " · " + t("consultas.custo_acumulado", { valor: cons.custo_usd.toFixed(2) }) : "") });
 
   const box = el("div", { class: "chat" });
   const progresso = el("div", { class: "hint", hidden: true });
   const inp = el("textarea", { rows: "1",
-    placeholder: "Responder ao consultor ou fazer outra pergunta… (Shift+Enter quebra linha)" });
+    placeholder: t("consultas.ph_resposta") });
   const ajustarAltura = autoCrescer(inp);
-  const btn = el("button", { class: "btn", text: "Enviar" });
+  const btn = el("button", { class: "btn", text: t("consultas.enviar") });
   painel.append(cab, sub, box, progresso, el("div", { class: "chat-input" }, inp, btn));
 
   async function recarregarChat() {
@@ -203,16 +204,16 @@ async function abrirConsulta(id) {
     try {
       msgs = (await api.listarChatConsulta(cons.id)) || [];
     } catch (e) {
-      limpar(box).append(el("p", { class: "vazio", text: "Falha ao carregar a conversa: " + e.message }));
+      limpar(box).append(el("p", { class: "vazio", text: t("consultas.falha_conversa", { erro: e.message }) }));
       return;
     }
     limpar(box);
     if (msgs.length === 0) {
-      box.append(el("p", { class: "vazio", text: "Nenhuma mensagem ainda." }));
+      box.append(el("p", { class: "vazio", text: t("consultas.sem_mensagens") }));
     }
     for (const m of msgs) box.append(bolha(m));
     if (cons.status === "pensando") {
-      box.append(el("div", { class: "msg sys", text: "O consultor está analisando o código — isso pode levar alguns minutos." }));
+      box.append(el("div", { class: "msg sys", text: t("consultas.analisando_aviso") }));
     }
     box.scrollTop = box.scrollHeight;
   }
@@ -223,7 +224,7 @@ async function abrirConsulta(id) {
     btn.disabled = pensando;
     progresso.hidden = !pensando;
     if (pensando) {
-      progresso.textContent = "analisando…";
+      progresso.textContent = t("consultas.status_pensando");
       acompanharProgresso();
       agendarPoll();
     } else {
@@ -241,7 +242,7 @@ async function abrirConsulta(id) {
         try {
           const d = JSON.parse(ev.data);
           if (d.acao === "concluindo") {
-            progresso.textContent = "concluindo a resposta…";
+            progresso.textContent = t("consultas.concluindo");
           } else if (d.detalhe) {
             progresso.textContent = d.detalhe + "…";
           }
@@ -285,11 +286,11 @@ async function abrirConsulta(id) {
       await abrirConsulta(cons.id); // re-renderiza já em modo "pensando"
     } catch (e) {
       if (e.status === 409) {
-        bannerErro("O consultor ainda está analisando — aguarde a resposta.");
+        bannerErro(t("consultas.aguarde"));
         await abrirConsulta(cons.id);
         return;
       }
-      bannerErro("Falha ao enviar: " + e.message);
+      bannerErro(t("consultas.falha_enviar", { erro: e.message }));
       btn.disabled = false;
     }
   }
@@ -301,7 +302,7 @@ async function abrirConsulta(id) {
   await recarregarChat();
   aplicarEstado();
   if (cons.status === "falhou" && cons.erro) {
-    bannerErro("Último turno falhou: " + cons.erro + " — você pode reenviar a pergunta.");
+    bannerErro(t("consultas.turno_falhou", { erro: cons.erro }));
   }
 }
 
@@ -317,9 +318,9 @@ function bolha(m) {
   try {
     const meta = typeof m.meta === "string" ? JSON.parse(m.meta) : m.meta;
     if (meta && meta.tipo === "perguntas") {
-      extra = el("div", { class: "hint", text: "Responda no campo abaixo para o consultor continuar." });
+      extra = el("div", { class: "hint", text: t("consultas.responda_abaixo") });
     } else if (meta && meta.redigido > 0) {
-      extra = el("div", { class: "hint", text: "Trechos técnicos foram removidos pela política de segurança." });
+      extra = el("div", { class: "hint", text: t("consultas.redigido") });
     }
   } catch { /* meta inválido: segue sem extras */ }
   return el("div", { class: "msg " + classe },

@@ -135,8 +135,8 @@ func TestConfigEfetivaMergeEOrigem(t *testing.T) {
 		t.Fatalf("global: %v", err)
 	}
 	if err := d.DefinirConfigProjeto(ctx, pid, map[string]json.RawMessage{
-		"budget_usd": rm("99"),  // override
-		"max_ciclos": rm("3"),   // só do projeto
+		"budget_usd": rm("99"), // override
+		"max_ciclos": rm("3"),  // só do projeto
 	}); err != nil {
 		t.Fatalf("projeto: %v", err)
 	}

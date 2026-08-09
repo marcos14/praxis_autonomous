@@ -1,4 +1,4 @@
-// Telas "Usuários" e "Papéis" (RBAC). Usuários gerencia as pessoas (com papéis
+// Telas t("projetos.usuarios") e "Papéis" (RBAC). Usuários gerencia as pessoas (com papéis
 // vinculados); Papéis gerencia os conjuntos de permissões do catálogo. São duas
 // views separadas que compartilham este módulo. Só acessíveis a quem tem
 // usuarios.gerir — o menu já esconde para os demais e o servidor barra por
@@ -7,6 +7,7 @@
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro } from "./ui.js";
 import { usuarioAtual } from "./auth.js";
+import { t, tn } from "./i18n.js";
 
 // Cache do que é carregado a cada montagem (para montar seletores sem refetch).
 let papeis = [];
@@ -24,7 +25,7 @@ export async function montarUsuarios() {
       api.listarGruposUsuarios().catch(() => []),
     ]);
   } catch (e) {
-    bannerErro("Falha ao carregar usuários: " + e.message);
+    bannerErro(t("usuarios.falha_carregar", { erro: e.message }));
     return;
   }
   bannerErro("");
@@ -40,7 +41,7 @@ export async function montarPapeis() {
       api.listarPapeis(),
     ]);
   } catch (e) {
-    bannerErro("Falha ao carregar papéis: " + e.message);
+    bannerErro(t("usuarios.falha_carregar_papeis", { erro: e.message }));
     return;
   }
   bannerErro("");
@@ -53,19 +54,19 @@ export async function montarPapeis() {
 function renderListaUsuarios() {
   const lista = limpar(document.getElementById("lista-usuarios"));
   if (usuarios.length === 0) {
-    lista.append(el("p", { class: "sub", style: "margin:0", text: "Nenhum usuário." }));
+    lista.append(el("p", { class: "sub", style: "margin:0", text: t("usuarios.nenhum") }));
     return;
   }
   for (const u of usuarios) {
-    const nomesPapeis = (u.papeis || []).map((p) => p.nome).join(", ") || "sem papéis";
-    const resumo = u.grupo_nome ? nomesPapeis + " · grupo " + u.grupo_nome : nomesPapeis;
+    const nomesPapeis = (u.papeis || []).map((p) => p.nome).join(", ") || t("usuarios.sem_papeis");
+    const resumo = u.grupo_nome ? t("usuarios.resumo_grupo", { papeis: nomesPapeis, grupo: u.grupo_nome }) : nomesPapeis;
     lista.append(el("div", { class: "list-item" + (u.ativo ? "" : " usuario-inativo"), onclick: () => abrirUsuario(u) },
       el("div", {},
         el("div", { style: "font-weight:600", text: u.nome }),
         el("div", { class: "path", text: u.email }),
         el("div", { class: "hint", text: resumo }),
       ),
-      u.ativo ? null : el("span", { class: "pill", text: "inativo" }),
+      u.ativo ? null : el("span", { class: "pill", text: t("projetos.inativo") }),
     ));
   }
 }
@@ -79,7 +80,7 @@ function abrirUsuario(u) {
 
   const inpNome = el("input", { type: "text", value: novo ? "" : u.nome });
   const inpEmail = el("input", { type: "email", value: novo ? "" : u.email });
-  const inpSenha = el("input", { type: "password", placeholder: novo ? "senha inicial" : "(deixe em branco para manter)" });
+  const inpSenha = el("input", { type: "password", placeholder: novo ? t("usuarios.ph_senha_inicial") : t("usuarios.ph_senha_manter") });
   const chkAtivo = el("input", { type: "checkbox" });
   if (novo || u.ativo) chkAtivo.checked = true;
 
@@ -99,23 +100,23 @@ function abrirUsuario(u) {
   // Grupo de usuários (consultas): define o motor/modelo das consultas do
   // usuário. Opcional — sem grupo, vale o padrão dos motores.
   const selGrupo = el("select", {},
-    el("option", { value: "" }, "sem grupo (padrão)"),
+    el("option", { value: "" }, t("usuarios.sem_grupo")),
     ...gruposUsuarios.map((g) =>
       el("option", { value: g.id, selected: !novo && u.grupo_id === g.id }, g.nome)),
   );
 
   const form = el("div", { class: "form" },
-    rotulado("Nome", inpNome),
-    rotulado("E-mail (login)", inpEmail),
-    rotulado(novo ? "Senha" : "Nova senha", inpSenha),
-    el("div", {}, el("label", { text: "Papéis" }), chips),
-    el("div", {}, el("label", { text: "Grupo de usuários (consultas)" }), selGrupo,
-      el("div", { class: "hint", text: "Define o motor/modelo das Consultas deste usuário. Gerencie os grupos na tela Grupos de usuários." })),
-    el("label", { class: "cfg-herda" }, chkAtivo, "Usuário ativo"),
+    rotulado(t("motores.nome"), inpNome),
+    rotulado(t("usuarios.email_login"), inpEmail),
+    rotulado(novo ? "Senha" : t("usuarios.nova_senha"), inpSenha),
+    el("div", {}, el("label", { text: t("nav.papeis") }), chips),
+    el("div", {}, el("label", { text: t("usuarios.grupo_consultas") }), selGrupo,
+      el("div", { class: "hint", text: t("usuarios.grupo_hint") })),
+    el("label", { class: "cfg-herda" }, chkAtivo, t("usuarios.usuario_ativo")),
   );
 
   const acoes = el("div", { class: "acoes" });
-  const btnSalvar = el("button", { class: "btn", text: novo ? "Criar usuário" : "Salvar" });
+  const btnSalvar = el("button", { class: "btn", text: novo ? t("usuarios.criar") : t("configx.salvar") });
   btnSalvar.onclick = () => salvarUsuario(u, {
     nome: inpNome.value.trim(), email: inpEmail.value.trim(), senha: inpSenha.value,
     ativo: chkAtivo.checked, papeis: [...selecionados],
@@ -123,16 +124,16 @@ function abrirUsuario(u) {
   }, btnSalvar);
   acoes.append(btnSalvar);
   if (!novo && !souEu) {
-    acoes.append(el("button", { class: "btn danger", text: "Excluir", onclick: () => excluirUsuario(u) }));
+    acoes.append(el("button", { class: "btn danger", text: t("consultas.excluir"), onclick: () => excluirUsuario(u) }));
   }
   form.append(acoes);
 
-  painel.append(el("h3", { text: novo ? "Novo usuário" : u.nome + (souEu ? " (você)" : "") }), form);
+  painel.append(el("h3", { text: novo ? t("usuarios.novo") : u.nome + (souEu ? " (você)" : "") }), form);
 }
 
 async function salvarUsuario(u, dados, btn) {
-  if (!dados.email) { bannerErro("Informe o e-mail."); return; }
-  if (!u && !dados.senha) { bannerErro("Informe a senha inicial."); return; }
+  if (!dados.email) { bannerErro(t("usuarios.informe_email")); return; }
+  if (!u && !dados.senha) { bannerErro(t("usuarios.informe_senha")); return; }
   bannerErro("");
   btn.disabled = true;
   try {
@@ -142,11 +143,11 @@ async function salvarUsuario(u, dados, btn) {
     } else {
       await api.criarUsuario({ nome: dados.nome, email: dados.email, senha: dados.senha, ativo: dados.ativo, papeis: dados.papeis, grupo_id: dados.grupo_id });
     }
-    toast("Usuário salvo.", "ok");
+    toast(t("usuarios.salvo"), "ok");
     await montarUsuarios();
   } catch (e) {
-    bannerErro("Falha ao salvar usuário: " + e.message);
-    toast("Falha ao salvar.", "err");
+    bannerErro(t("usuarios.falha_salvar", { erro: e.message }));
+    toast(t("configx.falha_salvar_toast"), "err");
   } finally {
     btn.disabled = false;
   }
@@ -156,10 +157,10 @@ async function excluirUsuario(u) {
   if (!confirm(`Excluir o usuário ${u.email}? Esta ação não pode ser desfeita.`)) return;
   try {
     await api.excluirUsuario(u.id);
-    toast("Usuário excluído.", "ok");
+    toast(t("usuarios.excluido"), "ok");
     await montarUsuarios();
     limpar(document.getElementById("painel-usuario")).append(
-      el("p", { class: "sub", style: "margin:0", text: "Selecione um usuário à esquerda ou cadastre um novo." }));
+      el("p", { class: "sub", style: "margin:0", text: t("view.usuarios.selecione") }));
   } catch (e) {
     bannerErro("Falha ao excluir: " + e.message);
   }
@@ -170,16 +171,16 @@ async function excluirUsuario(u) {
 function renderListaPapeis() {
   const lista = limpar(document.getElementById("lista-papeis"));
   if (papeis.length === 0) {
-    lista.append(el("p", { class: "sub", style: "margin:0", text: "Nenhum papel." }));
+    lista.append(el("p", { class: "sub", style: "margin:0", text: t("usuarios.nenhum_papel") }));
     return;
   }
   for (const p of papeis) {
     const resumo = p.permissoes && p.permissoes.includes("*")
-      ? "acesso total"
+      ? t("usuarios.acesso_total")
       : `${(p.permissoes || []).length} permissã(o/es)`;
     lista.append(el("div", { class: "list-item", onclick: () => abrirPapel(p) },
       el("div", {},
-        el("div", { style: "font-weight:600" }, p.nome, p.sistema ? el("span", { class: "pill", style: "margin-left:8px", text: "sistema" }) : null),
+        el("div", { style: "font-weight:600" }, p.nome, p.sistema ? el("span", { class: "pill", style: "margin-left:8px", text: t("usuarios.pill_sistema") }) : null),
         p.descricao ? el("div", { class: "path", text: p.descricao }) : null,
         el("div", { class: "hint", text: resumo }),
       ),
@@ -208,37 +209,37 @@ function abrirPapel(p) {
   }
 
   const form = el("div", { class: "form" },
-    rotulado("Nome", inpNome),
-    rotulado("Descrição", inpDesc),
-    el("div", {}, el("label", { text: "Permissões" }), listaPerm),
+    rotulado(t("motores.nome"), inpNome),
+    rotulado(t("grupos.descricao"), inpDesc),
+    el("div", {}, el("label", { text: t("usuarios.permissoes") }), listaPerm),
   );
 
   if (sistema) {
-    form.append(el("div", { class: "hint", text: "Papel de sistema: não pode ser editado nem removido (concede acesso total)." }));
+    form.append(el("div", { class: "hint", text: t("usuarios.papel_sistema_hint") }));
   } else {
     const acoes = el("div", { class: "acoes" });
-    const btnSalvar = el("button", { class: "btn", text: novo ? "Criar papel" : "Salvar" });
+    const btnSalvar = el("button", { class: "btn", text: novo ? t("usuarios.criar_papel") : t("configx.salvar") });
     btnSalvar.onclick = () => salvarPapel(p, { nome: inpNome.value.trim(), descricao: inpDesc.value.trim(), permissoes: [...selecionadas] }, btnSalvar);
     acoes.append(btnSalvar);
-    if (!novo) acoes.append(el("button", { class: "btn danger", text: "Excluir", onclick: () => excluirPapel(p) }));
+    if (!novo) acoes.append(el("button", { class: "btn danger", text: t("consultas.excluir"), onclick: () => excluirPapel(p) }));
     form.append(acoes);
   }
 
-  painel.append(el("h3", { text: novo ? "Novo papel" : p.nome }), form);
+  painel.append(el("h3", { text: novo ? t("usuarios.novo_papel") : p.nome }), form);
 }
 
 async function salvarPapel(p, dados, btn) {
-  if (!dados.nome) { bannerErro("Informe o nome do papel."); return; }
+  if (!dados.nome) { bannerErro(t("usuarios.informe_nome_papel")); return; }
   bannerErro("");
   btn.disabled = true;
   try {
     if (p) await api.atualizarPapel(p.id, dados);
     else await api.criarPapel(dados);
-    toast("Papel salvo.", "ok");
+    toast(t("usuarios.papel_salvo"), "ok");
     await montarPapeis();
   } catch (e) {
     bannerErro("Falha ao salvar papel: " + e.message);
-    toast("Falha ao salvar.", "err");
+    toast(t("configx.falha_salvar_toast"), "err");
   } finally {
     btn.disabled = false;
   }
@@ -248,10 +249,10 @@ async function excluirPapel(p) {
   if (!confirm(`Excluir o papel "${p.nome}"? Usuários vinculados perdem essas permissões.`)) return;
   try {
     await api.excluirPapel(p.id);
-    toast("Papel excluído.", "ok");
+    toast(t("usuarios.papel_excluido"), "ok");
     await montarPapeis();
     limpar(document.getElementById("painel-papel")).append(
-      el("p", { class: "sub", style: "margin:0", text: "Selecione um papel à esquerda ou crie um novo." }));
+      el("p", { class: "sub", style: "margin:0", text: t("view.papeis.selecione") }));
   } catch (e) {
     bannerErro("Falha ao excluir papel: " + e.message);
   }

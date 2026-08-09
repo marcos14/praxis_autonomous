@@ -24,23 +24,23 @@ func (s *Servidor) perfilMotorDaRota(w http.ResponseWriter, r *http.Request) (db
 	}
 	m, err := s.banco.ObterMotor(r.Context(), engineID)
 	if err != nil {
-		s.responderErroMotor(w, err)
+		s.responderErroMotor(w, r, err)
 		return db.Motor{}, db.Conta{}, false
 	}
 	if !motor.VendorComPerfilIsolado(m.Nome) {
-		responderErro(w, http.StatusBadRequest, "motor_nao_suportado", "login assistido disponível apenas para Claude e Codex")
+		erroT(w, r, http.StatusBadRequest, "motor_nao_suportado", "erro.motor_login_nao_suportado")
 		return db.Motor{}, db.Conta{}, false
 	}
 	for _, c := range m.Contas {
 		if c.ID == contaID {
 			if strings.TrimSpace(c.ConfigDir) == "" {
-				responderErro(w, http.StatusConflict, "perfil_sem_diretorio", "o perfil não possui diretório isolado")
+				erroT(w, r, http.StatusConflict, "perfil_sem_diretorio", "erro.motor_perfil_sem_diretorio")
 				return db.Motor{}, db.Conta{}, false
 			}
 			return m, c, true
 		}
 	}
-	responderErro(w, http.StatusNotFound, "nao_encontrado", "perfil não encontrado")
+	erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.motor_perfil_nao_encontrado")
 	return db.Motor{}, db.Conta{}, false
 }
 
@@ -65,7 +65,7 @@ func (s *Servidor) handleIniciarLoginMotor(w http.ResponseWriter, r *http.Reques
 			responderErro(w, http.StatusConflict, "login_em_andamento", err.Error())
 		default:
 			s.log.Warn("iniciar login de motor", "motor", m.Nome, "conta", c.ID, "erro", err)
-			responderErro(w, http.StatusBadRequest, "login_indisponivel", "não foi possível iniciar o login deste perfil")
+			erroT(w, r, http.StatusBadRequest, "login_indisponivel", "erro.motor_login_indisponivel")
 		}
 		return
 	}
@@ -75,7 +75,7 @@ func (s *Servidor) handleIniciarLoginMotor(w http.ResponseWriter, r *http.Reques
 func (s *Servidor) handleObterLoginMotor(w http.ResponseWriter, r *http.Request) {
 	sessao, err := s.loginMotores.ObterLogin(r.PathValue("sessionId"))
 	if err != nil {
-		responderErroLoginMotor(w, err)
+		responderErroLoginMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, sessao)
@@ -84,7 +84,7 @@ func (s *Servidor) handleObterLoginMotor(w http.ResponseWriter, r *http.Request)
 func (s *Servidor) handleCancelarLoginMotor(w http.ResponseWriter, r *http.Request) {
 	sessao, err := s.loginMotores.CancelarLogin(r.PathValue("sessionId"))
 	if err != nil {
-		responderErroLoginMotor(w, err)
+		responderErroLoginMotor(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, sessao)
@@ -99,9 +99,9 @@ func (s *Servidor) handleCodigoLoginMotor(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		switch {
 		case errors.Is(err, motor.ErrSessaoLoginNaoEncontrada):
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "sessão de login não encontrada")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.motor_sessao_login_nao_encontrada")
 		case errors.Is(err, motor.ErrCodigoLoginIndisponivel):
-			responderErro(w, http.StatusConflict, "codigo_indisponivel", "a sessão não está aguardando um código do Claude")
+			erroT(w, r, http.StatusConflict, "codigo_indisponivel", "erro.motor_codigo_indisponivel")
 		default:
 			responderErro(w, http.StatusBadRequest, "codigo_invalido", err.Error())
 		}
@@ -110,10 +110,10 @@ func (s *Servidor) handleCodigoLoginMotor(w http.ResponseWriter, r *http.Request
 	responderJSON(w, http.StatusOK, sessao)
 }
 
-func responderErroLoginMotor(w http.ResponseWriter, err error) {
+func responderErroLoginMotor(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, motor.ErrSessaoLoginNaoEncontrada) {
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "sessão de login não encontrada")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.motor_sessao_login_nao_encontrada")
 		return
 	}
-	responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+	erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 }

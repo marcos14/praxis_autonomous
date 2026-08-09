@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"net/http"
 	"strconv"
 	"strings"
@@ -85,7 +86,7 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 	}
 	// projeto precisa existir (404 claro em vez do FK genérico do store).
 	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
@@ -109,7 +110,7 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 
 	criada, criadas, err := s.banco.CriarDemandaComFases(r.Context(), dem, fases)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusCreated, respDemanda{Demanda: criada, Fases: criadas})
@@ -122,7 +123,7 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, projectID int64, req reqDemanda) {
 	prd := strings.TrimSpace(req.PRD)
 	if prd == "" {
-		responderErro(w, http.StatusBadRequest, "invalido", "informe o PRD (ou ao menos uma fase)")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.demanda_prd_obrigatorio")
 		return
 	}
 
@@ -131,7 +132,7 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 		origem = db.OrigemUI
 	}
 	if origem != db.OrigemUI && origem != db.OrigemAPI {
-		responderErro(w, http.StatusBadRequest, "invalido", "origem deve ser 'ui' ou 'api'")
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.demanda_origem_invalida")
 		return
 	}
 
@@ -163,7 +164,7 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 		Conteudo: prd,
 	})
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 
@@ -172,8 +173,8 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 	if _, err := s.banco.RegistrarEvento(r.Context(), db.Evento{
 		ProjectID: &pid, DemandID: &did,
 		Tipo:    "demanda_criada",
-		Titulo:  "Praxis: demanda criada",
-		Detalhe: "Demanda criada a partir do PRD colado no chat.",
+		Titulo:  i18n.TI("evento.demanda_criada"),
+		Detalhe: i18n.TI("evento.demanda_criada_detalhe"),
 	}); err != nil {
 		s.log.Warn("registrar evento de criação da demanda", "erro", err, "demanda", did)
 	}
@@ -218,7 +219,7 @@ func (s *Servidor) handleListarDemandas(w http.ResponseWriter, r *http.Request) 
 	if v := strings.TrimSpace(r.URL.Query().Get("project")); v != "" {
 		pid, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || pid <= 0 {
-			responderErro(w, http.StatusBadRequest, "invalido", "project inválido")
+			erroT(w, r, http.StatusBadRequest, "invalido", "erro.project_invalido")
 			return
 		}
 		filtro.ProjectID = &pid
@@ -228,7 +229,7 @@ func (s *Servidor) handleListarDemandas(w http.ResponseWriter, r *http.Request) 
 
 	demandas, err := s.banco.ListarDemandas(r.Context(), filtro)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, demandas)
@@ -242,7 +243,7 @@ func (s *Servidor) handleObterDemanda(w http.ResponseWriter, r *http.Request) {
 	}
 	fases, err := s.banco.ListarFases(r.Context(), dem.ID)
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, respDemanda{Demanda: dem, Fases: fases})
@@ -257,7 +258,7 @@ func (s *Servidor) handleEventosDemanda(w http.ResponseWriter, r *http.Request) 
 	}
 	eventos, err := s.banco.ListarEventos(r.Context(), db.FiltroEventos{DemandID: &dem.ID})
 	if err != nil {
-		s.responderErroDemanda(w, err)
+		s.responderErroDemanda(w, r, err)
 		return
 	}
 	responderJSON(w, http.StatusOK, eventos)
@@ -274,10 +275,10 @@ func (s *Servidor) obterDemandaOu404(w http.ResponseWriter, r *http.Request) (db
 	dem, err := s.banco.ObterDemanda(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
-			responderErro(w, http.StatusNotFound, "nao_encontrado", "demanda não encontrada")
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.demanda_nao_encontrada")
 		} else {
 			s.log.Error("erro no store de demandas", "erro", err)
-			responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+			erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		}
 		return db.Demanda{}, false
 	}
@@ -372,14 +373,14 @@ func validarFasesReq(reqFases []reqFaseNova) ([]db.Fase, string) {
 }
 
 // responderErroDemanda traduz os erros do store para respostas HTTP.
-func (s *Servidor) responderErroDemanda(w http.ResponseWriter, err error) {
+func (s *Servidor) responderErroDemanda(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, db.ErrNaoEncontrado):
-		responderErro(w, http.StatusNotFound, "nao_encontrado", "projeto não encontrado")
+		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.projeto_nao_encontrado")
 	case errors.Is(err, db.ErrCodigoFaseDuplicado):
-		responderErro(w, http.StatusConflict, "codigo_fase_duplicado", "há fases com o mesmo codigo na demanda")
+		erroT(w, r, http.StatusConflict, "codigo_fase_duplicado", "erro.demanda_fase_codigo_duplicado")
 	default:
 		s.log.Error("erro no store de demandas", "erro", err)
-		responderErro(w, http.StatusInternalServerError, "erro_interno", "erro interno do servidor")
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 	}
 }

@@ -3,6 +3,7 @@
 // backend (envelope {erro:{codigo,mensagem}}).
 
 import { tokenAtual, logout } from "./auth.js";
+import { t, idiomaAtivo } from "./i18n.js";
 
 // ErroAPI carrega o status HTTP e o código estável do backend, além da
 // mensagem legível. As telas usam .mensagem para exibir e .codigo/.status para
@@ -21,7 +22,7 @@ export class ErroAPI extends Error {
 // Anexa o JWT da sessão (Authorization: Bearer) quando há token; em 401 (sessão
 // expirada/inválida) derruba a sessão para a shell exibir o login.
 async function req(metodo, caminho, corpo) {
-  const opts = { method: metodo, headers: {} };
+  const opts = { method: metodo, headers: { "X-Praxis-Idioma": idiomaAtivo() } };
   const tok = tokenAtual();
   if (tok) opts.headers["Authorization"] = "Bearer " + tok;
   if (corpo !== undefined) {
@@ -32,11 +33,11 @@ async function req(metodo, caminho, corpo) {
   try {
     resp = await fetch(caminho, opts);
   } catch (e) {
-    throw new ErroAPI(0, "rede", "falha de rede: " + e.message);
+    throw new ErroAPI(0, "rede", t("api.falha_rede", { erro: e.message }));
   }
   if (resp.status === 401) {
     logout();
-    throw new ErroAPI(401, "nao_autenticado", "sessão expirada: faça login novamente");
+    throw new ErroAPI(401, "nao_autenticado", t("api.sessao_expirada"));
   }
   if (resp.status === 204) return null;
   const texto = await resp.text();
@@ -60,18 +61,18 @@ async function req(metodo, caminho, corpo) {
 async function reqUpload(caminho, campo, arquivo) {
   const fd = new FormData();
   fd.append(campo, arquivo, arquivo.name);
-  const opts = { method: "POST", headers: {}, body: fd };
+  const opts = { method: "POST", headers: { "X-Praxis-Idioma": idiomaAtivo() }, body: fd };
   const tok = tokenAtual();
   if (tok) opts.headers["Authorization"] = "Bearer " + tok;
   let resp;
   try {
     resp = await fetch(caminho, opts);
   } catch (e) {
-    throw new ErroAPI(0, "rede", "falha de rede: " + e.message);
+    throw new ErroAPI(0, "rede", t("api.falha_rede", { erro: e.message }));
   }
   if (resp.status === 401) {
     logout();
-    throw new ErroAPI(401, "nao_autenticado", "sessão expirada: faça login novamente");
+    throw new ErroAPI(401, "nao_autenticado", t("api.sessao_expirada"));
   }
   const texto = await resp.text();
   let dados = null;

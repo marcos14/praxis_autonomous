@@ -6,13 +6,21 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/marcos14/praxis-autonomous/internal/i18n"
 )
 
-// manualFS embute as seções do manual (markdown). Os arquivos são nomeados
-// NN-slug.md; o prefixo NN dá a ordem e o slug é o identificador da rota. A
-// primeira linha "# Título" de cada arquivo vira o título da seção.
+// manualFS embute as seções do manual (markdown), uma pasta por idioma
+// (manual/<idioma>/NN-slug.md). Os arquivos são nomeados NN-slug.md; o prefixo
+// NN dá a ordem e o slug é o identificador da rota. A primeira linha "# Título"
+// de cada arquivo vira o título da seção.
 //
-//go:embed manual/*.md
+// pt-BR é a FONTE DA VERDADE: a lista de seções (slugs e ordem) sai dela, e uma
+// página ainda não traduzida cai no texto em pt-BR — é melhor ler a seção certa
+// no idioma errado do que receber 404.
+//
+//go:embed manual/*/*.md
 var manualFS embed.FS
 
 // SecaoManual é uma seção do manual. Conteudo é o markdown (sem a linha de
@@ -23,16 +31,30 @@ type SecaoManual struct {
 	Conteudo string `json:"conteudo,omitempty"`
 }
 
-// manualSecoes lê e ordena as seções embutidas uma vez (no primeiro uso).
-var manualCache []SecaoManual
+// manualCache guarda as seções já montadas por idioma (o embed é imutável, então
+// o parse acontece uma vez por idioma).
+var (
+	manualMu    sync.Mutex
+	manualCache = map[string][]SecaoManual{}
+)
 
-// carregarManual lê as seções do embed, ordenadas por nome de arquivo (o prefixo
-// NN garante a ordem). Faz o parse do título (primeira linha "# ...").
-func carregarManual() []SecaoManual {
-	if manualCache != nil {
-		return manualCache
+// carregarManual devolve as seções do manual no idioma pedido, na ordem de
+// leitura. A ordem e o conjunto de slugs vêm SEMPRE de pt-BR (a fonte); para
+// cada seção, usa-se a tradução quando o arquivo existe no idioma e o texto em
+// pt-BR caso contrário — assim um idioma parcialmente traduzido continua com o
+// manual inteiro navegável.
+func carregarManual(lang string) []SecaoManual {
+	lang = i18n.Normalizar(lang)
+	if lang == "" {
+		lang = i18n.Padrao
 	}
-	entradas, err := fs.ReadDir(manualFS, "manual")
+	manualMu.Lock()
+	defer manualMu.Unlock()
+	if secoes, ok := manualCache[lang]; ok {
+		return secoes
+	}
+
+	entradas, err := fs.ReadDir(manualFS, "manual/"+i18n.Padrao)
 	if err != nil {
 		return nil
 	}
@@ -46,19 +68,21 @@ func carregarManual() []SecaoManual {
 
 	secoes := make([]SecaoManual, 0, len(nomes))
 	for _, nome := range nomes {
-		b, err := manualFS.ReadFile("manual/" + nome)
+		b, err := manualFS.ReadFile("manual/" + lang + "/" + nome)
 		if err != nil {
-			continue
+			// Sem tradução desta página: cai na fonte pt-BR.
+			if b, err = manualFS.ReadFile("manual/" + i18n.Padrao + "/" + nome); err != nil {
+				continue
+			}
 		}
-		conteudo := string(b)
-		titulo, corpo := separarTitulo(conteudo)
+		titulo, corpo := separarTitulo(string(b))
 		slug := strings.TrimSuffix(nome, ".md")
 		if i := strings.IndexByte(slug, '-'); i >= 0 {
 			slug = slug[i+1:] // remove o prefixo NN- da ordenação
 		}
 		secoes = append(secoes, SecaoManual{Slug: slug, Titulo: titulo, Conteudo: corpo})
 	}
-	manualCache = secoes
+	manualCache[lang] = secoes
 	return secoes
 }
 
@@ -86,7 +110,7 @@ func (s *Servidor) registrarRotasManual(mux *http.ServeMux) {
 // handleListarManual devolve as seções do manual (slug + título, sem conteúdo),
 // na ordem de leitura.
 func (s *Servidor) handleListarManual(w http.ResponseWriter, r *http.Request) {
-	secoes := carregarManual()
+	secoes := carregarManual(idiomaDaRequisicao(r))
 	lista := make([]SecaoManual, len(secoes))
 	for i, sec := range secoes {
 		lista[i] = SecaoManual{Slug: sec.Slug, Titulo: sec.Titulo}
@@ -98,11 +122,11 @@ func (s *Servidor) handleListarManual(w http.ResponseWriter, r *http.Request) {
 // desconhecido → 404.
 func (s *Servidor) handleSecaoManual(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	for _, sec := range carregarManual() {
+	for _, sec := range carregarManual(idiomaDaRequisicao(r)) {
 		if sec.Slug == slug {
 			responderJSON(w, http.StatusOK, sec)
 			return
 		}
 	}
-	responderErro(w, http.StatusNotFound, "nao_encontrado", "seção do manual não encontrada")
+	erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.manual_secao_nao_encontrada")
 }
