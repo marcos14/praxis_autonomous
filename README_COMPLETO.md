@@ -61,7 +61,11 @@ go test ./... -count=1
 ./praxis serve                           # default bind 127.0.0.1:7799 (local use)
 ./praxis serve -addr 127.0.0.1:9000      # alternate port
 ./praxis serve -addr 0.0.0.0:7799 -tls   # network access, self-signed HTTPS
+./praxis serve -home /srv/praxis         # a different PRAXIS_HOME (db, logs, backups)
 ```
+
+To keep Praxis up permanently, install it as a system service (`praxis service install`
+— see §8.1) instead of holding a terminal open.
 
 Open **http://127.0.0.1:7799** in the browser. The service shuts down gracefully on
 `Ctrl+C` (SIGINT/SIGTERM), draining connections and in-flight tasks.
@@ -113,13 +117,16 @@ alternatives (see §9).
 Everything lives outside the project folders. The root is `PRAXIS_HOME`:
 
 - **Default:** `%LOCALAPPDATA%\praxis` (Windows) · `~/.config/praxis` (Linux/macOS).
-- **Override:** the `PRAXIS_HOME` environment variable.
+- **Override:** the `PRAXIS_HOME` environment variable, or `serve -home` (which is what
+  `service install` bakes into the registered command line — a service runs under
+  another account, whose `%LOCALAPPDATA%` is not yours).
 
 ```
 PRAXIS_HOME/
 ├─ praxis.db            # SQLite (WAL): projects, engines, demands, chat, phases, costs, events…
 ├─ worktrees/<project>/<demand>/    # git working trees isolated per demand
 ├─ logs/d<id>/          # .jsonl live log of each execution
+├─ logs/servico.log     # the service's own log on Windows (no console; rotates at 10 MiB)
 ├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotation: keeps the 7 most recent)
 ├─ pids/                # PIDs of the harnesses and the web IDE (to kill orphans on boot)
 ├─ tls/                 # self-signed cert.pem/key.pem from -tls (generated on 1st run)
@@ -345,9 +352,8 @@ curl -s -X PUT http://127.0.0.1:7799/api/v1/config \
 ## 8. Other subcommands
 
 ```sh
-# Generate the config to run as a service (prints it; actual registration requires admin):
-./praxis service                      # systemd unit (Linux) or sc.exe command (Windows)
-./praxis service -exe /opt/praxis/praxis -addr 127.0.0.1:7799 -nome praxis
+# Install and control Praxis as a system service (see 8.1):
+./praxis service install | status | start | stop | restart | remove | print
 
 # Import projects from classic Praxis (reads automacao/autopilot.json + fases.csv; idempotent):
 ./praxis import /path/to/project [/another/project ...]
@@ -355,18 +361,65 @@ curl -s -X PUT http://127.0.0.1:7799/api/v1/config \
 
 ### 8.1 Running as a system service
 
+`praxis` installs the service itself on both platforms — there is no manual
+copy-this-command step. One install does everything: copies the binary to a stable
+directory, creates `PRAXIS_HOME`, registers the service with automatic start and
+restart-on-failure, and brings it up.
+
 **Linux (systemd):**
 ```sh
-./praxis service > /etc/systemd/system/praxis.service   # as root, review the contents
-systemctl daemon-reload && systemctl enable --now praxis
+sudo ./praxis service install                       # install and start
+sudo ./praxis service install -addr 0.0.0.0:7799 -tls
+systemctl status praxis && journalctl -u praxis -f  # follow it
 ```
+Under `sudo`, the service is registered with `User=` set to the account that called
+sudo (`$SUDO_USER`) and that account's `PRAXIS_HOME` — that is where `git`, `~/.ssh`
+and the harness configuration live. Use `-usuario` for a different account.
 
-**Windows (as Administrator):**
+**Windows (PowerShell as Administrator):**
 ```powershell
-# paste/run the "sc.exe create ..." command printed by:
-.\praxis.exe service
-sc.exe start praxis
+.\praxis.exe service install                        # install and start
+.\praxis.exe service status
 ```
+The binary goes to `C:\Program Files\Praxis` and the service shows up in `services.msc`
+as **Praxis Autonomous**. A service has no console, so its log goes to
+`PRAXIS_HOME\logs\servico.log`.
+
+> **Service account on Windows.** The default is `LocalSystem`, which does **not** see
+> your user's configuration (harness credentials in `%USERPROFILE%\.claude`, SSH keys,
+> `git config`). If executions fail on authentication, reinstall pointing at your
+> account:
+> `praxis service install -usuario ".\YOUR_USER" -senha ...`
+> (the account needs the *Log on as a service* right, in `secpol.msc`).
+
+**`service install` flags** (the same ones apply to `print`):
+
+| Flag | Default | What for |
+|---|---|---|
+| `-addr` | `127.0.0.1:7799` | service bind (the same `-addr` as `serve`) |
+| `-home` | the `PRAXIS_HOME` resolved now | the service's data; baked explicitly into the registered command line |
+| `-destino` | `C:\Program Files\Praxis` · `/usr/local/bin` | where the binary is installed |
+| `-exe` | — | register this executable, copying nothing |
+| `-sem-copia` | `false` | register the binary where it already is |
+| `-usuario` / `-senha` | `$SUDO_USER` · empty (LocalSystem) | the service's logon account |
+| `-tls`, `-tls-cert`, `-tls-key` | — | passed through to `serve` |
+| `-nome` | `praxis` | name in the SCM / of the systemd unit |
+
+Details that matter:
+
+- **Reinstalling is safe, and it is how you upgrade:** `service install` swaps the
+  binary at the destination and re-registers the service. A registration pointing at an
+  old executable (or at the folder the release was unzipped into) gets redone rather
+  than left alone.
+- **`-home` is explicit** because a service runs under another account: without it, the
+  Windows service would open an empty database in `LocalSystem`'s profile, not yours.
+- **`remove` deletes no data:** the database, the backups and the logs in `PRAXIS_HOME`
+  stay put.
+- **`print`** emits the equivalent systemd unit / `sc.exe` command, for anyone who
+  prefers to review or version-control the registration instead of letting the
+  installer do it.
+- **Without systemd** (macOS, a container with a different init), `install` refuses and
+  points at `print`, rather than registering something that will not come up.
 
 ---
 
@@ -400,6 +453,9 @@ sc.exe start praxis
 | Conflict on merge | Use **Atualizar branch** (brings main in) or resolve it in the worktree shown on the card. |
 | `/healthz` returns `degradado` (degraded) | Database unreachable — check `PRAXIS_HOME` permissions and disk space. |
 | Port already in use | Start with `-addr` on another port. |
+| The installed service starts and stops right away | Read `PRAXIS_HOME\logs\servico.log` (Windows) or `journalctl -u praxis -e` (Linux). The usual cause is a `-home` the service account cannot write: check with `praxis service status`. |
+| The service is up but the web UI shows an empty install | The service is pointing at another `PRAXIS_HOME`. `praxis service status` shows the registered command line; reinstall with `-home <your PRAXIS_HOME>`. |
+| Executions fail on git/harness authentication | The service is running as `LocalSystem` (Windows) or `root` (Linux), which do not see your `~/.claude`, `~/.ssh` or `git config`. Reinstall with `-usuario`. |
 
 ---
 
@@ -417,6 +473,7 @@ internal/
   intake/              # analyst + planner + embedded prompts
   notify/              # notifications (channels + event dispatcher)
   manutencao/          # backup, rotation, retention
+  servico/             # install/control as a system service (SCM on Windows, systemd on Linux)
   importador/          # classic Praxis importer
   procs/               # harness process tree
 web/                   # embedded frontend (HTML + CSS + vanilla ES modules)

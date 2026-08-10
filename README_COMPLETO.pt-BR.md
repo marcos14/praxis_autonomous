@@ -61,7 +61,11 @@ go test ./... -count=1
 ./praxis serve                           # bind padrão 127.0.0.1:7799 (uso local)
 ./praxis serve -addr 127.0.0.1:9000      # porta alternativa
 ./praxis serve -addr 0.0.0.0:7799 -tls   # acesso pela rede, HTTPS autoassinado
+./praxis serve -home /srv/praxis         # outro PRAXIS_HOME (banco, logs, backups)
 ```
+
+Para deixar o Praxis no ar permanentemente, instale-o como serviço do sistema
+(`praxis service install` — ver §8.1) em vez de manter um terminal aberto.
 
 Abra **http://127.0.0.1:7799** no navegador. O serviço faz o encerramento gracioso
 com `Ctrl+C` (SIGINT/SIGTERM), drenando as conexões e as tarefas em voo.
@@ -112,13 +116,16 @@ válidas (ver §9).
 Tudo vive fora das pastas dos projetos. A raiz é `PRAXIS_HOME`:
 
 - **Padrão:** `%LOCALAPPDATA%\praxis` (Windows) · `~/.config/praxis` (Linux/macOS).
-- **Override:** variável de ambiente `PRAXIS_HOME`.
+- **Override:** variável de ambiente `PRAXIS_HOME`, ou `serve -home` (é o que o
+  `service install` grava na linha de comando registrada — um serviço roda com outra
+  conta, cujo `%LOCALAPPDATA%` não é o seu).
 
 ```
 PRAXIS_HOME/
 ├─ praxis.db            # SQLite (WAL): projetos, motores, demandas, chat, fases, custos, eventos…
 ├─ worktrees/<projeto>/<demanda>/   # working trees git isolados por demanda
 ├─ logs/d<id>/          # .jsonl do log ao vivo de cada execução
+├─ logs/servico.log     # log do próprio serviço no Windows (sem console; rotaciona em 10 MiB)
 ├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotação: mantém os 7 mais recentes)
 ├─ pids/                # PIDs dos harnesses e do IDE web (para matar órfãos no boot)
 ├─ tls/                 # cert.pem/key.pem autoassinados do -tls (gerados na 1ª vez)
@@ -332,9 +339,8 @@ curl -s -X PUT http://127.0.0.1:7799/api/v1/config \
 ## 8. Outros subcomandos
 
 ```sh
-# Gerar a configuração para rodar como serviço (imprime; o registro efetivo exige admin):
-./praxis service                      # unit systemd (Linux) ou comando sc.exe (Windows)
-./praxis service -exe /opt/praxis/praxis -addr 127.0.0.1:7799 -nome praxis
+# Instalar e controlar o Praxis como serviço do sistema (ver 8.1):
+./praxis service install | status | start | stop | restart | remove | print
 
 # Importar projetos do Praxis clássico (lê automacao/autopilot.json + fases.csv; idempotente):
 ./praxis import /caminho/do/projeto [/outro/projeto ...]
@@ -342,18 +348,62 @@ curl -s -X PUT http://127.0.0.1:7799/api/v1/config \
 
 ### 8.1 Rodar como serviço
 
+O próprio `praxis` instala o serviço nas duas plataformas — não há passo manual de
+copiar comando. Uma instalação faz tudo: copia o binário para um diretório estável,
+cria `PRAXIS_HOME`, registra o serviço com início automático e reinício em caso de
+falha, e o sobe.
+
 **Linux (systemd):**
 ```sh
-./praxis service > /etc/systemd/system/praxis.service   # como root, revise o conteúdo
-systemctl daemon-reload && systemctl enable --now praxis
+sudo ./praxis service install                       # instala e sobe
+sudo ./praxis service install -addr 0.0.0.0:7799 -tls
+systemctl status praxis && journalctl -u praxis -f  # acompanhar
 ```
+Sob `sudo`, o serviço é registrado com `User=` da conta que chamou o sudo (`$SUDO_USER`)
+e `PRAXIS_HOME` dessa conta — é onde vivem o `git`, o `~/.ssh` e a configuração do
+harness. Para outra conta, use `-usuario`.
 
-**Windows (como Administrador):**
+**Windows (PowerShell como Administrador):**
 ```powershell
-# cole/execute o comando "sc.exe create ..." impresso por:
-.\praxis.exe service
-sc.exe start praxis
+.\praxis.exe service install                        # instala e sobe
+.\praxis.exe service status
 ```
+O binário vai para `C:\Program Files\Praxis` e o serviço aparece em `services.msc`
+como **Praxis Autonomous**. O log de quem sobe sem console fica em
+`PRAXIS_HOME\logs\servico.log`.
+
+> **Conta do serviço no Windows.** O padrão é `LocalSystem`, que **não** vê a
+> configuração do seu usuário (credenciais do harness em `%USERPROFILE%\.claude`,
+> chaves SSH, `git config`). Se as execuções falharem por autenticação, reinstale
+> apontando a sua conta:
+> `praxis service install -usuario ".\SEU_USUARIO" -senha ...`
+> (a conta precisa do direito *Fazer logon como serviço*, em `secpol.msc`).
+
+**Flags de `service install`** (as mesmas valem para `print`):
+
+| Flag | Padrão | Para quê |
+|---|---|---|
+| `-addr` | `127.0.0.1:7799` | bind do serviço (o mesmo `-addr` do `serve`) |
+| `-home` | o `PRAXIS_HOME` resolvido agora | dados do serviço; vai explícito na linha de comando registrada |
+| `-destino` | `C:\Program Files\Praxis` · `/usr/local/bin` | onde o binário é instalado |
+| `-exe` | — | registra este executável, sem copiar nada |
+| `-sem-copia` | `false` | registra o binário onde ele já está |
+| `-usuario` / `-senha` | `$SUDO_USER` · vazio (LocalSystem) | conta de logon do serviço |
+| `-tls`, `-tls-cert`, `-tls-key` | — | repassadas ao `serve` |
+| `-nome` | `praxis` | nome no SCM / da unit systemd |
+
+Detalhes que importam:
+
+- **Reinstalar é seguro e é a forma de atualizar:** `service install` troca o binário
+  no destino e re-registra o serviço. Um registro que aponta para um executável antigo
+  (ou para a pasta de onde o release foi descompactado) é refeito, não deixado como está.
+- **`-home` explícito** porque um serviço roda com outra conta: sem ele, o serviço do
+  Windows abriria um banco vazio no perfil do `LocalSystem` em vez do seu.
+- **`remove` não apaga dados:** o banco, os backups e os logs em `PRAXIS_HOME` ficam.
+- **`print`** entrega a unit systemd / o comando `sc.exe` equivalentes, para quem
+  prefere revisar ou versionar o registro em vez de deixar o instalador fazê-lo.
+- **Sem systemd** (macOS, container com outro init), `install` recusa e aponta o
+  `print`, em vez de registrar algo que não sobe.
 
 ---
 
@@ -385,6 +435,9 @@ sc.exe start praxis
 | Conflito na integração | Use **Atualizar branch** (traz a main) ou resolva no worktree indicado no card. |
 | `/healthz` retorna `degradado` | Banco inacessível — cheque permissões de `PRAXIS_HOME` e se o disco tem espaço. |
 | Porta ocupada | Suba com `-addr` em outra porta. |
+| O serviço instalado sobe e cai na hora | Leia `PRAXIS_HOME\logs\servico.log` (Windows) ou `journalctl -u praxis -e` (Linux). O motivo mais comum é um `-home` em que a conta do serviço não consegue escrever: confira com `praxis service status`. |
+| O serviço está no ar mas a UI aparece vazia | O serviço está apontando para outro `PRAXIS_HOME`. O `praxis service status` mostra a linha de comando registrada; reinstale com `-home <seu PRAXIS_HOME>`. |
+| Execuções falham na autenticação do git/harness | O serviço roda como `LocalSystem` (Windows) ou `root` (Linux), que não veem o seu `~/.claude`, `~/.ssh` nem o `git config`. Reinstale com `-usuario`. |
 
 ---
 
@@ -402,6 +455,7 @@ internal/
   intake/              # analista + planejador + prompts embutidos
   notify/              # notificações (canais + despachante de eventos)
   manutencao/          # backup, rotação, retenção
+  servico/             # instalação/controle como serviço (SCM no Windows, systemd no Linux)
   importador/          # importador do Praxis clássico
   procs/               # árvore de processos dos harnesses
 web/                   # frontend embutido (HTML + CSS + ES modules vanilla)

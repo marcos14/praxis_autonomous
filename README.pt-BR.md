@@ -146,6 +146,14 @@ Abra **http://127.0.0.1:7799**, cadastre um projeto (a pasta de um repositório 
 e crie a primeira consulta ou demanda. O menu **Manual**, dentro da própria web,
 guia o fluxo completo.
 
+Para deixar no ar sem um terminal aberto, instale como serviço do sistema — um
+comando nas duas plataformas (com `sudo` no Linux, num shell de Administrador no
+Windows):
+
+```sh
+praxis service install     # depois: praxis service status | stop | remove
+```
+
 Para acessar de outras máquinas sem ter um certificado próprio, suba com
 `-tls` — o Praxis gera um certificado HTTPS autoassinado:
 

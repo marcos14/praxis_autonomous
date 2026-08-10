@@ -20,6 +20,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/api"
@@ -34,6 +36,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/notify"
 	"github.com/marcos14/praxis-autonomous/internal/procs"
 	"github.com/marcos14/praxis-autonomous/internal/scheduler"
+	"github.com/marcos14/praxis-autonomous/internal/servico"
 	"github.com/marcos14/praxis-autonomous/internal/uso"
 )
 
@@ -52,7 +55,12 @@ func main() {
 	// Cancela o contexto no primeiro SIGINT/SIGTERM, disparando o shutdown
 	// gracioso. Um segundo sinal encerra o processo abruptamente (stop restaura
 	// o comportamento default do sinal).
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	//
+	// SIGTERM é o que o systemd manda no `systemctl stop`: sem ele o serviço só
+	// morria no SIGKILL do fim do TimeoutStopSec, sem drenar conexão nenhuma. No
+	// Windows o sinal não chega (a parada vem pelo SCM, ver servico.RodarComoServico),
+	// mas a constante existe e o Notify simplesmente nunca dispara.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -70,6 +78,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		fmt.Fprintln(errOut, "uso: praxis [-version] <subcomando> [flags]")
 		fmt.Fprintln(errOut, "subcomandos:")
 		fmt.Fprintln(errOut, "  serve    sobe o serviço (HTTP + scheduler)")
+		fmt.Fprintln(errOut, "  service  instala/controla o Praxis como serviço do sistema (install|status|...)")
+		fmt.Fprintln(errOut, "  import   importa projetos do Praxis clássico")
 		fmt.Fprintln(errOut, "  usuario  administra usuários pela CLI (add|reset-senha|list)")
 		fmt.Fprintln(errOut)
 		fs.PrintDefaults()
@@ -104,13 +114,26 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 }
 
-// serve inicializa o banco e sobe o servidor HTTP, bloqueando até que ctx seja
-// cancelado (SIGINT/SIGTERM) — quando faz um shutdown gracioso — ou o servidor
-// falhe. Retorna nil quando o encerramento é limpo.
+// opcoesServe são as flags do `serve` já interpretadas, para o corpo do serviço
+// (servir) não precisar reinterpretá-las quando roda sob o SCM do Windows.
+type opcoesServe struct {
+	addr    string
+	autoTLS bool
+	tlsCert string
+	tlsKey  string
+}
+
+// serve interpreta as flags e entrega o corpo do serviço a servir.
+//
+// Quando foi o Gerenciador de Serviços do Windows que subiu o processo, o corpo
+// roda sob o handler de controle do SCM — sem isso o Windows derruba o serviço no
+// start com o erro 1053 ("não respondeu à solicitação de início") — e o log vai
+// para arquivo, porque um serviço não tem console.
 func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	addr := fs.String("addr", enderecoPadrao, "endereço TCP de bind do servidor HTTP (use 0.0.0.0:7799 para acesso pela rede — com TLS)")
+	home := fs.String("home", "", "PRAXIS_HOME desta instância (banco, logs, backups); vazio usa o padrão do sistema")
 	autoTLS := fs.Bool("tls", false, "habilita HTTPS com certificado autoassinado gerado/reutilizado em PRAXIS_HOME/tls")
 	tlsCert := fs.String("tls-cert", "", "certificado TLS (PEM) próprio; habilita HTTPS (exige -tls-key)")
 	tlsKey := fs.String("tls-key", "", "chave privada TLS (PEM) do -tls-cert")
@@ -118,6 +141,66 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return err
 	}
 
+	// -home antes de qualquer coisa: é de PRAXIS_HOME que sai o caminho do banco,
+	// dos logs e dos backups. É por essa flag que o serviço instalado abre o banco
+	// do operador em vez de um vazio no perfil da conta de serviço (LocalSystem
+	// tem o seu próprio LOCALAPPDATA).
+	if h := strings.TrimSpace(*home); h != "" {
+		if err := os.Setenv("PRAXIS_HOME", h); err != nil {
+			return fmt.Errorf("-home: %w", err)
+		}
+	}
+
+	o := opcoesServe{addr: *addr, autoTLS: *autoTLS, tlsCert: *tlsCert, tlsKey: *tlsKey}
+	if !servico.EhServicoSCM() {
+		return servir(ctx, o, out, errOut)
+	}
+	// Sob o SCM não existe console: o que fosse para stdout/stderr se perderia, e
+	// um serviço que não sobe ficaria sem diagnóstico nenhum. Se nem o arquivo der
+	// (PRAXIS_HOME indisponível), segue sem log — melhor um serviço no ar e mudo
+	// que nenhum serviço.
+	if f, err := abrirLogServico(); err == nil {
+		defer f.Close()
+		out, errOut = f, f
+	}
+	return servico.RodarComoServico(servico.NomePadrao, func(ctxSCM context.Context) error {
+		return servir(ctxSCM, o, out, errOut)
+	})
+}
+
+// nomeLogServico é o arquivo em PRAXIS_HOME/logs que recebe o log do serviço no
+// Windows. No Linux não é usado: o journald já guarda a saída da unit
+// (journalctl -u praxis).
+const nomeLogServico = "servico.log"
+
+// tamanhoMaxLogServico é o teto do arquivo de log antes de ele virar .1. A rotina
+// de manutenção só retém os .jsonl de execução, então este arquivo cuida de si —
+// na abertura, que para um serviço é a cada reinício.
+const tamanhoMaxLogServico = 10 << 20 // 10 MiB
+
+func abrirLogServico() (*os.File, error) {
+	home, err := db.PraxisHome()
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(home, "logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	caminho := filepath.Join(dir, nomeLogServico)
+	if fi, err := os.Stat(caminho); err == nil && fi.Size() >= tamanhoMaxLogServico {
+		// Uma geração anterior basta: o histórico que interessa está nos eventos
+		// do banco, este arquivo é para o diagnóstico de boot.
+		_ = os.Remove(caminho + ".1")
+		_ = os.Rename(caminho, caminho+".1")
+	}
+	return os.OpenFile(caminho, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+}
+
+// servir inicializa o banco e sobe o servidor HTTP, bloqueando até que ctx seja
+// cancelado (SIGINT/SIGTERM, ou o Stop do SCM) — quando faz um shutdown gracioso —
+// ou o servidor falhe. Retorna nil quando o encerramento é limpo.
+func servir(ctx context.Context, o opcoesServe, out, errOut io.Writer) error {
 	logger := slog.New(slog.NewTextHandler(errOut, nil))
 	api.Versao = versao
 
@@ -215,11 +298,11 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	srv := api.Novo(opts)
 
-	cfgTLS, err := resolverTLS(*tlsCert, *tlsKey, *autoTLS, logger)
+	cfgTLS, err := resolverTLS(o.tlsCert, o.tlsKey, o.autoTLS, logger)
 	if err != nil {
 		return err
 	}
-	return servirHTTP(ctx, *addr, srv.Handler(), cfgTLS, out, logger)
+	return servirHTTP(ctx, o.addr, srv.Handler(), cfgTLS, out, logger)
 }
 
 // novoIDEWeb monta o gerente do VS Code Web com o CLI/dados sob PRAXIS_HOME e o

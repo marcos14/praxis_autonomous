@@ -147,6 +147,13 @@ Open **http://127.0.0.1:7799**, register a project (the folder of a git
 repository), and create your first query or demand. The **Manual** menu, inside
 the web UI, walks through the whole flow.
 
+To keep it up without a terminal open, install it as a system service — one command
+on both platforms (`sudo` on Linux, an Administrator shell on Windows):
+
+```sh
+praxis service install     # then: praxis service status | stop | remove
+```
+
 To reach the server from other machines without a certificate of your own, start
 with `-tls` — Praxis generates a self-signed HTTPS certificate:
 
