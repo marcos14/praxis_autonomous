@@ -15,6 +15,7 @@ package api
 //     servidor — nunca chega ao navegador.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/marcos14/praxis-autonomous/internal/i18n"
@@ -78,6 +79,29 @@ type respSessaoIDE struct {
 	URL    string `json:"url,omitempty"`
 }
 
+// ideWebHabilitado lê a chave global `ide_web` (bool). Ausente/erro = DESLIGADO:
+// o IDE é opt-in explícito do admin. O seam de testes sem banco fica ligado —
+// esses testes exercitam o handler isolado, não a postura de config.
+func (s *Servidor) ideWebHabilitado(r *http.Request) bool {
+	if s.banco == nil {
+		return true
+	}
+	cfg, err := s.banco.ObterConfigGlobal(r.Context())
+	if err != nil {
+		s.log.Error("ler config do IDE web", "erro", err)
+		return false
+	}
+	raw, ok := cfg["ide_web"]
+	if !ok {
+		return false
+	}
+	var habilitado bool
+	if err := json.Unmarshal(raw, &habilitado); err != nil {
+		return false
+	}
+	return habilitado
+}
+
 // statusPermiteEdicaoManual diz em quais estados o worktree pode ser editado à
 // mão sem corromper o ciclo de execução: nunca com o scheduler podendo escrever
 // nele (pronta/executando/aguardando_franquia) nem antes de existir worktree.
@@ -98,6 +122,14 @@ func statusPermiteEdicaoManual(status string) bool {
 func (s *Servidor) handleCriarSessaoIDE(w http.ResponseWriter, r *http.Request) {
 	if s.ideWeb == nil {
 		erroT(w, r, http.StatusServiceUnavailable, "ide_indisponivel", "erro.ide_indisponivel")
+		return
+	}
+	// Opt-in do admin (config global `ide_web`): o IDE equivale a acesso de
+	// desenvolvedor ao servidor (terminal incluído), então nasce DESLIGADO em
+	// toda instalação — postura open source (Fase A). Relido a cada chamada:
+	// ligar/desligar na tela de Configurações vale sem reiniciar.
+	if !s.ideWebHabilitado(r) {
+		erroT(w, r, http.StatusForbidden, "ide_desabilitado", "erro.ide_desabilitado")
 		return
 	}
 	pr := principalDaRequisicao(r)

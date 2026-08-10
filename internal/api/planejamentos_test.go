@@ -373,6 +373,7 @@ func fazerUpload(t *testing.T, srv *Servidor, caminho, nomeArquivo string, conte
 	_ = mw.Close()
 	req := httptest.NewRequest("POST", caminho, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+tokenAdminTeste(t, srv))
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	return rec

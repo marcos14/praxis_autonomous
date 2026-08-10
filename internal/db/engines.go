@@ -44,6 +44,16 @@ type Motor struct {
 	TimeoutMin     int             `json:"timeout_min"`
 	Params         json.RawMessage `json:"params"`
 	Contas         []Conta         `json:"contas"`
+	// OwnerUserID é o usuário que criou o motor (NULL nos legados e nos criados
+	// por token/bootstrap). Informativo + âncora da visibilidade "privada"; a
+	// gestão de motores continua exigindo config.gerir.
+	OwnerUserID *int64 `json:"owner_user_id,omitempty"`
+	// Campos CALCULADOS da ACL (engine_access) — preenchidos na leitura, nunca
+	// persistidos: DonoNome é o nome do owner; Visibilidade resume a ACL
+	// (publica|privada|grupo); GrupoID é o grupo liberado (quando grupo).
+	DonoNome     string `json:"dono_nome,omitempty"`
+	Visibilidade string `json:"visibilidade,omitempty"`
+	GrupoID      *int64 `json:"grupo_id,omitempty"`
 }
 
 // Conta é uma linha da tabela engine_accounts (uma conta do motor, com seu
@@ -78,7 +88,7 @@ func ContaAtivaPara(m Motor, afinidade int64) (Conta, bool) {
 
 // colunasMotor lista as colunas de engines na ordem esperada por scanMotor.
 const colunasMotor = `id, nome, prioridade, ativo, fallback, modelo_exec, modelo_analise,
-	modelo_consulta, budget_fase_usd, timeout_min, params`
+	modelo_consulta, budget_fase_usd, timeout_min, params, owner_user_id`
 
 // colunasConta lista as colunas de engine_accounts na ordem esperada por
 // scanConta.
@@ -92,15 +102,17 @@ func scanMotor(sc interface{ Scan(...any) error }) (Motor, error) {
 		ativo    int
 		fallback int
 		params   string
+		owner    sql.NullInt64
 	)
 	if err := sc.Scan(&m.ID, &m.Nome, &m.Prioridade, &ativo, &fallback, &m.ModeloExec,
-		&m.ModeloAnalise, &m.ModeloConsulta, &m.BudgetFaseUSD, &m.TimeoutMin, &params); err != nil {
+		&m.ModeloAnalise, &m.ModeloConsulta, &m.BudgetFaseUSD, &m.TimeoutMin, &params, &owner); err != nil {
 		return Motor{}, err
 	}
 	m.Ativo = ativo != 0
 	m.Fallback = fallback != 0
 	m.Params = normalizarParams(params)
 	m.Contas = []Conta{}
+	m.OwnerUserID = ptrDeNull(owner)
 	return m, nil
 }
 
@@ -140,11 +152,12 @@ func (d *DB) CriarMotor(ctx context.Context, m Motor) (Motor, error) {
 	row := d.Escritor.QueryRowContext(ctx, `
 		INSERT INTO engines
 			(nome, prioridade, ativo, fallback, modelo_exec, modelo_analise, modelo_consulta,
-			 budget_fase_usd, timeout_min, params)
-		VALUES (?,?,?,?,?,?,?,?,?,?)
+			 budget_fase_usd, timeout_min, params, owner_user_id)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)
 		RETURNING id`,
 		m.Nome, m.Prioridade, booleanParaInt(m.Ativo), booleanParaInt(m.Fallback), m.ModeloExec,
 		m.ModeloAnalise, m.ModeloConsulta, m.BudgetFaseUSD, m.TimeoutMin, string(params),
+		nullInt(m.OwnerUserID),
 	)
 	if err := row.Scan(&m.ID); err != nil {
 		return Motor{}, traduzirErroMotor(err)
@@ -200,6 +213,9 @@ func (d *DB) ListarMotores(ctx context.Context) ([]Motor, error) {
 	if err := crows.Err(); err != nil {
 		return nil, fmt.Errorf("listar contas: %w", err)
 	}
+	if err := d.decorarMotores(ctx, motores); err != nil {
+		return nil, err
+	}
 	return motores, nil
 }
 
@@ -220,7 +236,11 @@ func (d *DB) ObterMotor(ctx context.Context, id int64) (Motor, error) {
 		return Motor{}, err
 	}
 	m.Contas = contas
-	return m, nil
+	ms := []Motor{m}
+	if err := d.decorarMotores(ctx, ms); err != nil {
+		return Motor{}, err
+	}
+	return ms[0], nil
 }
 
 // AtualizarMotor grava os campos editáveis do motor identificado por m.ID e

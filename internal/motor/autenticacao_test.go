@@ -37,7 +37,11 @@ func TestProcessoHelperAuth(t *testing.T) {
 	}
 	nome := os.Args[sep]
 	args := os.Args[sep+1:]
-	switch nome {
+	// O nome pode chegar como caminho absoluto (ResolverCLI resolve pelo PATH
+	// da máquina onde o teste roda): despacha pelo nome-base, sem extensão.
+	base := strings.ToLower(filepath.Base(nome))
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	switch base {
 	case "claude":
 		helperClaude(args)
 	case "codex":

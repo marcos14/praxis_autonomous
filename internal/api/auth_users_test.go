@@ -7,10 +7,12 @@ import (
 	"testing"
 )
 
-// setupAdmin cria o primeiro admin via /auth/setup e devolve o token JWT emitido.
+// setupAdmin cria o primeiro admin via /auth/setup e devolve o token JWT
+// emitido. Requisição ANÔNIMA de propósito: o fazerReq autenticado criaria o
+// admin de teste compartilhado antes, e este setup responderia 409.
 func setupAdmin(t *testing.T, srv *Servidor) string {
 	t.Helper()
-	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/auth/setup", map[string]any{
+	rec := fazerReqAnonima(t, srv, http.MethodPost, "/api/v1/auth/setup", map[string]any{
 		"nome": "Root", "email": "root@x.com", "senha": "senha-forte-123",
 	})
 	if rec.Code != http.StatusCreated {
@@ -26,10 +28,10 @@ func setupAdmin(t *testing.T, srv *Servidor) string {
 	return resp.Token
 }
 
-// loginToken loga e devolve o token do usuário.
+// loginToken loga e devolve o token do usuário (rota pública — anônima).
 func loginToken(t *testing.T, srv *Servidor, email, senha string) string {
 	t.Helper()
-	rec := fazerReq(t, srv, http.MethodPost, "/api/v1/auth/login", map[string]any{"email": email, "senha": senha})
+	rec := fazerReqAnonima(t, srv, http.MethodPost, "/api/v1/auth/login", map[string]any{"email": email, "senha": senha})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login: status %d (corpo=%q)", rec.Code, rec.Body.String())
 	}
@@ -42,7 +44,7 @@ func TestSetupPrimeiroAdminEBloqueiaSegundo(t *testing.T) {
 	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
 
 	// status inicial: setup necessário.
-	rec := fazerReq(t, srv, http.MethodGet, "/api/v1/auth/status", nil)
+	rec := fazerReqAnonima(t, srv, http.MethodGet, "/api/v1/auth/status", nil)
 	var st map[string]bool
 	_ = json.Unmarshal(rec.Body.Bytes(), &st)
 	if !st["setup_necessario"] {
@@ -52,7 +54,7 @@ func TestSetupPrimeiroAdminEBloqueiaSegundo(t *testing.T) {
 	tok := setupAdmin(t, srv)
 
 	// segundo setup → 409.
-	rec = fazerReq(t, srv, http.MethodPost, "/api/v1/auth/setup", map[string]any{
+	rec = fazerReqAnonima(t, srv, http.MethodPost, "/api/v1/auth/setup", map[string]any{
 		"nome": "Outro", "email": "outro@x.com", "senha": "senha-forte-123",
 	})
 	if rec.Code != http.StatusConflict {
@@ -76,7 +78,7 @@ func TestModoProtegidoAposPrimeiroUsuario(t *testing.T) {
 	setupAdmin(t, srv)
 
 	// Agora que há usuário, requisição SEM credencial → 401.
-	rec := fazerReq(t, srv, http.MethodGet, "/api/v1/projects", nil)
+	rec := fazerReqAnonima(t, srv, http.MethodGet, "/api/v1/projects", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("sem token após setup: status %d, quero 401", rec.Code)
 	}
@@ -90,10 +92,10 @@ func TestModoProtegidoAposPrimeiroUsuario(t *testing.T) {
 func TestPermissoesGranulares(t *testing.T) {
 	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
 
-	// Projeto criado no modo bootstrap (ainda sem usuários).
+	// Projeto criado pelo admin de teste (o modo bootstrap não cria mais nada).
 	proj := criarProjetoTeste(t, srv)
 
-	admin := setupAdmin(t, srv)
+	admin := tokenAdminTeste(t, srv)
 
 	// Papel "criador" só com demandas.criar.
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/roles", admin, map[string]any{
@@ -162,17 +164,17 @@ func TestAuthViaQueryToken(t *testing.T) {
 	tok := setupAdmin(t, srv)
 
 	// Sem credencial (já há usuário) → 401.
-	rec := fazerReq(t, srv, http.MethodGet, "/api/v1/projects", nil)
+	rec := fazerReqAnonima(t, srv, http.MethodGet, "/api/v1/projects", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("sem credencial: status %d, quero 401", rec.Code)
 	}
 	// Token na query → 200.
-	rec = fazerReq(t, srv, http.MethodGet, "/api/v1/projects?token="+tok, nil)
+	rec = fazerReqAnonima(t, srv, http.MethodGet, "/api/v1/projects?token="+tok, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("token na query: status %d, quero 200 (corpo=%q)", rec.Code, rec.Body.String())
 	}
 	// Token inválido na query → 401.
-	rec = fazerReq(t, srv, http.MethodGet, "/api/v1/projects?token=a.b.c", nil)
+	rec = fazerReqAnonima(t, srv, http.MethodGet, "/api/v1/projects?token=a.b.c", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("token inválido na query: status %d, quero 401", rec.Code)
 	}

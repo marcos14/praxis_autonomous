@@ -270,6 +270,17 @@ func Privilegiado() (bool, string) {
 	return false, "abra o PowerShell (ou o Prompt de Comando) com \"Executar como administrador\""
 }
 
+// ContaServicoPadrao existe para simetria de API com o Linux; no Windows o
+// padrão sem -usuario é LocalSystem e nenhuma conta é criada.
+const ContaServicoPadrao = ""
+
+// GarantirContaSistema não se aplica ao Windows (LocalSystem é o default do
+// SCM; a restrição de root do Claude é do Linux). Existe para o chamador não
+// precisar de build tags.
+func GarantirContaSistema() (conta string, criada bool, err error) {
+	return "", false, nil
+}
+
 // DestinoPadrao é onde o binário do serviço fica: Program Files, e não a pasta de
 // onde alguém rodou o instalador — um serviço apontando para Downloads para de
 // subir no dia em que a pasta é limpa.

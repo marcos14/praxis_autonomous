@@ -2,7 +2,6 @@ package motor
 
 import (
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -171,13 +170,11 @@ func detectarMotores(lookup func(string) (string, bool), caminho func(string) (s
 	return out
 }
 
-// caminhoCLIMotor devolve o caminho do CLI do harness no PATH, se instalado.
+// caminhoCLIMotor devolve o caminho do CLI do harness, se instalado — pelo
+// PATH, pelo override PRAXIS_CLI_<VENDOR> ou pelo diretório gerenciado do
+// instalador (ResolverCLI).
 func caminhoCLIMotor(nome string) (string, bool) {
-	p, err := exec.LookPath(normalizarNomeMotor(nome))
-	if err != nil {
-		return "", false
-	}
-	return p, true
+	return CLIDisponivel(nome)
 }
 
 // valorAmbiente devolve o valor da variavel quando definida (sem mascarar).

@@ -343,15 +343,23 @@ func (s *Servico) resolverMotorPlanejamento(ctx context.Context, criadoPor *int6
 		} else if ok {
 			modeloGrupo = strings.TrimSpace(g.Modelo)
 			if g.EngineID != nil {
-				if m, err := s.store.ObterMotor(ctx, *g.EngineID); err == nil && m.Ativo {
-					alias, dir := contaAtiva(m, seed)
-					return m.Nome, escolherModelo(modeloGrupo, m.ModeloConsulta, m.ModeloAnalise),
-						"", alias, dir, m.BudgetFaseUSD, m.TimeoutMin
-				} else if err != nil {
-					s.logf(fmt.Sprintf("estrategista: motor do grupo %q: %v", g.Nome, err))
+				// Fail-closed: o motor do grupo só vale se a ACL (engine_access)
+				// o mostra ao criador do planejamento; senão, cai na cadeia padrão.
+				visivel, verr := s.store.MotorVisivelPara(ctx, *g.EngineID, criadoPor)
+				if verr != nil {
+					s.logf(fmt.Sprintf("estrategista: visibilidade do motor do grupo %q: %v", g.Nome, verr))
 				}
-				// motor do grupo removido/inativo: cai no padrão, preservando o
-				// modelo do grupo (se houver).
+				if visivel {
+					if m, err := s.store.ObterMotor(ctx, *g.EngineID); err == nil && m.Ativo {
+						alias, dir := contaAtiva(m, seed)
+						return m.Nome, escolherModelo(modeloGrupo, m.ModeloConsulta, m.ModeloAnalise),
+							"", alias, dir, m.BudgetFaseUSD, m.TimeoutMin
+					} else if err != nil {
+						s.logf(fmt.Sprintf("estrategista: motor do grupo %q: %v", g.Nome, err))
+					}
+				}
+				// motor do grupo removido/inativo/escondido: cai no padrão,
+				// preservando o modelo do grupo (se houver).
 			}
 		}
 	}
@@ -359,6 +367,10 @@ func (s *Servico) resolverMotorPlanejamento(ctx context.Context, criadoPor *int6
 	motores, err := s.store.ListarMotores(ctx)
 	if err != nil {
 		s.logf(fmt.Sprintf("estrategista: listar motores: %v", err))
+		return "claude", modeloGrupo, "", "", "", 0, 0
+	}
+	if motores, err = s.store.FiltrarMotoresVisiveis(ctx, motores, criadoPor); err != nil {
+		s.logf(fmt.Sprintf("estrategista: motores visíveis: %v", err))
 		return "claude", modeloGrupo, "", "", "", 0, 0
 	}
 	for _, m := range motores {

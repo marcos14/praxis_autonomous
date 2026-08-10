@@ -35,6 +35,12 @@ type principal struct {
 	email      string
 	permissoes map[string]bool
 	viaToken   bool
+	// bootstrap marca o principal do modo de inicialização de um banco SEM
+	// usuários. Desde a Fase A ele NÃO dá mais acesso à API: só as rotas
+	// públicas de auth funcionam até o primeiro admin ser criado no /auth/setup
+	// (antes, qualquer um que alcançasse a porta antes do setup tinha admin
+	// pleno). O seam de testes com banco nil não liga esta flag.
+	bootstrap bool
 }
 
 // tem informa se o principal possui a permissão perm — diretamente ou via curinga
@@ -84,6 +90,14 @@ func (s *Servidor) comAuth(next http.Handler) http.Handler {
 			}
 			s.log.Error("resolver principal", "erro", err)
 			erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
+			return
+		}
+		// Modo bootstrap (banco sem usuários): nada além das rotas públicas de
+		// auth responde até o primeiro admin existir. Antes deste bloqueio, uma
+		// instância recém-instalada exposta na rede dava admin pleno a qualquer
+		// um que chegasse antes do setup.
+		if pr.bootstrap {
+			erroT(w, r, http.StatusUnauthorized, "bootstrap", "erro.bootstrap_restrito")
 			return
 		}
 		if permReq != "" && !pr.tem(permReq) {
@@ -177,13 +191,16 @@ func (s *Servidor) resolverPrincipal(r *http.Request) (*principal, error) {
 		}
 		return s.principalDeToken(ctx, cred)
 	}
-	// Sem credencial: modo bootstrap só enquanto não houver usuários.
+	// Sem credencial: modo bootstrap só enquanto não houver usuários — e, desde
+	// a Fase A, restrito às rotas públicas de auth (o comAuth barra o resto).
 	n, err := s.banco.ContarUsuarios(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if n == 0 {
-		return principalBootstrap(), nil
+		p := principalBootstrap()
+		p.bootstrap = true
+		return p, nil
 	}
 	return nil, errNaoAutorizado
 }
@@ -309,6 +326,11 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 	if seg[0] == "engines" && len(seg) >= 5 && seg[2] == "accounts" && seg[4] == "auth" {
 		return false, db.PermConfigGerir
 	}
+	// Instalador de harnesses (Fase D): estado dos CLIs, versões e jobs de
+	// download são assunto de quem gerencia motores — inclusive as LEITURAS.
+	if seg[0] == "engines" && len(seg) >= 2 && (seg[1] == "instalaveis" || seg[1] == "instalar") {
+		return false, db.PermConfigGerir
+	}
 
 	// ACL do projeto (projects/{id}/access): leitura e escrita exigem
 	// projetos.gerir — a leitura expõe usuários/grupos e a escrita muda quem
@@ -332,12 +354,15 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 func permissaoMutacao(seg []string, resto string) string {
 	switch seg[0] {
 	case "projects":
-		// projects, projects/{id}, projects/{id}/config → gerir projetos;
-		// projects/{id}/demands → criar demanda.
+		// projects/{id}/demands → criar demanda. As demais mutações de projeto
+		// (criar, editar, overview, config) são checadas NO HANDLER, porque a
+		// regra depende do recurso: projetos.criar OU gerir para criar;
+		// dono OU gerir para alterar (Fase A — donos e visibilidade). A ACL de
+		// caminho (autorizarVisibilidade) já barrou quem nem vê o projeto.
 		if len(seg) >= 3 && seg[2] == "demands" {
 			return db.PermDemandasCriar
 		}
-		return db.PermProjetosGerir
+		return ""
 	case "demands":
 		if len(seg) == 2 && seg[1] == "ordem" {
 			return db.PermDemandasOperar
@@ -359,6 +384,10 @@ func permissaoMutacao(seg []string, resto string) string {
 		return db.PermConfigGerir
 	case "engine-auth-sessions":
 		return db.PermConfigGerir
+	case "me":
+		// Autosserviço do próprio usuário (chave SSH): basta estar autenticado;
+		// os handlers exigem um usuário logado (tokens de API não têm "me").
+		return ""
 	case "groups":
 		// Grupos de repositórios (feature de consultas): gestão junto de projetos.
 		return db.PermProjetosGerir

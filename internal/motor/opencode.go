@@ -74,7 +74,7 @@ func (motorOpencode) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	ctx, cancel, timeout := contextoTimeout(op.Ctx, op.TimeoutMin)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "opencode", args...)
+	cmd := exec.CommandContext(ctx, ResolverCLI("opencode"), args...)
 	cmd.Dir = op.Dir
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Env = append(cmd.Environ(), "OPENCODE_PERMISSION="+permissoesOpencode(op))

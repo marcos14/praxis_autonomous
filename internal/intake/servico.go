@@ -135,7 +135,7 @@ func (s *Servico) montarPlanejador(ctx context.Context, demandaID int64) (*Plane
 		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
 	}
 	s.prepararRepo(ctx, dem, proj)
-	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotor(ctx, demandaID)
+	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotor(ctx, dem.CriadoPor, demandaID)
 
 	return &Planejador{
 		Store:      s.store,
@@ -176,7 +176,7 @@ func (s *Servico) montarAnalista(ctx context.Context, demandaID int64) (*Analist
 		return nil, fmt.Errorf("intake: obter projeto %d: %w", dem.ProjectID, err)
 	}
 	s.prepararRepo(ctx, dem, proj)
-	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotor(ctx, demandaID)
+	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotor(ctx, dem.CriadoPor, demandaID)
 
 	return &Analista{
 		Store:      s.store,
@@ -226,12 +226,19 @@ func (s *Servico) prepararRepo(ctx context.Context, dem db.Demanda, proj db.Proj
 // automática. Sem motor cadastrado, cai no default "claude" com modelo default —
 // o analista funciona out-of-the-box.
 //
+// criadoPor é o criador da demanda: só motores visíveis a ele pela ACL
+// (engine_access) entram na escolha — nil (token/bootstrap) usa só os públicos.
+//
 // É a resolução mínima que o analista precisa; a resolução completa (motor por
 // operação, fallback, contas com afinidade) é do wiring do scheduler (2g.n1).
-func (s *Servico) resolverMotor(ctx context.Context, afinidade ...int64) (nome, modelo, esforco, conta, configDir string, budget float64, timeout int) {
+func (s *Servico) resolverMotor(ctx context.Context, criadoPor *int64, afinidade ...int64) (nome, modelo, esforco, conta, configDir string, budget float64, timeout int) {
 	motores, err := s.store.ListarMotores(ctx)
 	if err != nil {
 		s.logf(fmt.Sprintf("intake: listar motores: %v", err))
+		return "claude", "", "", "", "", 0, 0
+	}
+	if motores, err = s.store.FiltrarMotoresVisiveis(ctx, motores, criadoPor); err != nil {
+		s.logf(fmt.Sprintf("intake: motores visíveis: %v", err))
 		return "claude", "", "", "", "", 0, 0
 	}
 	for _, m := range motores {

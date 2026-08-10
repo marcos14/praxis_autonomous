@@ -29,7 +29,7 @@ func TestResolverMotorPrioridadeEConta(t *testing.T) {
 	}
 
 	svc := NovoServico(OpcoesServico{Store: d})
-	nome, modelo, _, conta, cfg, budget, timeout := svc.resolverMotor(ctx)
+	nome, modelo, _, conta, cfg, budget, timeout := svc.resolverMotor(ctx, nil)
 	if nome != "claude" || modelo != "sonnet" {
 		t.Fatalf("motor/modelo = %q/%q, quero claude/sonnet", nome, modelo)
 	}
@@ -61,7 +61,7 @@ func TestResolverMotorPulaMotorForaDoFallback(t *testing.T) {
 	}
 
 	svc := NovoServico(OpcoesServico{Store: d})
-	nome, modelo, _, _, _, _, _ := svc.resolverMotor(ctx)
+	nome, modelo, _, _, _, _, _ := svc.resolverMotor(ctx, nil)
 	if nome != "claude" || modelo != "sonnet" {
 		t.Fatalf("motor/modelo = %q/%q, quero claude/sonnet (o manual fica de fora)", nome, modelo)
 	}
@@ -70,7 +70,7 @@ func TestResolverMotorPulaMotorForaDoFallback(t *testing.T) {
 func TestResolverMotorSemMotorCaiNoDefault(t *testing.T) {
 	d := abrirDB(t)
 	svc := NovoServico(OpcoesServico{Store: d})
-	nome, modelo, _, conta, cfg, _, _ := svc.resolverMotor(context.Background())
+	nome, modelo, _, conta, cfg, _, _ := svc.resolverMotor(context.Background(), nil)
 	if nome != "claude" || modelo != "" || conta != "" || cfg != "" {
 		t.Fatalf("default = %q/%q/%q/%q, quero claude/''/''/''", nome, modelo, conta, cfg)
 	}

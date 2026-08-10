@@ -19,7 +19,8 @@ import { montarHome, desmontarHome } from "./home.js";
 import { montarManual } from "./manual.js";
 import { montarUsuarios, montarPapeis } from "./usuarios.js";
 import { montarGruposUsuarios } from "./gusuarios.js";
-import { bannerErro, el, limpar } from "./ui.js";
+import { bannerErro, el, limpar, toast } from "./ui.js";
+import { api } from "./api.js";
 import * as auth from "./auth.js";
 import { t, aplicarTraducoes, seletorIdioma, adotarIdiomaDoUsuario } from "./i18n.js";
 
@@ -134,11 +135,84 @@ function aplicarPermissoes() {
     limpar(box);
     box.append(
       el("div", { class: "quem" }, el("b", { text: u.nome || u.email }), el("span", { text: u.email })),
+      el("button", { class: "btn ghost sm", text: t("nav.chave_ssh"), onclick: abrirChaveSSH }),
       el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => auth.logout() }),
       seletorIdioma(() => auth.tokenAtual()),
     );
     box.hidden = false;
   }
+}
+
+// abrirChaveSSH mostra a chave SSH do usuário (Fase C) num modal: gerar quando
+// não existe, copiar a pública, testar a conexão com um repositório. A chave
+// privada nunca chega ao navegador.
+async function abrirChaveSSH() {
+  const overlay = el("div", { class: "overlay open", onclick: (e) => { if (e.target === overlay) overlay.remove(); } });
+  const corpo = el("div", { class: "form", style: "padding:16px 22px 22px" });
+  const modal = el("div", { class: "modal", style: "max-width:640px" },
+    el("div", { class: "modal-head" },
+      el("div", { class: "row1" },
+        el("h2", { text: t("ssh.titulo") }),
+        el("button", { class: "modal-close", text: "✕", onclick: () => overlay.remove() }))),
+    corpo);
+  overlay.append(modal);
+  document.body.append(overlay);
+
+  async function render() {
+    limpar(corpo);
+    let chave = null;
+    try {
+      chave = await api.obterChaveSSH();
+    } catch (e) {
+      if (e.status !== 404) {
+        corpo.append(el("p", { class: "sub", text: e.message }));
+        return;
+      }
+    }
+    if (!chave) {
+      corpo.append(el("p", { class: "sub", text: t("ssh.sem_chave") }));
+      const btn = el("button", { class: "btn" }, t("ssh.gerar"));
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try { await api.gerarChaveSSH(); toast(t("ssh.gerada"), "ok"); await render(); }
+        catch (e) { toast(e.message, "err"); btn.disabled = false; }
+      };
+      corpo.append(btn);
+      return;
+    }
+    const pub = el("textarea", { readonly: true, rows: 3, style: "font-family:monospace;font-size:12px" }, chave.publica);
+    corpo.append(
+      el("p", { class: "sub", text: t("ssh.instrucoes") }),
+      pub,
+      el("div", { class: "hint", text: chave.fingerprint ? "fingerprint: " + chave.fingerprint : "" }),
+    );
+    const btnCopiar = el("button", { class: "btn sm" }, t("ssh.copiar"));
+    btnCopiar.onclick = async () => {
+      try { await navigator.clipboard.writeText(chave.publica); toast(t("ssh.copiada"), "ok"); }
+      catch { pub.select(); document.execCommand("copy"); toast(t("ssh.copiada"), "ok"); }
+    };
+    const inpURL = el("input", { placeholder: "git@github.com:org/repo.git", style: "flex:1" });
+    const btnTestar = el("button", { class: "btn ghost sm" }, t("ssh.testar"));
+    const veredito = el("div", { class: "hint" });
+    btnTestar.onclick = async () => {
+      btnTestar.disabled = true;
+      veredito.textContent = t("ssh.testando");
+      try {
+        const r = await api.testarChaveSSH(inpURL.value.trim());
+        veredito.textContent = r.ok ? t("ssh.teste_ok") : t("ssh.teste_falhou", { detalhe: r.detalhe || "" });
+      } catch (e) {
+        veredito.textContent = e.message;
+      } finally {
+        btnTestar.disabled = false;
+      }
+    };
+    corpo.append(
+      el("div", { style: "display:flex;gap:8px;align-items:center" }, btnCopiar),
+      el("div", { style: "display:flex;gap:8px;align-items:center;margin-top:8px" }, inpURL, btnTestar),
+      veredito,
+    );
+  }
+  await render();
 }
 
 // ---------- Portão de autenticação ----------

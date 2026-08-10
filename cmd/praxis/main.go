@@ -20,11 +20,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/api"
+	"github.com/marcos14/praxis-autonomous/internal/chavessh"
 	"github.com/marcos14/praxis-autonomous/internal/consultor"
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/estrategista"
@@ -202,6 +204,14 @@ func abrirLogServico() (*os.File, error) {
 // ou o servidor falhe. Retorna nil quando o encerramento é limpo.
 func servir(ctx context.Context, o opcoesServe, out, errOut io.Writer) error {
 	logger := slog.New(slog.NewTextHandler(errOut, nil))
+
+	// Fase B: aviso destacado — como root, as execuções autônomas do claude vão
+	// falhar (o CLI recusa UID 0). O serviço sobe mesmo assim: consultas de
+	// leitura e a UI continuam úteis enquanto o operador corrige o registro.
+	if runtime.GOOS != "windows" && os.Geteuid() == 0 && os.Getenv("IS_SANDBOX") != "1" {
+		logger.Warn("PRAXIS RODANDO COMO ROOT: o claude recusa execução autônoma com UID 0 — " +
+			"registre o serviço com uma conta não-root (sudo praxis service install) ou, em container, use usuário não-root/IS_SANDBOX=1")
+	}
 	api.Versao = versao
 
 	banco, err := db.AbrirPadrao()
@@ -239,6 +249,24 @@ func servir(ctx context.Context, o opcoesServe, out, errOut io.Writer) error {
 	// Dependências compartilhadas do ciclo de execução: operações git (mutex por
 	// projeto) e o registro de PIDs dos harnesses (para matar órfãos no boot).
 	git := gitops.Novo()
+	// Chaves SSH por usuário (Fase C): as operações git de REDE resolvem, pelo
+	// caminho do repo/worktree, a chave do projeto (ssh_user_id) e injetam o
+	// GIT_SSH_COMMAND dela. Projetos sem credencial seguem com as credenciais
+	// do SO (AmbienteGit devolve nil).
+	if home, err := db.PraxisHome(); err == nil {
+		chaves := chavessh.Novo(home)
+		git.AmbienteRede = func(repo string) []string {
+			ctxRede, cancelar := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelar()
+			uid, ok := banco.SSHUserDoRepo(ctxRede, repo)
+			if !ok || uid == nil {
+				return nil
+			}
+			return chaves.AmbienteGit(*uid)
+		}
+	} else {
+		logger.Warn("chaves SSH por usuário desligadas: resolver PRAXIS_HOME", "erro", err)
+	}
 	registro := registroPIDs(logger)
 
 	// Recuperação pós-restart (Fase 2i): antes de servir, faz o prune dos

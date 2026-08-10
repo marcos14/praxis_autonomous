@@ -183,7 +183,7 @@ func TestConsultaCriarConversarE409EnquantoPensa(t *testing.T) {
 func TestConsultasRBAC(t *testing.T) {
 	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
 	proj := criarProjetoTeste(t, srv)
-	admin := setupAdmin(t, srv)
+	admin := tokenAdminTeste(t, srv)
 
 	// papel "suporte": só consultas.usar.
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/roles", admin, map[string]any{
@@ -355,7 +355,7 @@ func TestProgressoSSESanitizado(t *testing.T) {
 	reqCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet,
-		"/api/v1/consultas/"+strconv.FormatInt(cons.ID, 10)+"/progresso", nil).WithContext(reqCtx)
+		"/api/v1/consultas/"+strconv.FormatInt(cons.ID, 10)+"/progresso?token="+tokenAdminTeste(t, srv), nil).WithContext(reqCtx)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 

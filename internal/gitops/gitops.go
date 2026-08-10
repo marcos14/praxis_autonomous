@@ -59,11 +59,28 @@ func NormalizarBranch(entrada string) (string, error) {
 type Ops struct {
 	mu      sync.Mutex
 	porRepo map[string]*sync.Mutex
+
+	// AmbienteRede devolve variáveis de ambiente extras (ex.: GIT_SSH_COMMAND
+	// apontando a chave SSH do projeto — Fase C) para as operações git de REDE
+	// (fetch, pull, push, clone) no repositório dado. Opcional: nil, ou uma
+	// função que devolve nil, mantém as credenciais do SO (comportamento
+	// histórico). Operações locais (commit, merge, worktree) nunca a usam.
+	AmbienteRede func(repo string) []string
 }
 
 // Novo cria um Ops pronto para uso.
 func Novo() *Ops {
 	return &Ops{porRepo: map[string]*sync.Mutex{}}
+}
+
+// gitRede executa um comando git de REDE no repo, com o ambiente extra do
+// AmbienteRede (quando configurado).
+func (o *Ops) gitRede(repo string, args ...string) (string, error) {
+	var extra []string
+	if o.AmbienteRede != nil {
+		extra = o.AmbienteRede(repo)
+	}
+	return gitEnv(repo, extra, args...)
 }
 
 // trava obtem (criando se preciso) o mutex do repo e o tranca; devolve a funcao

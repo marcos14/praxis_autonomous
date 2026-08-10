@@ -99,7 +99,7 @@ func TestArgsServe(t *testing.T) {
 func TestHomePadraoServicoRespeitaVariavelDeAmbiente(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PRAXIS_HOME", dir)
-	got, err := homePadraoServico()
+	got, err := homePadraoServico("")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -78,13 +78,18 @@ func (s *Servidor) handleObterConfigProjeto(w http.ResponseWriter, r *http.Reque
 
 // handleDefinirConfigProjeto substitui os overrides do projeto pelo corpo (full
 // replace). Remover uma chave faz o projeto voltar a herdar o valor global.
+// Quem altera: projetos.gerir ou o DONO do projeto.
 func (s *Servidor) handleDefinirConfigProjeto(w http.ResponseWriter, r *http.Request) {
 	id, ok := lerID(w, r, "id")
 	if !ok {
 		return
 	}
-	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
+	atual, err := s.banco.ObterProjeto(r.Context(), id)
+	if err != nil {
 		s.responderErroConfig(w, r, err)
+		return
+	}
+	if !exigirGestaoProjeto(w, r, atual) {
 		return
 	}
 	entradas, ok := lerConfigBody(w, r)

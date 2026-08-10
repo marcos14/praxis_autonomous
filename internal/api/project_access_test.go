@@ -11,11 +11,11 @@ import (
 func TestACLDeProjetosNaAPI(t *testing.T) {
 	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
 
-	// Dois projetos criados no modo bootstrap.
+	// Dois projetos criados pelo admin de teste.
 	projA := criarProjetoNomeado(t, srv, "Restrito")
 	projB := criarProjetoNomeado(t, srv, "Aberto")
 
-	admin := setupAdmin(t, srv)
+	admin := tokenAdminTeste(t, srv)
 
 	// Demanda em cada projeto (como admin).
 	rec := fazerReqToken(t, srv, http.MethodPost,

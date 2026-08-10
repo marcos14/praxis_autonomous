@@ -5,9 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/marcos14/praxis-autonomous/internal/chavessh"
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
@@ -61,6 +64,10 @@ type Opcoes struct {
 	// Uso é o monitor periódico de franquia dos perfis. Opcional: nil = o
 	// endpoint de uso devolve só o consumo do Praxis, sem franquia do vendor.
 	Uso *uso.Monitor
+	// SSH gerencia as chaves SSH por usuário (Fase C). Opcional: nil e com
+	// banco, o servidor cria um gerente sob a pasta do banco (PRAXIS_HOME);
+	// sem banco, os endpoints de chave respondem 503.
+	SSH *chavessh.Gerente
 }
 
 // ConsultorSvc dispara turnos de consulta e gerações de overview em background
@@ -108,6 +115,9 @@ type Servidor struct {
 	ideWeb       IDEWeb
 	loginMotores *motor.GerenteLogin
 	uso          *uso.Monitor
+	ssh          *chavessh.Gerente
+	clones       *gerenteClones
+	instalacoes  *gerenteInstalacoes
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -153,10 +163,18 @@ func Novo(opts Opcoes) *Servidor {
 	if loginMotores == nil {
 		loginMotores = motor.NovoGerenteLogin()
 	}
+	chavesSSH := opts.SSH
+	if chavesSSH == nil && opts.Banco != nil && strings.TrimSpace(opts.Banco.Caminho) != "" {
+		// Mesma raiz dos perfis de motor: a pasta do banco É o PRAXIS_HOME.
+		chavesSSH = chavessh.Novo(filepath.Dir(opts.Banco.Caminho))
+	}
 	s := &Servidor{banco: opts.Banco, log: logger, exec: opts.Exec, intake: opts.Intake,
 		planejamento: opts.Planejamento, consultor: opts.Consultas, estrategista: opts.Planejamentos,
 		git: gitOps, ideWeb: opts.IDE, loginMotores: loginMotores,
 		uso:                  opts.Uso,
+		ssh:                  chavesSSH,
+		clones:               novoGerenteClones(),
+		instalacoes:          novoGerenteInstalacoes(),
 		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 
@@ -172,11 +190,13 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasHome(mux)
 	s.registrarRotasIntegracao(mux)
 	s.registrarRotasMotores(mux)
+	s.registrarRotasInstalador(mux)
 	s.registrarRotasConfig(mux)
 	s.registrarRotasTokens(mux)
 	s.registrarRotasAuth(mux)
 	s.registrarRotasUsuarios(mux)
 	s.registrarRotasGruposUsuarios(mux)
+	s.registrarRotasSSH(mux)
 	s.registrarRotasManual(mux)
 	s.registrarRotasOverlap(mux)
 	s.registrarRotasIDE(mux)

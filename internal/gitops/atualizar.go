@@ -28,7 +28,7 @@ func (o *Ops) PosicionarBranchPrincipal(repo, branch string) (string, error) {
 
 	temRemote := TemRemote(repo)
 	if temRemote {
-		if _, err := git(repo, "fetch", "origin", branch); err != nil {
+		if _, err := o.gitRede(repo, "fetch", "origin", branch); err != nil {
 			return fmt.Sprintf("não foi possível atualizar do origin (%v); a análise usará o estado local", err), nil
 		}
 	}

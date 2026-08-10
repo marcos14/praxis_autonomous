@@ -103,7 +103,7 @@ func (motorCodex) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 	ctx, cancel, timeout := contextoTimeout(op.Ctx, op.TimeoutMin)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "codex", args...)
+	cmd := exec.CommandContext(ctx, ResolverCLI("codex"), args...)
 	cmd.Dir = op.Dir
 	if err := aplicarPerfil(cmd, "codex", perfilDirDaOp(op)); err != nil {
 		return nil, err

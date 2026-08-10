@@ -104,7 +104,7 @@ func registrarFlagsServico(fs *flag.FlagSet) *flagsServico {
 func (f *flagsServico) opcoes() (servico.Opcoes, error) {
 	home := strings.TrimSpace(*f.home)
 	if home == "" {
-		h, err := homePadraoServico()
+		h, err := homePadraoServico(strings.TrimSpace(*f.usuario))
 		if err != nil {
 			return servico.Opcoes{}, fmt.Errorf("resolver o PRAXIS_HOME do serviço (use -home): %w", err)
 		}
@@ -175,16 +175,16 @@ func contaPadrao() string {
 }
 
 // homePadraoServico é o PRAXIS_HOME que o serviço vai usar quando -home não é
-// passado: o mesmo que o `praxis serve` interativo usaria, para o serviço assumir
-// o banco que já existe em vez de começar de um vazio.
-func homePadraoServico() (string, error) {
+// passado: o da CONTA que vai rodar o serviço — sob sudo, os.UserConfigDir()
+// responderia com o home do root, e para a conta de sistema dedicada (Fase B) o
+// home é o dela (/var/lib/praxis). No Windows a conta é do SCM (LocalSystem ou
+// domínio\usuário) e o lookup não se aplica — vale o home resolvido agora.
+func homePadraoServico(usuario string) (string, error) {
 	if h := strings.TrimSpace(os.Getenv("PRAXIS_HOME")); h != "" {
 		return h, nil
 	}
-	// Sob sudo, os.UserConfigDir() responderia com o home do root. O home que
-	// interessa é o da conta que vai rodar o serviço (contaPadrao).
-	if conta := contaPadrao(); conta != "" {
-		if u, err := user.Lookup(conta); err == nil && u.HomeDir != "" {
+	if usuario != "" && runtime.GOOS != "windows" {
+		if u, err := user.Lookup(usuario); err == nil && u.HomeDir != "" {
 			// Mesmo layout de os.UserConfigDir no Linux (XDG: ~/.config).
 			return filepath.Join(u.HomeDir, ".config", "praxis"), nil
 		}
@@ -201,6 +201,19 @@ func serviceInstall(args []string, out, errOut io.Writer) error {
 	}
 	if ok, comoFazer := servico.Privilegiado(); !ok {
 		return fmt.Errorf("instalar o serviço exige privilégios administrativos: %s", comoFazer)
+	}
+	// Fase B: no Linux o serviço NUNCA roda como root (o claude recusa execução
+	// autônoma com UID 0). Sem -usuario e sem SUDO_USER — login root de verdade —
+	// o install cria/reusa a conta de sistema dedicada e registra a unit com ela.
+	if runtime.GOOS != "windows" && strings.TrimSpace(*f.usuario) == "" {
+		conta, criada, err := servico.GarantirContaSistema()
+		if err != nil {
+			return fmt.Errorf("o serviço não roda como root e não há SUDO_USER: %w", err)
+		}
+		*f.usuario = conta
+		if criada {
+			fmt.Fprintf(out, "conta de sistema %q criada para o serviço (home em /var/lib/%s)\n", conta, conta)
+		}
 	}
 	o, err := f.opcoes()
 	if err != nil {

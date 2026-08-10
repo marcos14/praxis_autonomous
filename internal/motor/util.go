@@ -1,11 +1,28 @@
 package motor
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 )
+
+// verificarNaoRoot barra a execução autônoma como root no Linux/macOS (Fase B):
+// o CLI do claude recusa `--dangerously-skip-permissions` com UID 0. A exceção
+// é IS_SANDBOX=1 — a válvula do próprio vendor para ambientes conteinerizados,
+// onde rodar como root do CONTAINER é aceitável; o Praxis nunca a define no
+// host (containers gerenciados são a Fase E).
+func verificarNaoRoot() error {
+	if runtime.GOOS == "windows" || os.Geteuid() != 0 || os.Getenv("IS_SANDBOX") == "1" {
+		return nil
+	}
+	return errors.New("o harness não roda como root: registre o serviço com uma conta não-root " +
+		"(sudo praxis service install cria a conta de sistema 'praxis' — ver o guia, seção 8.1); " +
+		"em containers, use um usuário não-root ou defina IS_SANDBOX=1")
+}
 
 // agoraTS devolve um carimbo de tempo compacto para compor nomes de arquivo de
 // log (`<rotulo>-<agoraTS>.jsonl`).

@@ -371,6 +371,11 @@ const (
 // timeout) e a config efetiva do projeto (motor preferido, máx. correções, máx.
 // ciclos de revisão). Robusto a banco esparso: sem motores cadastrados, cai no
 // motor "claude" com os modelos padrão do pacote motor.
+//
+// Visibilidade (Fase A): só entram na config os motores VISÍVEIS ao criador da
+// demanda (ACL engine_access) — demanda sem criador (token de API/bootstrap) usa
+// apenas motores públicos. A ACL vale para executar, não só para listar: o motor
+// restrito de um usuário nunca gasta franquia com trabalho de outro.
 func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, conta string) (pipeline.Config, error) {
 	cfg := pipeline.Config{
 		Operacoes:        map[string]string{},
@@ -388,11 +393,24 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 	if err != nil {
 		return pipeline.Config{}, fmt.Errorf("listar motores: %w", err)
 	}
-	var ordem []string
+	visiveis, err := store.IDsMotoresVisiveis(ctx, dem.CriadoPor)
+	if err != nil {
+		return pipeline.Config{}, fmt.Errorf("motores visíveis: %w", err)
+	}
+	// Nomes de TODOS os motores registrados, para distinguir (abaixo) um
+	// motor_preferido que aponta para um motor escondido pela ACL de um que
+	// aponta para um CLI não cadastrado (permitido desde sempre).
+	registrados := map[string]bool{}
 	for _, m := range motores {
-		if !m.Ativo {
+		registrados[m.Nome] = true
+	}
+	var ordem []string
+	nomesVisiveis := map[string]bool{}
+	for _, m := range motores {
+		if !m.Ativo || !visiveis[m.ID] {
 			continue
 		}
+		nomesVisiveis[m.Nome] = true
 		// A cadeia de fallback só contém motores que participam dele; um motor
 		// de uso manual (fallback = false) ainda tem modelo/perfis resolvidos
 		// abaixo, para quando o motor preferido do projeto apontar para ele.
@@ -432,7 +450,12 @@ func resolverConfigBanco(ctx context.Context, store *db.DB, dem db.Demanda, cont
 		return pipeline.Config{}, fmt.Errorf("config efetiva do projeto %d: %w", dem.ProjectID, err)
 	}
 	if s := configString(efetiva, "motor_preferido"); s != "" {
-		cfg.MotorPadrao = s
+		// Um preferido REGISTRADO mas escondido pela ACL do criador é ignorado
+		// (fica o padrão da cadeia); um nome não cadastrado segue valendo — é o
+		// caminho histórico de apontar um CLI que não está no banco.
+		if nomesVisiveis[s] || !registrados[s] {
+			cfg.MotorPadrao = s
+		}
 	}
 	if n, ok := configInt(efetiva, "max_correcoes"); ok {
 		cfg.MaxCorrecoes = n

@@ -53,6 +53,13 @@ go vet ./...
 go test ./... -count=1
 ```
 
+**Docker:** a imagem oficial roda o serviço como usuário não-root e já traz
+git e o cliente OpenSSH:
+
+```sh
+docker compose -f docker/docker-compose.yml up -d   # http://127.0.0.1:7799
+```
+
 ---
 
 ## 3. Subir o serviço
@@ -124,6 +131,9 @@ Tudo vive fora das pastas dos projetos. A raiz é `PRAXIS_HOME`:
 PRAXIS_HOME/
 ├─ praxis.db            # SQLite (WAL): projetos, motores, demandas, chat, fases, custos, eventos…
 ├─ worktrees/<projeto>/<demanda>/   # working trees git isolados por demanda
+├─ repos/<slug>/        # clones gerenciados (projetos cadastrados por URL na web)
+├─ ssh/u<id>/           # chave SSH de cada usuário (a privada nunca sai do servidor)
+├─ tools/harness/<vendor>/bin/      # CLIs de harness instalados pela tela Motores
 ├─ logs/d<id>/          # .jsonl do log ao vivo de cada execução
 ├─ logs/servico.log     # log do próprio serviço no Windows (sem console; rotaciona em 10 MiB)
 ├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotação: mantém os 7 mais recentes)
@@ -248,6 +258,48 @@ IA responde.
 - **Manual** — cada seção cai no texto em pt-BR enquanto não houver tradução
   daquela página, então a navegação nunca fica com buracos.
 
+### 5.4 Multiusuário: donos, visibilidade e autosserviço
+
+Projetos e motores têm **dono** (quem criou) e **visibilidade**, escolhida no
+cadastro: **público** (todos os usuários), **privado** (só o dono) ou **do
+grupo** (o grupo de usuários do criador). O que a visibilidade governa:
+
+- **Projetos** — quem não vê o projeto não vê demandas, consultas, eventos nem
+  logs dele (a ACL fina, com vários usuários/grupos, segue na aba Acesso, para
+  quem tem `projetos.gerir`). A permissão **`projetos.criar`** libera o
+  autosserviço: o usuário cadastra os próprios projetos, decide a visibilidade e
+  gerencia só o que é dele.
+- **Motores** — quem não vê o motor não o usa: a cadeia de fallback de uma
+  demanda/consulta/planejamento só contém motores visíveis ao seu **criador**, e
+  trabalho criado por token de API usa apenas motores públicos. A franquia de um
+  motor privado nunca é consumida por trabalho de terceiros.
+
+### 5.5 Chave SSH por usuário e cadastro por clone
+
+Cada usuário gera a própria chave SSH (ed25519) no menu do usuário → **Minha
+chave SSH** — a privada fica em `PRAXIS_HOME/ssh/u<id>/` e **nunca** sai do
+servidor. Cadastre a pública na plataforma git (GitHub: *Settings → SSH keys*)
+e teste a conexão pelo próprio modal.
+
+Com a chave cadastrada, o projeto pode nascer **por clone**: no cadastro,
+preencha **Clonar por URL** (ex.: `git@github.com:org/repo.git`) em vez da
+pasta. O Praxis clona em `PRAXIS_HOME/repos/<slug>` em background e cria o
+projeto apontando para lá — nenhum acesso ao SO do servidor é necessário. Todo
+git de rede do projeto (fetch/pull/push) passa a usar a chave registrada
+(`ssh_user_id`); projetos por pasta local continuam com as credenciais do SO.
+Se o dono da chave sair, um admin transfere a credencial com
+`PUT /projects/{id}` e `{"ssh_user_id": <outro usuário>}` (0 remove).
+
+### 5.6 Instalar harnesses pela web
+
+Na tela **Motores → Detectar**, um harness ausente ganha o botão **Instalar no
+servidor**: o Praxis baixa o binário oficial do vendor (claude, codex ou
+opencode) para `PRAXIS_HOME/tools/harness/` — sem npm/Node no host — e o login
+pela web assume na sequência. **Atualizar CLI** re-baixa a versão corrente. A
+resolução do executável é em camadas: `PRAXIS_CLI_<VENDOR>` (override) → PATH →
+diretório gerenciado; mirrors corporativos entram por
+`PRAXIS_DOWNLOAD_BASE_<VENDOR>`.
+
 ---
 
 ## 6. API REST (`/api/v1`)
@@ -279,7 +331,10 @@ POST/GET /tokens                      DELETE /tokens/{id}
 
 ### 6.1 Autenticação e papéis
 
-- **Sem token** (loopback confiável) → acesso **admin** local. É o modo da UI local.
+- **Instalação nova (sem usuários):** só as rotas de auth respondem — crie o
+  primeiro admin em `/auth/setup` (a UI mostra a tela de setup). O antigo modo
+  bootstrap com acesso pleno sem credencial foi removido: uma instância exposta
+  antes do setup não dá mais admin a quem chegar primeiro.
 - **Com token** (`Authorization: Bearer <token>` ou header `X-Praxis-Token`) → o papel
   do token. Um token `leitor` fica **barrado de escrita** (403).
 - **Token inválido/revogado** → 401.
@@ -361,7 +416,10 @@ systemctl status praxis && journalctl -u praxis -f  # acompanhar
 ```
 Sob `sudo`, o serviço é registrado com `User=` da conta que chamou o sudo (`$SUDO_USER`)
 e `PRAXIS_HOME` dessa conta — é onde vivem o `git`, o `~/.ssh` e a configuração do
-harness. Para outra conta, use `-usuario`.
+harness. Para outra conta, use `-usuario`. **Nunca como root:** num login root de
+verdade (VPS sem sudo), o install cria a conta de sistema dedicada `praxis`
+(home em `/var/lib/praxis`) e registra a unit com ela — o claude recusa execução
+autônoma com UID 0, então um serviço root não executaria demanda nenhuma.
 
 **Windows (PowerShell como Administrador):**
 ```powershell
@@ -414,8 +472,15 @@ Detalhes que importam:
   valendo. Na **internet pública**, prefira VPN (WireGuard/Tailscale) na frente — com o
   IDE web habilitado, uma conta com `codigo.editar` comprometida equivale a um shell no
   servidor.
-- Quem estiver no loopback **antes do primeiro admin ser criado** tem acesso pleno
-  (modo bootstrap) — crie o primeiro usuário logo após subir o serviço.
+- **Antes do primeiro admin**, a API só responde às rotas de auth — o primeiro
+  acesso deve ser o `/auth/setup`. Nenhuma outra rota funciona sem credencial.
+- **IDE web nasce DESLIGADO** em toda instalação (equivale a acesso de
+  desenvolvedor ao servidor, terminal incluído). Para habilitar: Configurações →
+  chave global `ide_web` = `true` — vale sem reiniciar. Instalações existentes
+  que usavam o IDE precisam ligar a chave após atualizar.
+- **O serviço não roda como root** (Linux): o claude recusa execução autônoma com
+  UID 0. O `service install` registra a unit com a conta do sudo ou cria a conta
+  de sistema `praxis`; em containers, use usuário não-root (ou `IS_SANDBOX=1`).
 - **Tokens** para chamadores programáticos (sistema de chamados, integrações): dê o
   menor papel necessário (`operador` para criar demandas; `leitor` para dashboards).
 - **Push protegido:** o Praxis só empurra branches `praxis/*`; a main nunca é empurrada;

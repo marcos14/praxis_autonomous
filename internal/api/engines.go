@@ -27,6 +27,11 @@ type reqMotor struct {
 	BudgetFaseUSD  *float64        `json:"budget_fase_usd"`
 	TimeoutMin     *int            `json:"timeout_min"`
 	Params         json.RawMessage `json:"params"`
+	// Visibilidade (publica|privada|grupo) + GrupoID definem a ACL do motor
+	// (engine_access). Em branco no update = ACL preservada; em branco na
+	// criação = pública (retrocompatível).
+	Visibilidade string `json:"visibilidade"`
+	GrupoID      *int64 `json:"grupo_id"`
 }
 
 // reqOrdem é o corpo de PUT /engines/ordem: a nova ordem de fallback (posição 0 =
@@ -76,6 +81,18 @@ func (s *Servidor) handleCriarMotor(w http.ResponseWriter, r *http.Request) {
 		responderErro(w, http.StatusBadRequest, "invalido", msg)
 		return
 	}
+	// O criador vira dono do motor (nil para token de API/bootstrap). A criação
+	// exige config.gerir (rota), então quem cria também pode apontar qualquer
+	// grupo na visibilidade.
+	m.OwnerUserID = usuarioDaRequisicao(r)
+	var aclUsuarios, aclGrupos []int64
+	if req.Visibilidade != "" {
+		aclUsuarios, aclGrupos, msg = s.resolverVisibilidadeACL(r, req.Visibilidade, req.GrupoID, m.OwnerUserID, true)
+		if msg != "" {
+			responderErro(w, http.StatusBadRequest, "invalido", msg)
+			return
+		}
+	}
 	if req.Prioridade == nil {
 		prox, err := s.banco.ProximaPrioridadeMotor(r.Context())
 		if err != nil {
@@ -89,13 +106,28 @@ func (s *Servidor) handleCriarMotor(w http.ResponseWriter, r *http.Request) {
 		s.responderErroMotor(w, r, err)
 		return
 	}
+	if req.Visibilidade != "" && req.Visibilidade != db.VisibilidadePublica {
+		if err := s.banco.DefinirAcessoMotor(r.Context(), criado.ID, aclUsuarios, aclGrupos); err != nil {
+			s.responderErroMotor(w, r, err)
+			return
+		}
+	}
+	// Relê para devolver os campos calculados (dono_nome, visibilidade).
+	if completo, err := s.banco.ObterMotor(r.Context(), criado.ID); err == nil {
+		criado = completo
+	}
 	responderJSON(w, http.StatusCreated, criado)
 }
 
-// handleListarMotores devolve os motores ordenados por prioridade (fallback).
+// handleListarMotores devolve os motores ordenados por prioridade (fallback) —
+// todos para quem tem config.gerir; só os visíveis pela ACL para os demais.
 func (s *Servidor) handleListarMotores(w http.ResponseWriter, r *http.Request) {
 	motores, err := s.banco.ListarMotores(r.Context())
 	if err != nil {
+		s.responderErroMotor(w, r, err)
+		return
+	}
+	if motores, err = s.motoresVisiveisAoPrincipal(r, motores); err != nil {
 		s.responderErroMotor(w, r, err)
 		return
 	}
@@ -185,7 +217,8 @@ func (s *Servidor) detectarMotores(r *http.Request) ([]motor.SugestaoMotor, erro
 	return sugestoes, nil
 }
 
-// handleObterMotor devolve um motor por id (com contas).
+// handleObterMotor devolve um motor por id (com contas). Motor escondido pela
+// ACL responde 404 — o cliente não sabe se o motor existe.
 func (s *Servidor) handleObterMotor(w http.ResponseWriter, r *http.Request) {
 	id, ok := lerID(w, r, "id")
 	if !ok {
@@ -195,6 +228,17 @@ func (s *Servidor) handleObterMotor(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.responderErroMotor(w, r, err)
 		return
+	}
+	if uid, restringe := filtroVisibilidadeMotores(principalDaRequisicao(r)); restringe {
+		visivel, err := s.banco.MotorVisivelPara(r.Context(), id, uid)
+		if err != nil {
+			s.responderErroMotor(w, r, err)
+			return
+		}
+		if !visivel {
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.motor_nao_encontrado")
+			return
+		}
 	}
 	responderJSON(w, http.StatusOK, m)
 }
@@ -219,6 +263,23 @@ func (s *Servidor) handleAtualizarMotor(w http.ResponseWriter, r *http.Request) 
 	if msg != "" {
 		responderErro(w, http.StatusBadRequest, "invalido", msg)
 		return
+	}
+	// Visibilidade informada redefine a ACL do motor. A âncora do "privada" é o
+	// dono já registrado; um motor legado sem dono adota quem está editando.
+	if req.Visibilidade != "" {
+		owner := atual.OwnerUserID
+		if owner == nil {
+			owner = usuarioDaRequisicao(r)
+		}
+		aclUsuarios, aclGrupos, msg := s.resolverVisibilidadeACL(r, req.Visibilidade, req.GrupoID, owner, true)
+		if msg != "" {
+			responderErro(w, http.StatusBadRequest, "invalido", msg)
+			return
+		}
+		if err := s.banco.DefinirAcessoMotor(r.Context(), id, aclUsuarios, aclGrupos); err != nil {
+			s.responderErroMotor(w, r, err)
+			return
+		}
 	}
 	m.ID = id
 	atualizado, err := s.banco.AtualizarMotor(r.Context(), m)

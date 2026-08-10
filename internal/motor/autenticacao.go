@@ -74,7 +74,7 @@ func verificarAutenticacaoCom(ctx context.Context, vendor, perfilDir string, com
 
 	switch vendor {
 	case "claude":
-		cmd := comando(ctx, "claude", "auth", "status", "--json")
+		cmd := comando(ctx, ResolverCLI("claude"), "auth", "status", "--json")
 		if err := aplicarPerfil(cmd, vendor, dir); err != nil {
 			d.Mensagem = "não foi possível aplicar o perfil Claude"
 			return d
@@ -104,7 +104,7 @@ func verificarAutenticacaoCom(ctx context.Context, vendor, perfilDir string, com
 		return d
 
 	case "codex":
-		cmd := comando(ctx, "codex", "login", "status")
+		cmd := comando(ctx, ResolverCLI("codex"), "login", "status")
 		if err := aplicarPerfil(cmd, vendor, dir); err != nil {
 			d.Mensagem = "não foi possível aplicar o perfil Codex"
 			return d
@@ -372,7 +372,7 @@ func suprimirNavegadorLocal(cmd *exec.Cmd) {
 }
 
 func (g *GerenteLogin) executarClaude(ctx context.Context, id, dir string) {
-	cmd := g.comando(ctx, "claude", "auth", "login")
+	cmd := g.comando(ctx, ResolverCLI("claude"), "auth", "login")
 	if err := aplicarPerfil(cmd, "claude", dir); err != nil {
 		g.finalizar(id, LoginErro, "não foi possível aplicar o perfil Claude")
 		return
@@ -467,7 +467,7 @@ type mensagemRPC struct {
 }
 
 func (g *GerenteLogin) executarCodex(ctx context.Context, id, dir string) {
-	cmd := g.comando(ctx, "codex", "app-server", "--listen", "stdio://")
+	cmd := g.comando(ctx, ResolverCLI("codex"), "app-server", "--listen", "stdio://")
 	if err := aplicarPerfil(cmd, "codex", dir); err != nil {
 		g.finalizar(id, LoginErro, "não foi possível aplicar o perfil Codex")
 		return

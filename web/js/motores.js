@@ -39,6 +39,14 @@ async function recarregar() {
   motores.forEach((m, i) => lista.append(linhaMotor(m, i)));
 }
 
+// rotuloVis traduz a visibilidade (chave estática por valor — o teste de i18n
+// exige chaves literais em t()).
+function rotuloVis(v) {
+  if (v === "privada") return t("vis.privada");
+  if (v === "grupo") return t("vis.grupo");
+  return t("vis.publica");
+}
+
 function linhaMotor(m, i) {
   const nContas = (m.contas || []).length;
   const det = [
@@ -49,6 +57,9 @@ function linhaMotor(m, i) {
     m.timeout_min > 0 ? `timeout ${m.timeout_min}min` : null,
     `${nContas} ${nContas === 1 ? "perfil" : "perfis"}`,
     m.fallback === false ? t("motores.det_fora_fallback") : null,
+    m.visibilidade && m.visibilidade !== "publica"
+      ? rotuloVis(m.visibilidade) + (m.dono_nome ? ` (${m.dono_nome})` : "")
+      : null,
   ].filter(Boolean).join(" · ");
 
   const sw = el("button", { class: "switch" + (m.ativo ? " on" : ""), title: m.ativo ? t("motores.ativo") : t("motores.inativo"),
@@ -295,7 +306,48 @@ function cardSugestao(s) {
     linhas.push(btn);
   }
 
+  // Instalador (Fase D): CLI ausente ganha "Instalar" — o servidor baixa o
+  // binário oficial do vendor para PRAXIS_HOME/tools/harness; CLI presente
+  // ganha "Atualizar CLI" (re-download; o binário atual vira .old).
+  const instalavel = ["claude", "codex", "opencode"].includes((s.nome || "").toLowerCase());
+  if (instalavel && !s.instalado) {
+    const btn = el("button", { class: "btn sm", style: "margin-top:8px" }, t("motores.inst_instalar"));
+    btn.onclick = () => instalarHarness(s.nome, btn);
+    linhas.push(btn);
+  } else if (instalavel && s.instalado) {
+    const btn = el("button", { class: "btn sm ghost", style: "margin-top:8px" }, t("motores.inst_atualizar"));
+    btn.onclick = () => instalarHarness(s.nome, btn);
+    linhas.push(btn);
+  }
+
   return el("div", { class: "motor-row", style: "display:block" }, ...linhas);
+}
+
+// instalarHarness dispara o download do CLI oficial e acompanha o job até o
+// fim, refletindo o progresso no próprio botão.
+async function instalarHarness(vendor, btn) {
+  const rotulo = btn.textContent;
+  btn.disabled = true;
+  bannerErro("");
+  try {
+    const aceite = await api.instalarHarness(vendor);
+    for (;;) {
+      const job = await api.obterInstalacao(aceite.job_id);
+      if (job.status === "erro") throw new Error(job.detalhe || "download falhou");
+      if (job.status === "concluido") {
+        const versao = (job.info && job.info.versao) ? " " + job.info.versao : "";
+        toast(t("motores.inst_ok", { vendor: vendor + versao }), "ok");
+        break;
+      }
+      btn.textContent = job.detalhe || t("motores.inst_instalando");
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+    await detectar();
+  } catch (e) {
+    bannerErro(t("motores.inst_falha", { erro: e.message }));
+    btn.disabled = false;
+    btn.textContent = rotulo;
+  }
 }
 
 async function cadastrarSugestao(s, btn) {
@@ -355,6 +407,14 @@ function renderPainel(m) {
   const fallback = el("input", { type: "checkbox" });
   fallback.checked = criando ? true : m.fallback !== false;
   const params = el("textarea", {}, m && m.params ? prettyJSON(m.params) : "{}");
+  // Visibilidade (Fase A): pública (todos), privada (só quem cadastrou) ou do
+  // grupo. Só é enviada quando muda — enviar sempre redefiniria a ACL.
+  const visInicial = m && m.visibilidade ? m.visibilidade : "publica";
+  const visibilidade = el("select", {},
+    el("option", { value: "publica", selected: visInicial === "publica" }, t("vis.publica")),
+    el("option", { value: "privada", selected: visInicial === "privada" }, t("vis.privada")),
+    el("option", { value: "grupo", selected: visInicial === "grupo" }, t("vis.grupo")),
+  );
 
   const form = el("div", { class: "form" },
     el("div", {}, el("label", {}, t("motores.nome")), nome),
@@ -371,12 +431,14 @@ function renderPainel(m) {
     el("div", {},
       el("label", { style: "display:flex;align-items:center;gap:8px;cursor:pointer" }, fallback, t("motores.participa_fallback")),
       el("div", { class: "hint", text: t("motores.hint_fallback") })),
+    el("div", {}, el("label", {}, t("motores.visibilidade")), visibilidade,
+      el("div", { class: "hint", text: t("motores.vis_hint") })),
     el("div", {}, el("label", {}, "Params ", el("span", { class: "opt" }, t("motores.params_json"))), params,
       el("div", { class: "hint", text: t("motores.hint_params") })),
   );
 
   const btn = el("button", { class: "btn", style: "width:fit-content" }, criando ? t("motores.cadastrar") : t("configx.salvar"));
-  btn.onclick = () => salvar(m, { nome, modeloExec, modeloAnalise, modeloConsulta, budget, timeout, fallback, params }, btn);
+  btn.onclick = () => salvar(m, { nome, modeloExec, modeloAnalise, modeloConsulta, budget, timeout, fallback, params, visibilidade, visInicial }, btn);
   form.append(btn);
   painel.append(form);
 
@@ -413,6 +475,10 @@ async function salvar(m, campos, btn) {
     fallback: campos.fallback.checked,
     params,
   };
+  if (campos.visibilidade.value !== campos.visInicial) {
+    corpo.visibilidade = campos.visibilidade.value;
+    if (campos.visibilidade.value === "grupo" && m && m.grupo_id) corpo.grupo_id = m.grupo_id;
+  }
   bannerErro("");
   btn.disabled = true;
   try {

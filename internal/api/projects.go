@@ -34,6 +34,20 @@ type reqProjeto struct {
 	URLPlataforma   string   `json:"url_plataforma"`
 	AddDirs         []string `json:"add_dirs"`
 	Ativo           *bool    `json:"ativo"`
+	// Visibilidade (publica|privada|grupo) + GrupoID definem a ACL do projeto
+	// (project_access) na forma simples do cadastro. Em branco no update = ACL
+	// preservada; em branco na criação = pública (retrocompatível). A ACL fina
+	// (vários usuários/grupos) continua no PUT /projects/{id}/access.
+	Visibilidade string `json:"visibilidade"`
+	GrupoID      *int64 `json:"grupo_id"`
+	// URLGit ativa o cadastro POR CLONE (Fase C): o Praxis clona o repositório
+	// em PRAXIS_HOME/repos/<slug> com a chave SSH do usuário e cria o projeto
+	// apontando para lá. Mutuamente exclusivo com Pasta.
+	URLGit string `json:"url_git"`
+	// SSHUserID define a credencial SSH do projeto (a chave do usuário id).
+	// nil = preserva; 0 = remove (volta às credenciais do SO); >0 = define.
+	// Só dono/projetos.gerir alteram (mesma regra do restante do update).
+	SSHUserID *int64 `json:"ssh_user_id"`
 }
 
 // registrarRotasProjetos registra as rotas de CRUD de projetos no mux, mais as
@@ -42,6 +56,9 @@ type reqProjeto struct {
 func (s *Servidor) registrarRotasProjetos(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/projects", s.handleCriarProjeto)
 	mux.HandleFunc("GET /api/v1/projects", s.handleListarProjetos)
+	// Fora de /projects/{...} de propósito: "clones/{id}" conflitaria com
+	// "{id}/access" no ServeMux (nenhum é mais específico que o outro).
+	mux.HandleFunc("GET /api/v1/clones/{cloneId}", s.handleObterClone)
 	mux.HandleFunc("GET /api/v1/projects/{id}", s.handleObterProjeto)
 	mux.HandleFunc("PUT /api/v1/projects/{id}", s.handleAtualizarProjeto)
 	mux.HandleFunc("PUT /api/v1/projects/{id}/overview", s.handleSalvarOverview)
@@ -135,10 +152,18 @@ type reqOverview struct {
 	OverviewMD string `json:"overview_md"`
 }
 
-// handleSalvarOverview grava o overview editado manualmente.
+// handleSalvarOverview grava o overview editado manualmente (dono ou gerir).
 func (s *Servidor) handleSalvarOverview(w http.ResponseWriter, r *http.Request) {
 	id, ok := lerIDProjeto(w, r)
 	if !ok {
+		return
+	}
+	atual, err := s.banco.ObterProjeto(r.Context(), id)
+	if err != nil {
+		s.responderErroProjeto(w, r, err)
+		return
+	}
+	if !exigirGestaoProjeto(w, r, atual) {
 		return
 	}
 	var req reqOverview
@@ -164,8 +189,12 @@ func (s *Servidor) handleGerarOverview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := s.banco.ObterProjeto(r.Context(), id); err != nil {
+	atual, err := s.banco.ObterProjeto(r.Context(), id)
+	if err != nil {
 		s.responderErroProjeto(w, r, err)
+		return
+	}
+	if !exigirGestaoProjeto(w, r, atual) {
 		return
 	}
 	if s.consultor == nil {
@@ -196,10 +225,20 @@ func decodificarCorpo(w http.ResponseWriter, r *http.Request, dst any) bool {
 }
 
 // handleCriarProjeto cria um projeto a partir do corpo, aplicando defaults e
-// validações, e devolve 201 com o projeto persistido.
+// validações, e devolve 201 com o projeto persistido. Quem cria: projetos.gerir
+// (gestão plena) ou projetos.criar (autosserviço — o criador vira dono e escolhe
+// a visibilidade; só compartilha com o PRÓPRIO grupo).
 func (s *Servidor) handleCriarProjeto(w http.ResponseWriter, r *http.Request) {
+	if !temPermissao(r, db.PermProjetosGerir) && !exigirPermissao(w, r, db.PermProjetosCriar) {
+		return
+	}
 	var req reqProjeto
 	if !decodificarCorpo(w, r, &req) {
+		return
+	}
+	// Cadastro por CLONE (url_git): valida e dispara o job em background.
+	if strings.TrimSpace(req.URLGit) != "" {
+		s.handleCriarProjetoPorClone(w, r, req)
 		return
 	}
 	p, msg := montarProjeto(req, db.Projeto{}, true)
@@ -207,10 +246,33 @@ func (s *Servidor) handleCriarProjeto(w http.ResponseWriter, r *http.Request) {
 		responderErro(w, http.StatusBadRequest, "invalido", msg)
 		return
 	}
+	p.OwnerUserID = usuarioDaRequisicao(r)
+	if msg := s.aplicarSSHUser(&p, req.SSHUserID); msg != "" {
+		responderErro(w, http.StatusBadRequest, "invalido", msg)
+		return
+	}
+	var aclUsuarios, aclGrupos []int64
+	if req.Visibilidade != "" {
+		aclUsuarios, aclGrupos, msg = s.resolverVisibilidadeACL(r, req.Visibilidade, req.GrupoID,
+			p.OwnerUserID, temPermissao(r, db.PermProjetosGerir))
+		if msg != "" {
+			responderErro(w, http.StatusBadRequest, "invalido", msg)
+			return
+		}
+	}
 	criado, err := s.banco.CriarProjeto(r.Context(), p)
 	if err != nil {
 		s.responderErroProjeto(w, r, err)
 		return
+	}
+	if req.Visibilidade != "" && req.Visibilidade != db.VisibilidadePublica {
+		if err := s.banco.DefinirAcessoProjeto(r.Context(), criado.ID, aclUsuarios, aclGrupos); err != nil {
+			s.responderErroProjeto(w, r, err)
+			return
+		}
+	}
+	if completo, err := s.banco.ObterProjeto(r.Context(), criado.ID); err == nil {
+		criado = completo
 	}
 	responderJSON(w, http.StatusCreated, criado)
 }
@@ -250,7 +312,8 @@ func (s *Servidor) handleObterProjeto(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAtualizarProjeto atualiza os campos de um projeto existente. Parte do
-// projeto atual para preservar campos não fornecidos (ativo).
+// projeto atual para preservar campos não fornecidos (ativo). Quem altera:
+// projetos.gerir ou o DONO do projeto.
 func (s *Servidor) handleAtualizarProjeto(w http.ResponseWriter, r *http.Request) {
 	id, ok := lerIDProjeto(w, r)
 	if !ok {
@@ -259,6 +322,9 @@ func (s *Servidor) handleAtualizarProjeto(w http.ResponseWriter, r *http.Request
 	atual, err := s.banco.ObterProjeto(r.Context(), id)
 	if err != nil {
 		s.responderErroProjeto(w, r, err)
+		return
+	}
+	if !exigirGestaoProjeto(w, r, atual) {
 		return
 	}
 	var req reqProjeto
@@ -270,6 +336,28 @@ func (s *Servidor) handleAtualizarProjeto(w http.ResponseWriter, r *http.Request
 		responderErro(w, http.StatusBadRequest, "invalido", msg)
 		return
 	}
+	if msg := s.aplicarSSHUser(&p, req.SSHUserID); msg != "" {
+		responderErro(w, http.StatusBadRequest, "invalido", msg)
+		return
+	}
+	// Visibilidade informada redefine a ACL simples. A âncora do "privada" é o
+	// dono registrado; um projeto legado sem dono adota quem está editando.
+	if req.Visibilidade != "" {
+		owner := atual.OwnerUserID
+		if owner == nil {
+			owner = usuarioDaRequisicao(r)
+		}
+		aclUsuarios, aclGrupos, msg := s.resolverVisibilidadeACL(r, req.Visibilidade, req.GrupoID,
+			owner, temPermissao(r, db.PermProjetosGerir))
+		if msg != "" {
+			responderErro(w, http.StatusBadRequest, "invalido", msg)
+			return
+		}
+		if err := s.banco.DefinirAcessoProjeto(r.Context(), id, aclUsuarios, aclGrupos); err != nil {
+			s.responderErroProjeto(w, r, err)
+			return
+		}
+	}
 	p.ID = id
 	atualizado, err := s.banco.AtualizarProjeto(r.Context(), p)
 	if err != nil {
@@ -277,6 +365,25 @@ func (s *Servidor) handleAtualizarProjeto(w http.ResponseWriter, r *http.Request
 		return
 	}
 	responderJSON(w, http.StatusOK, atualizado)
+}
+
+// aplicarSSHUser aplica o campo ssh_user_id da requisição ao projeto:
+// nil preserva, 0 remove (volta às credenciais do SO), >0 define — exigindo que
+// o usuário apontado JÁ tenha chave (uma credencial sem chave só produziria
+// falhas de push silenciosas). Devolve msg != "" em erro de validação.
+func (s *Servidor) aplicarSSHUser(p *db.Projeto, sshUserID *int64) string {
+	if sshUserID == nil {
+		return ""
+	}
+	if *sshUserID <= 0 {
+		p.SSHUserID = nil
+		return ""
+	}
+	if s.ssh == nil || !s.ssh.Existe(*sshUserID) {
+		return "o usuário apontado em ssh_user_id ainda não tem chave SSH (gere-a no perfil dele)"
+	}
+	p.SSHUserID = sshUserID
+	return ""
 }
 
 // montarProjeto aplica defaults e validações sobre req, usando base como valores

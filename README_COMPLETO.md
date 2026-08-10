@@ -53,6 +53,13 @@ go vet ./...
 go test ./... -count=1
 ```
 
+**Docker:** the official image runs the service as a non-root user and ships
+git plus the OpenSSH client:
+
+```sh
+docker compose -f docker/docker-compose.yml up -d   # http://127.0.0.1:7799
+```
+
 ---
 
 ## 3. Running the service
@@ -125,6 +132,9 @@ Everything lives outside the project folders. The root is `PRAXIS_HOME`:
 PRAXIS_HOME/
 ├─ praxis.db            # SQLite (WAL): projects, engines, demands, chat, phases, costs, events…
 ├─ worktrees/<project>/<demand>/    # git working trees isolated per demand
+├─ repos/<slug>/        # managed clones (projects registered by URL on the web)
+├─ ssh/u<id>/           # each user's SSH key (the private key never leaves the server)
+├─ tools/harness/<vendor>/bin/      # harness CLIs installed from the Engines screen
 ├─ logs/d<id>/          # .jsonl live log of each execution
 ├─ logs/servico.log     # the service's own log on Windows (no console; rotates at 10 MiB)
 ├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotation: keeps the 7 most recent)
@@ -260,6 +270,48 @@ language the AI answers in.
 - **Manual** — each section falls back to the pt-BR text while that page has no
   translation, so navigation never has holes.
 
+### 5.4 Multi-user: owners, visibility and self-service
+
+Projects and engines have an **owner** (whoever created them) and a
+**visibility**, chosen at registration: **public** (all users), **private**
+(owner only) or **group** (the creator's user group). What visibility governs:
+
+- **Projects** — whoever cannot see the project sees none of its demands,
+  queries, events or logs (the fine-grained ACL, with multiple users/groups,
+  remains on the Access tab for `projetos.gerir`). The **`projetos.criar`**
+  permission enables self-service: the user registers their own projects,
+  chooses the visibility and manages only what is theirs.
+- **Engines** — whoever cannot see the engine cannot use it: the fallback chain
+  of a demand/query/planning only contains engines visible to its **creator**,
+  and work created by an API token uses public engines only. A private engine's
+  quota is never spent by someone else's work.
+
+### 5.5 Per-user SSH key and clone-based registration
+
+Each user generates their own SSH key (ed25519) in the user menu → **My SSH
+key** — the private key lives in `PRAXIS_HOME/ssh/u<id>/` and **never** leaves
+the server. Register the public key on your git platform (GitHub: *Settings →
+SSH keys*) and test the connection from the modal itself.
+
+With the key registered, a project can be born **by clone**: on registration,
+fill **Clone by URL** (e.g. `git@github.com:org/repo.git`) instead of the
+folder. Praxis clones into `PRAXIS_HOME/repos/<slug>` in the background and
+creates the project pointing there — no access to the server's OS needed. All
+of the project's network git (fetch/pull/push) then uses the registered key
+(`ssh_user_id`); folder-based projects keep using the OS credentials. If the
+key's owner leaves, an admin transfers the credential with
+`PUT /projects/{id}` and `{"ssh_user_id": <another user>}` (0 removes it).
+
+### 5.6 Installing harnesses from the web
+
+On **Engines → Detect**, a missing harness gets an **Install on server**
+button: Praxis downloads the vendor's official binary (claude, codex or
+opencode) into `PRAXIS_HOME/tools/harness/` — no npm/Node on the host — and the
+web login takes over from there. **Update CLI** re-downloads the current
+version. Executable resolution is layered: `PRAXIS_CLI_<VENDOR>` (override) →
+PATH → managed directory; corporate mirrors plug in via
+`PRAXIS_DOWNLOAD_BASE_<VENDOR>`.
+
 ---
 
 ## 6. REST API (`/api/v1`)
@@ -291,8 +343,10 @@ POST/GET /tokens                      DELETE /tokens/{id}
 
 ### 6.1 Authentication and roles
 
-- **No token** (trusted loopback) → local **admin** access. This is the local UI's
-  mode.
+- **Fresh installation (no users):** only the auth routes respond — create the
+  first admin at `/auth/setup` (the UI shows the setup screen). The old bootstrap
+  mode with full unauthenticated access was removed: an instance exposed before
+  setup no longer grants admin to whoever arrives first.
 - **With a token** (`Authorization: Bearer <token>` or the `X-Praxis-Token` header)
   → the token's role. A `leitor` (reader) token is **blocked from writes** (403).
 - **Invalid/revoked token** → 401.
@@ -375,6 +429,10 @@ systemctl status praxis && journalctl -u praxis -f  # follow it
 Under `sudo`, the service is registered with `User=` set to the account that called
 sudo (`$SUDO_USER`) and that account's `PRAXIS_HOME` — that is where `git`, `~/.ssh`
 and the harness configuration live. Use `-usuario` for a different account.
+**Never as root:** on a real root login (VPS without sudo), the install creates the
+dedicated `praxis` system account (home at `/var/lib/praxis`) and registers the unit
+with it — claude refuses autonomous execution with UID 0, so a root service would not
+execute any demand.
 
 **Windows (PowerShell as Administrator):**
 ```powershell
@@ -430,8 +488,16 @@ Details that matter:
   TLS also work. On the **public internet**, prefer a VPN (WireGuard/Tailscale) in
   front — with the web IDE enabled, a compromised account holding `codigo.editar`
   is equivalent to a shell on the server.
-- Anyone on loopback **before the first admin is created** has full access
-  (bootstrap mode) — create the first user right after starting the service.
+- **Before the first admin exists**, the API only answers the auth routes — the
+  first access must be `/auth/setup`. No other route works without a credential.
+- **The web IDE starts DISABLED** on every installation (it is equivalent to
+  developer access to the server, terminal included). To enable it: Settings →
+  global key `ide_web` = `true` — applies without a restart. Existing
+  installations that used the IDE must flip the key after upgrading.
+- **The service does not run as root** (Linux): claude refuses autonomous
+  execution with UID 0. `service install` registers the unit with the sudo
+  caller's account or creates the `praxis` system account; in containers, use a
+  non-root user (or `IS_SANDBOX=1`).
 - **Tokens** for programmatic callers (ticketing systems, integrations): grant the
   smallest role needed (`operador` to create demands; `leitor` for dashboards).
 - **Protected push:** Praxis only pushes `praxis/*` branches; main is never pushed;

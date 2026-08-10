@@ -42,12 +42,25 @@ type Projeto struct {
 	// injetado no consultor. Gravado por AtualizarOverview (não pelo CRUD comum).
 	OverviewMD string `json:"overview_md"`
 	OverviewEm string `json:"overview_em"`
+	// OwnerUserID é o usuário que criou o projeto (NULL nos legados e nos
+	// criados por token/bootstrap). O dono gerencia o próprio projeto mesmo sem
+	// projetos.gerir (checado na camada da API).
+	OwnerUserID *int64 `json:"owner_user_id,omitempty"`
+	// SSHUserID aponta a chave SSH por usuário (PRAXIS_HOME/ssh/u<id>/) que
+	// opera este repositório — clone, fetch/pull e push injetam o
+	// GIT_SSH_COMMAND dela. NULL = credenciais do SO (comportamento histórico).
+	SSHUserID *int64 `json:"ssh_user_id,omitempty"`
+	// Campos CALCULADOS da ACL (project_access) — preenchidos na leitura, nunca
+	// persistidos (ver decorarProjetos).
+	DonoNome     string `json:"dono_nome,omitempty"`
+	Visibilidade string `json:"visibilidade,omitempty"`
+	GrupoID      *int64 `json:"grupo_id,omitempty"`
 }
 
 // colunasProjeto é a lista de colunas lidas nas consultas, na ordem esperada por
 // scanProjeto.
 const colunasProjeto = `id, nome, slug, pasta, branch_principal, modo_integracao,
-	url_plataforma, add_dirs, ativo, criado_em, overview_md, overview_em`
+	url_plataforma, add_dirs, ativo, criado_em, overview_md, overview_em, owner_user_id, ssh_user_id`
 
 // scanProjeto lê uma linha de projects (na ordem de colunasProjeto) para Projeto,
 // desserializando o add_dirs (JSON) e o ativo (0/1).
@@ -56,12 +69,16 @@ func scanProjeto(sc interface{ Scan(...any) error }) (Projeto, error) {
 		p       Projeto
 		addDirs string
 		ativo   int
+		owner   sql.NullInt64
+		sshUser sql.NullInt64
 	)
 	if err := sc.Scan(&p.ID, &p.Nome, &p.Slug, &p.Pasta, &p.BranchPrincipal,
 		&p.ModoIntegracao, &p.URLPlataforma, &addDirs, &ativo, &p.CriadoEm,
-		&p.OverviewMD, &p.OverviewEm); err != nil {
+		&p.OverviewMD, &p.OverviewEm, &owner, &sshUser); err != nil {
 		return Projeto{}, err
 	}
+	p.OwnerUserID = ptrDeNull(owner)
+	p.SSHUserID = ptrDeNull(sshUser)
 	p.Ativo = ativo != 0
 	dirs, err := decodificarLista(addDirs)
 	if err != nil {
@@ -81,11 +98,13 @@ func (d *DB) CriarProjeto(ctx context.Context, p Projeto) (Projeto, error) {
 	}
 	row := d.Escritor.QueryRowContext(ctx, `
 		INSERT INTO projects
-			(nome, slug, pasta, branch_principal, modo_integracao, url_plataforma, add_dirs, ativo)
-		VALUES (?,?,?,?,?,?,?,?)
+			(nome, slug, pasta, branch_principal, modo_integracao, url_plataforma, add_dirs, ativo,
+			 owner_user_id, ssh_user_id)
+		VALUES (?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em`,
 		p.Nome, p.Slug, p.Pasta, p.BranchPrincipal, p.ModoIntegracao,
-		p.URLPlataforma, string(addDirs), booleanParaInt(p.Ativo),
+		p.URLPlataforma, string(addDirs), booleanParaInt(p.Ativo), nullInt(p.OwnerUserID),
+		nullInt(p.SSHUserID),
 	)
 	if err := row.Scan(&p.ID, &p.CriadoEm); err != nil {
 		return Projeto{}, traduzirErroProjeto(err)
@@ -114,6 +133,9 @@ func (d *DB) ListarProjetos(ctx context.Context) ([]Projeto, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("listar projetos: %w", err)
 	}
+	if err := d.decorarProjetos(ctx, projetos); err != nil {
+		return nil, err
+	}
 	return projetos, nil
 }
 
@@ -128,7 +150,11 @@ func (d *DB) ObterProjeto(ctx context.Context, id int64) (Projeto, error) {
 	if err != nil {
 		return Projeto{}, fmt.Errorf("obter projeto %d: %w", id, err)
 	}
-	return p, nil
+	ps := []Projeto{p}
+	if err := d.decorarProjetos(ctx, ps); err != nil {
+		return Projeto{}, err
+	}
+	return ps[0], nil
 }
 
 // AtualizarProjeto grava os campos editáveis do projeto identificado por p.ID e
@@ -143,10 +169,12 @@ func (d *DB) AtualizarProjeto(ctx context.Context, p Projeto) (Projeto, error) {
 	res, err := d.Escritor.ExecContext(ctx, `
 		UPDATE projects SET
 			nome = ?, slug = ?, pasta = ?, branch_principal = ?,
-			modo_integracao = ?, url_plataforma = ?, add_dirs = ?, ativo = ?
+			modo_integracao = ?, url_plataforma = ?, add_dirs = ?, ativo = ?,
+			ssh_user_id = ?
 		WHERE id = ?`,
 		p.Nome, p.Slug, p.Pasta, p.BranchPrincipal, p.ModoIntegracao,
-		p.URLPlataforma, string(addDirs), booleanParaInt(p.Ativo), p.ID,
+		p.URLPlataforma, string(addDirs), booleanParaInt(p.Ativo),
+		nullInt(p.SSHUserID), p.ID,
 	)
 	if err != nil {
 		return Projeto{}, traduzirErroProjeto(err)
@@ -159,6 +187,31 @@ func (d *DB) AtualizarProjeto(ctx context.Context, p Projeto) (Projeto, error) {
 		return Projeto{}, ErrNaoEncontrado
 	}
 	return d.ObterProjeto(ctx, p.ID)
+}
+
+// SSHUserDoRepo devolve o ssh_user_id do projeto DONO do caminho — a pasta
+// principal do projeto ou o worktree de uma demanda dele. (nil, false) quando o
+// caminho não pertence a projeto nenhum ou o projeto não tem credencial. É o
+// resolvedor do gitops.AmbienteRede (Fase C): fetch/pull/push descobrem por
+// aqui qual chave SSH usar.
+func (d *DB) SSHUserDoRepo(ctx context.Context, caminho string) (*int64, bool) {
+	caminho = strings.TrimSpace(caminho)
+	if caminho == "" {
+		return nil, false
+	}
+	var sshUser sql.NullInt64
+	err := d.Leitor.QueryRowContext(ctx, `
+		SELECT ssh_user_id FROM projects WHERE pasta = ?
+		UNION ALL
+		SELECT p.ssh_user_id FROM projects p
+			JOIN demands dm ON dm.project_id = p.id
+		WHERE dm.worktree_path = ?
+		LIMIT 1`, caminho, caminho).Scan(&sshUser)
+	if err != nil || !sshUser.Valid {
+		return nil, false
+	}
+	v := sshUser.Int64
+	return &v, true
 }
 
 // AtualizarOverview grava o overview do projeto (markdown já sanitizado pelo
@@ -192,6 +245,10 @@ func traduzirErroProjeto(err error) error {
 	}
 	if strings.Contains(err.Error(), "projects.slug") {
 		return ErrSlugDuplicado
+	}
+	// FK violada (owner_user_id/ssh_user_id apontando usuário inexistente).
+	if strings.Contains(err.Error(), "FOREIGN KEY") {
+		return ErrNaoEncontrado
 	}
 	return fmt.Errorf("persistir projeto: %w", err)
 }

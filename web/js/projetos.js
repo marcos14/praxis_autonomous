@@ -49,6 +49,9 @@ async function recarregarLista() {
         p.ativo ? el("span", { class: "pill" }, el("span", { class: "dot dot-good" }), t("projetos.ativo"))
                 : el("span", { class: "pill" }, el("span", { class: "dot dot-muted" }), t("projetos.inativo")),
         el("span", { class: "pill", text: rotuloValor("projetos.modo.", p.modo_integracao) }),
+        ...(p.visibilidade && p.visibilidade !== "publica"
+          ? [el("span", { class: "pill", title: p.dono_nome ? t("comum.dono", { nome: p.dono_nome }) : "", text: rotuloValor("vis.", p.visibilidade) })]
+          : []),
       ),
     );
     lista.append(item);
@@ -86,6 +89,10 @@ function camposCore(p) {
   const slug = el("input", { value: p ? p.slug : "", placeholder: t("projetos.ph_slug") });
   const branch = el("input", { value: p ? p.branch_principal : "main" });
   const pasta = el("input", { value: p ? p.pasta : "", placeholder: t("projetos.ph_pasta") });
+  // Cadastro por clone (Fase C): alternativa à pasta — o servidor clona por SSH
+  // com a chave do usuário e cria o projeto apontando para o clone gerenciado.
+  // Só na criação: um projeto existente já tem pasta.
+  const urlGit = el("input", { value: "", placeholder: t("projetos.ph_url_git") });
   const modo = el("select", {},
     el("option", { value: "merge_request", selected: !p || p.modo_integracao === "merge_request" }, t("projetos.modo.merge_request")),
     el("option", { value: "merge_local", selected: p && p.modo_integracao === "merge_local" }, t("projetos.modo.merge_local")),
@@ -95,6 +102,16 @@ function camposCore(p) {
   const ativo = el("input", { type: "checkbox" });
   ativo.checked = p ? p.ativo : true;
 
+  // Visibilidade (Fase A): pública (todos), privada (só o dono) ou do grupo do
+  // criador. No update, só é ENVIADA quando muda — enviar sempre redefiniria a
+  // ACL fina (vários usuários/grupos) configurada na tela de acesso.
+  const visInicial = p && p.visibilidade ? p.visibilidade : "publica";
+  const visibilidade = el("select", {},
+    el("option", { value: "publica", selected: visInicial === "publica" }, t("vis.publica")),
+    el("option", { value: "privada", selected: visInicial === "privada" }, t("vis.privada")),
+    el("option", { value: "grupo", selected: visInicial === "grupo" }, t("vis.grupo")),
+  );
+
   const node = el("div", { class: "form" },
     el("div", { class: "row" },
       el("div", {}, el("label", {}, t("projetos.nome")), nome),
@@ -103,12 +120,17 @@ function camposCore(p) {
     el("div", {}, el("label", {}, t("projetos.slug") + " ", el("span", { class: "opt" }, t("projetos.opcional"))), slug),
     el("div", {}, el("label", {}, t("projetos.pasta")), pasta,
       el("div", { class: "hint", text: t("projetos.pasta_hint") })),
+    ...(p == null ? [el("div", {}, el("label", {}, t("projetos.url_git") + " ",
+      el("span", { class: "opt" }, t("projetos.opcional"))), urlGit,
+      el("div", { class: "hint", text: t("projetos.url_git_hint") }))] : []),
     el("div", { class: "row" },
       el("div", {}, el("label", {}, t("projetos.modo_integracao")), modo),
       el("div", {}, el("label", {}, t("projetos.url_plataforma") + " ", el("span", { class: "opt" }, t("projetos.url_plataforma_opt"))), url),
     ),
     el("div", {}, el("label", {}, t("projetos.add_dirs")), addDirs,
       el("div", { class: "hint", text: t("projetos.add_dirs_hint") })),
+    el("div", {}, el("label", {}, t("projetos.visibilidade")), visibilidade,
+      el("div", { class: "hint", text: t("projetos.vis_hint") })),
     el("label", { style: "display:flex;align-items:center;gap:8px;font-weight:600" }, ativo, t("projetos.projeto_ativo")),
   );
 
@@ -123,8 +145,18 @@ function camposCore(p) {
       add_dirs: addDirs.value.split("\n").map((l) => l.trim()).filter((l) => l !== ""),
       ativo: ativo.checked,
     };
+    if (visibilidade.value !== visInicial) {
+      v.visibilidade = visibilidade.value;
+      // Voltar para "grupo" preserva o grupo já liberado (o seletor simples não
+      // troca de grupo; a tela de acesso cobre os casos finos).
+      if (visibilidade.value === "grupo" && p && p.grupo_id) v.grupo_id = p.grupo_id;
+    }
+    if (p == null && urlGit.value.trim() !== "") {
+      v.url_git = urlGit.value.trim();
+      delete v.pasta; // clone: o servidor decide a pasta (PRAXIS_HOME/repos/<slug>)
+    }
     if (!v.nome) throw t("projetos.nome_obrigatorio");
-    if (!v.pasta) throw t("projetos.pasta_obrigatoria");
+    if (!v.url_git && !v.pasta) throw t("projetos.pasta_obrigatoria");
     return v;
   }
   return { node, ler };
@@ -368,6 +400,17 @@ function renderOverview(painel, p) {
   ));
 }
 
+// aguardarClone faz poll do job de clone até sair de "clonando" (o clone de
+// repositórios grandes demora — o backend limita em 30min; aqui só seguimos o
+// job até o fim).
+async function aguardarClone(jobID) {
+  for (;;) {
+    const job = await api.obterClone(jobID);
+    if (job.status !== "clonando") return job;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}
+
 async function salvarCore(p, core, btn) {
   let corpo;
   try {
@@ -379,7 +422,19 @@ async function salvarCore(p, core, btn) {
   bannerErro("");
   btn.disabled = true;
   try {
-    if (p == null) {
+    if (p == null && corpo.url_git) {
+      // Cadastro por clone: 202 + job — acompanha até concluir.
+      const aceite = await api.criarProjeto(corpo);
+      toast(t("projetos.clonando"), "ok");
+      const job = await aguardarClone(aceite.job_id);
+      if (job.status !== "concluido" || !job.projeto) {
+        throw new Error(job.detalhe || t("projetos.clone_falhou_generico"));
+      }
+      toast(t("projetos.cadastrado"), "ok");
+      selecionadoID = job.projeto.id;
+      await recarregarLista();
+      renderEdicao(job.projeto);
+    } else if (p == null) {
       const criado = await api.criarProjeto(corpo);
       toast(t("projetos.cadastrado"), "ok");
       selecionadoID = criado.id;

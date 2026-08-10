@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"sync"
 	"testing"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -23,23 +24,91 @@ func repoGitTemp(t *testing.T) string {
 	return dir
 }
 
-// fazerReq executa uma requisição no servidor e devolve o recorder.
+// adminTokensTeste memoiza, por servidor, o JWT do admin criado por
+// tokenAdminTeste — o setup roda uma vez por servidor de teste.
+var adminTokensTeste sync.Map // *Servidor → string
+
+// Credenciais do admin de teste compartilhado (criado no primeiro fazerReq de
+// cada servidor com banco). Exportadas dentro do pacote para os testes que
+// precisam relogar ou comparar listas de usuários.
+const (
+	adminTesteEmail = "admin@praxis.test"
+	adminTesteSenha = "senha-de-teste-123"
+	adminTesteNome  = "Admin de Teste"
+)
+
+// tokenAdminTeste garante um admin no banco do servidor e devolve o JWT dele.
+// Desde a Fase A o modo bootstrap não dá mais acesso à API (só às rotas de
+// auth), então os testes autenticam como este admin — o comportamento que uma
+// instalação real tem depois do /auth/setup. Servidor sem banco devolve ""
+// (o seam de handler isolado continua com acesso pleno).
+func tokenAdminTeste(t *testing.T, srv *Servidor) string {
+	t.Helper()
+	if srv.banco == nil {
+		return ""
+	}
+	if tok, ok := adminTokensTeste.Load(srv); ok {
+		return tok.(string)
+	}
+	corpo, _ := json.Marshal(map[string]string{
+		"nome": adminTesteNome, "email": adminTesteEmail, "senha": adminTesteSenha,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", bytes.NewReader(corpo))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusConflict {
+		// Outro caminho do teste já criou o 1º usuário: loga com as credenciais
+		// padrão (o teste que criou o SEU próprio admin usa o token dele).
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(corpo))
+		rec = httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+	}
+	var resp struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || resp.Token == "" {
+		t.Fatalf("criar admin de teste: status=%d corpo=%q", rec.Code, rec.Body.String())
+	}
+	adminTokensTeste.Store(srv, resp.Token)
+	return resp.Token
+}
+
+// fazerReq executa uma requisição AUTENTICADA (admin de teste) no servidor e
+// devolve o recorder. Para exercitar requisições anônimas ou com outra
+// credencial, use fazerReqAnonima/fazerReqToken.
 func fazerReq(t *testing.T, srv *Servidor, metodo, caminho string, corpo any) *httptest.ResponseRecorder {
 	t.Helper()
-	var body *bytes.Buffer
-	if corpo != nil {
-		b, err := json.Marshal(corpo)
-		if err != nil {
-			t.Fatalf("marshal corpo: %v", err)
-		}
-		body = bytes.NewBuffer(b)
-	} else {
-		body = bytes.NewBuffer(nil)
+	token := tokenAdminTeste(t, srv)
+	req := httptest.NewRequest(metodo, caminho, corpoJSON(t, corpo))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req := httptest.NewRequest(metodo, caminho, body)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	return rec
+}
+
+// fazerReqAnonima executa uma requisição SEM credencial — para rotas públicas
+// (auth) e para asserções de 401.
+func fazerReqAnonima(t *testing.T, srv *Servidor, metodo, caminho string, corpo any) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(metodo, caminho, corpoJSON(t, corpo))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// corpoJSON serializa o corpo (nil → vazio) para as requisições de teste.
+func corpoJSON(t *testing.T, corpo any) *bytes.Buffer {
+	t.Helper()
+	if corpo == nil {
+		return bytes.NewBuffer(nil)
+	}
+	b, err := json.Marshal(corpo)
+	if err != nil {
+		t.Fatalf("marshal corpo: %v", err)
+	}
+	return bytes.NewBuffer(b)
 }
 
 func decodProjeto(t *testing.T, rec *httptest.ResponseRecorder) db.Projeto {
@@ -178,6 +247,7 @@ func TestCriarProjetoCorpoInvalido(t *testing.T) {
 	srv := Novo(Opcoes{Banco: abrirBancoTemp(t)})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString("{nao json"))
+	req.Header.Set("Authorization", "Bearer "+tokenAdminTeste(t, srv))
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {

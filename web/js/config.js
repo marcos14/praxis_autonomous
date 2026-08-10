@@ -283,6 +283,13 @@ async function salvar(inputs, campos, btn) {
       if (r.valor.length > 0) entradas[c.chave] = r.valor;
       continue;
     }
+    if (c.tipo === "bool") {
+      if (texto.trim() === "") continue; // vazio = herda o default
+      const r = textoParaJSON(texto, c.tipo);
+      if (!r.ok) { bannerErro(t("configx.deve_bool", { campo: c.rotulo })); return; }
+      entradas[c.chave] = r.valor;
+      continue;
+    }
     if (texto.trim() !== "") entradas[c.chave] = texto.trim();
   }
 

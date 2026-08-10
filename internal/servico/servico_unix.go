@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 )
@@ -183,6 +184,34 @@ func Privilegiado() (bool, string) {
 		return true, ""
 	}
 	return false, "rode com sudo (ex.: sudo praxis service install)"
+}
+
+// ContaServicoPadrao é a conta de sistema criada pelo install quando não há
+// conta não-root para registrar o serviço (login root de verdade, sem
+// SUDO_USER). O Claude recusa execução autônoma com UID 0 — o serviço NUNCA é
+// registrado como root.
+const ContaServicoPadrao = "praxis"
+
+// GarantirContaSistema devolve uma conta não-root para o serviço, criando a
+// conta de sistema `praxis` quando ela não existe. Com --create-home de
+// propósito: o harness e o git precisam de um HOME de verdade (~/.claude,
+// ~/.gitconfig, caches). Devolve criada=true quando o useradd rodou agora.
+func GarantirContaSistema() (conta string, criada bool, err error) {
+	if _, err := user.Lookup(ContaServicoPadrao); err == nil {
+		return ContaServicoPadrao, false, nil
+	}
+	saida, err := exec.Command("useradd",
+		"--system",
+		"--create-home",
+		"--home-dir", "/var/lib/"+ContaServicoPadrao,
+		// nologin: ninguém loga COMO a conta; o systemd não passa pelo shell.
+		"--shell", "/usr/sbin/nologin",
+		ContaServicoPadrao).CombinedOutput()
+	if err != nil {
+		return "", false, fmt.Errorf("criar a conta de sistema %q: %v — %s",
+			ContaServicoPadrao, err, strings.TrimSpace(string(saida)))
+	}
+	return ContaServicoPadrao, true, nil
 }
 
 // DestinoPadrao é onde o binário do serviço fica. /usr/local/bin é o lugar

@@ -94,6 +94,16 @@ var migracoes = []migracao{
 		nome:   "i18n: idioma preferido do usuário (users.idioma)",
 		sql:    schemaIdiomaUsuario,
 	},
+	{
+		versao: 16,
+		nome:   "donos e visibilidade: owner de projetos/motores e ACL de motores (engine_access)",
+		sql:    schemaDonosVisibilidade,
+	},
+	{
+		versao: 17,
+		nome:   "credencial SSH do projeto (projects.ssh_user_id)",
+		sql:    schemaCredencialSSH,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -721,4 +731,45 @@ SELECT id, demand_id, 'completa' FROM planejamentos WHERE demand_id IS NOT NULL;
 // global `idioma`). Valores normalizados pela app: pt-BR, en, es, zh-CN.
 const schemaIdiomaUsuario = `
 ALTER TABLE users ADD COLUMN idioma TEXT NOT NULL DEFAULT '';
+`
+
+// schemaDonosVisibilidade é a migração 16 (Fase A do PLANO_MULTIUSUARIO.md):
+// projetos e motores ganham DONO (o usuário que os criou — NULL nos legados e
+// nos criados por token/bootstrap) e os motores ganham a ACL de visibilidade
+// engine_access, espelho estrutural da project_access (migração 9): cada linha
+// LIBERA o motor para um usuário OU um grupo de usuários; motor sem nenhuma
+// linha é público (retrocompatível com os bancos existentes). A semântica de
+// leitura é resolvida na aplicação, como na project_access.
+//
+// ON DELETE SET NULL no owner: remover o usuário não remove o projeto/motor —
+// ele fica sem dono (gerível por quem tem a permissão de gestão). ON DELETE
+// CASCADE na ACL: remover usuário/grupo/motor limpa os vínculos — e, como na
+// project_access, se os cascades zerarem a ACL de um motor restrito, ele volta
+// a ser público.
+const schemaDonosVisibilidade = `
+ALTER TABLE projects ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE engines  ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE TABLE engine_access (
+    engine_id INTEGER NOT NULL REFERENCES engines(id)     ON DELETE CASCADE,
+    user_id   INTEGER          REFERENCES users(id)       ON DELETE CASCADE,
+    group_id  INTEGER          REFERENCES user_groups(id) ON DELETE CASCADE,
+    CHECK ((user_id IS NOT NULL AND group_id IS NULL) OR
+           (user_id IS NULL     AND group_id IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX ux_engine_access_user  ON engine_access (engine_id, user_id)  WHERE user_id  IS NOT NULL;
+CREATE UNIQUE INDEX ux_engine_access_group ON engine_access (engine_id, group_id) WHERE group_id IS NOT NULL;
+CREATE INDEX ix_engine_access_engine ON engine_access (engine_id);
+`
+
+// schemaCredencialSSH é a migração 17 (Fase C do PLANO_MULTIUSUARIO.md): o
+// projeto registra QUAL chave SSH por usuário (PRAXIS_HOME/ssh/u<id>/) opera o
+// repositório — clone, fetch/pull e push passam a injetar o GIT_SSH_COMMAND
+// dessa chave. NULL (todos os projetos legados) = credenciais do SO, o
+// comportamento histórico. ON DELETE SET NULL: remover o usuário não remove o
+// projeto — o push/pull passa a falhar EXPLICITAMENTE até um admin transferir a
+// credencial (ssh_user_id) para outro usuário.
+const schemaCredencialSSH = `
+ALTER TABLE projects ADD COLUMN ssh_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
 `

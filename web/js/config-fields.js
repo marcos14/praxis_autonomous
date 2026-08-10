@@ -8,6 +8,7 @@
 //   "number" → JSON number
 //   "text"   → JSON string
 //   "lines"  → JSON array de strings (uma por linha no textarea; vazias ignoradas)
+//   "bool"   → JSON true/false (campo de texto com true/false; vazio = herdar)
 
 import { t } from "./i18n.js";
 
@@ -33,6 +34,8 @@ export const CAMPOS = [
     hint: t("config.uso_intervalo_min.hint") },
   { chave: "idioma", rotulo: t("config.idioma"), tipo: "text", escopo: "global",
     hint: t("config.idioma.hint") },
+  { chave: "ide_web", rotulo: t("config.ide_web"), tipo: "bool", escopo: "global",
+    hint: t("config.ide_web.hint") },
 ];
 
 // camposDoEscopo devolve os campos visíveis num escopo ("global" ou "project").
@@ -49,6 +52,7 @@ export function jsonParaTexto(valor, tipo) {
   if (valor == null) return "";
   if (tipo === "lines") return Array.isArray(valor) ? valor.join("\n") : "";
   if (tipo === "number") return typeof valor === "number" ? String(valor) : "";
+  if (tipo === "bool") return typeof valor === "boolean" ? String(valor) : "";
   return typeof valor === "string" ? valor : String(valor);
 }
 
@@ -67,6 +71,12 @@ export function textoParaJSON(texto, tipo) {
   if (tipo === "lines") {
     const linhas = texto.split("\n").map((l) => l.trim()).filter((l) => l !== "");
     return { ok: true, valor: linhas };
+  }
+  if (tipo === "bool") {
+    const t = texto.trim().toLowerCase();
+    if (t === "") return { ok: false, valor: null }; // vazio = não persistir (herda o default)
+    if (t !== "true" && t !== "false") return { ok: false, valor: null };
+    return { ok: true, valor: t === "true" };
   }
   return { ok: true, valor: texto.trim() };
 }

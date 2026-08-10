@@ -24,7 +24,7 @@ func (o *Ops) Fetch(repo, branch string) error {
 	if !TemRemote(repo) {
 		return nil
 	}
-	_, err := git(repo, "fetch", "origin", branch)
+	_, err := o.gitRede(repo, "fetch", "origin", branch)
 	return err
 }
 

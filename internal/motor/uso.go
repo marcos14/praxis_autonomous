@@ -72,7 +72,7 @@ func franquiaCodex(ctx context.Context, perfilDir string, comando fabricaComando
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	cmd := comando(ctx, "codex", "app-server", "--listen", "stdio://")
+	cmd := comando(ctx, ResolverCLI("codex"), "app-server", "--listen", "stdio://")
 	if err := aplicarPerfil(cmd, "codex", dir); err != nil {
 		u.Mensagem = "não foi possível aplicar o perfil Codex"
 		return u

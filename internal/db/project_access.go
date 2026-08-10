@@ -249,6 +249,9 @@ func (d *DB) ListarProjetosVisiveis(ctx context.Context, userID int64) ([]Projet
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("listar projetos visíveis: %w", err)
 	}
+	if err := d.decorarProjetos(ctx, projetos); err != nil {
+		return nil, err
+	}
 	return projetos, nil
 }
 

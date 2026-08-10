@@ -528,3 +528,88 @@ func TestErroAntigoLimpaAoProgredir(t *testing.T) {
 		}
 	}
 }
+
+// TestResolverConfigBancoFiltraMotoresPorCriador cobre a Fase A (donos e
+// visibilidade): a cadeia de fallback de uma demanda só contém motores VISÍVEIS
+// ao criador dela; demanda sem criador (token de API) usa só os públicos; e um
+// motor_preferido apontando para um motor escondido pela ACL é ignorado.
+func TestResolverConfigBancoFiltraMotoresPorCriador(t *testing.T) {
+	repo := repoLocal(t)
+	d := abrirTempDB(t)
+	ctx := context.Background()
+	proj, err := d.CriarProjeto(ctx, db.Projeto{
+		Nome: "ACL", Slug: "acl", Pasta: repo,
+		BranchPrincipal: "main", ModoIntegracao: db.ModoIntegracaoMergeLocal, Ativo: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dona, err := d.CriarUsuario(ctx, "Dona", "dona@x.com", "senha-123", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// "restrito" tem a MAIOR prioridade, mas só a dona o vê; "publico" é aberto.
+	restrito, err := d.CriarMotor(ctx, db.Motor{Nome: "restrito", Ativo: true, Fallback: true,
+		Prioridade: 0, ModeloExec: "modelo-r", Params: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.CriarMotor(ctx, db.Motor{Nome: "publico", Ativo: true, Fallback: true,
+		Prioridade: 1, ModeloExec: "modelo-p", Params: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DefinirAcessoMotor(ctx, restrito.ID, []int64{dona.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Demanda SEM criador (token de API): só o público entra.
+	dem := db.Demanda{ProjectID: proj.ID, Titulo: "d", Status: db.StatusDemandaPronta}
+	cfg, err := resolverConfigBanco(ctx, d, dem, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MotorPadrao != "publico" {
+		t.Fatalf("sem criador: motor padrão = %q, quero publico", cfg.MotorPadrao)
+	}
+	for _, m := range cfg.Fallback.Ordem {
+		if m == "restrito" {
+			t.Fatal("motor restrito não pode entrar na cadeia de uma demanda sem criador")
+		}
+	}
+	if _, tem := cfg.Modelos["restrito"]; tem {
+		t.Fatal("modelo do motor restrito vazou para a config")
+	}
+
+	// Demanda DA DONA: o restrito (prioridade maior) vira o padrão.
+	demDona := db.Demanda{ProjectID: proj.ID, Titulo: "d2", Status: db.StatusDemandaPronta, CriadoPor: &dona.ID}
+	cfg, err = resolverConfigBanco(ctx, d, demDona, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MotorPadrao != "restrito" {
+		t.Fatalf("criadora dona: motor padrão = %q, quero restrito", cfg.MotorPadrao)
+	}
+
+	// motor_preferido apontando para o restrito: vale para a dona, é ignorado
+	// para quem não o vê (fica o padrão da cadeia).
+	if err := d.DefinirConfigProjeto(ctx, proj.ID, map[string]json.RawMessage{
+		"motor_preferido": json.RawMessage(`"restrito"`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = resolverConfigBanco(ctx, d, dem, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MotorPadrao != "publico" {
+		t.Fatalf("preferido escondido: motor padrão = %q, quero publico", cfg.MotorPadrao)
+	}
+	cfg, err = resolverConfigBanco(ctx, d, demDona, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MotorPadrao != "restrito" {
+		t.Fatalf("preferido visível à dona: motor padrão = %q, quero restrito", cfg.MotorPadrao)
+	}
+}

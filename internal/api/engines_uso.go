@@ -50,6 +50,12 @@ func (s *Servidor) handleUsoMotores(w http.ResponseWriter, r *http.Request) {
 		s.responderErroMotor(w, r, err)
 		return
 	}
+	// A ACL vale também para o painel de uso: quem não vê o motor não vê o
+	// consumo (nem a franquia) das contas dele.
+	if motores, err = s.motoresVisiveisAoPrincipal(r, motores); err != nil {
+		s.responderErroMotor(w, r, err)
+		return
+	}
 	usos, err := s.banco.UsoPraxisPorConta(r.Context(), time.Now().UTC())
 	if err != nil {
 		s.log.Error("agregar uso do praxis", "erro", err)

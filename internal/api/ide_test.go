@@ -67,11 +67,35 @@ func demandaEditavel(t *testing.T, srv *Servidor, banco *db.DB, status string, w
 	return dem.ID
 }
 
+// habilitarIDEWeb liga a chave global `ide_web` (o IDE nasce DESLIGADO em toda
+// instalação — Fase A) para os testes que exercitam o handler além do gate.
+func habilitarIDEWeb(t *testing.T, srv *Servidor) {
+	t.Helper()
+	rec := fazerReq(t, srv, http.MethodPut, "/api/v1/config", map[string]any{"ide_web": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("habilitar ide_web: status %d (corpo=%q)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestSessaoIDEDesabilitadoPorConfig confirma a postura default: sem a chave
+// global `ide_web`, abrir sessão responde 403 mesmo com o IDE disponível.
+func TestSessaoIDEDesabilitadoPorConfig(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco, IDE: &ideFake{estado: "pronto"}})
+	id := demandaEditavel(t, srv, banco, db.StatusDemandaPausada, true)
+	tok := tokenAdminTeste(t, srv)
+
+	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/ide/sessao", tok, map[string]any{"demand_id": id})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "ide_desabilitado") {
+		t.Fatalf("status=%d corpo=%q, quero 403 ide_desabilitado", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSessaoIDEDesligado(t *testing.T) {
 	banco := abrirBancoTemp(t)
 	srv := Novo(Opcoes{Banco: banco}) // sem IDE
 	id := demandaEditavel(t, srv, banco, db.StatusDemandaPausada, true)
-	tok := setupAdmin(t, srv)
+	tok := tokenAdminTeste(t, srv)
 
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/ide/sessao", tok, map[string]any{"demand_id": id})
 	if rec.Code != http.StatusServiceUnavailable {
@@ -85,7 +109,8 @@ func TestSessaoIDEGateDeEstado(t *testing.T) {
 	srv := Novo(Opcoes{Banco: banco, IDE: fake})
 	// Demanda executando: edição manual bloqueada (pausar antes).
 	id := demandaEditavel(t, srv, banco, db.StatusDemandaExecutando, true)
-	tok := setupAdmin(t, srv)
+	tok := tokenAdminTeste(t, srv)
+	habilitarIDEWeb(t, srv)
 
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/ide/sessao", tok, map[string]any{"demand_id": id})
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "estado_invalido") {
@@ -100,7 +125,8 @@ func TestSessaoIDESemWorktree(t *testing.T) {
 	banco := abrirBancoTemp(t)
 	srv := Novo(Opcoes{Banco: banco, IDE: &ideFake{estado: "pronto"}})
 	id := demandaEditavel(t, srv, banco, db.StatusDemandaPausada, false)
-	tok := setupAdmin(t, srv)
+	tok := tokenAdminTeste(t, srv)
+	habilitarIDEWeb(t, srv)
 
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/ide/sessao", tok, map[string]any{"demand_id": id})
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "sem_worktree") {
@@ -127,7 +153,8 @@ func TestSessaoIDEProntaEmiteCookieEURL(t *testing.T) {
 	fake := &ideFake{estado: "pronto"}
 	srv := Novo(Opcoes{Banco: banco, IDE: fake})
 	id := demandaEditavel(t, srv, banco, db.StatusDemandaPausada, true)
-	tok := setupAdmin(t, srv)
+	tok := tokenAdminTeste(t, srv)
+	habilitarIDEWeb(t, srv)
 
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/ide/sessao", tok, map[string]any{"demand_id": id})
 	if rec.Code != http.StatusOK {
@@ -154,7 +181,8 @@ func TestSessaoIDEPreparandoDevolve202(t *testing.T) {
 	banco := abrirBancoTemp(t)
 	srv := Novo(Opcoes{Banco: banco, IDE: &ideFake{estado: "preparando"}})
 	id := demandaEditavel(t, srv, banco, db.StatusDemandaPausada, true)
-	tok := setupAdmin(t, srv)
+	tok := tokenAdminTeste(t, srv)
+	habilitarIDEWeb(t, srv)
 
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/ide/sessao", tok, map[string]any{"demand_id": id})
 	if rec.Code != http.StatusAccepted {
@@ -166,7 +194,7 @@ func TestSessaoIDEExigePermissao(t *testing.T) {
 	banco := abrirBancoTemp(t)
 	srv := Novo(Opcoes{Banco: banco, IDE: &ideFake{estado: "pronto"}})
 	id := demandaEditavel(t, srv, banco, db.StatusDemandaPausada, true)
-	tokAdmin := setupAdmin(t, srv)
+	tokAdmin := tokenAdminTeste(t, srv)
 
 	// Token de API papel leitor: sem codigo.editar → 403 já no middleware.
 	rec := fazerReqToken(t, srv, http.MethodPost, "/api/v1/tokens", tokAdmin,
@@ -354,7 +382,7 @@ func TestProxyIDEPreparandoRecarrega(t *testing.T) {
 func TestStatusIDE(t *testing.T) {
 	banco := abrirBancoTemp(t)
 	srv := Novo(Opcoes{Banco: banco, IDE: &ideFake{estado: "erro", detalhe: "download falhou"}})
-	tok := setupAdmin(t, srv)
+	tok := tokenAdminTeste(t, srv)
 
 	rec := fazerReqToken(t, srv, http.MethodGet, "/api/v1/ide/status", tok, nil)
 	if rec.Code != http.StatusOK {

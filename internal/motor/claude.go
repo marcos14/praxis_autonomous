@@ -137,6 +137,12 @@ func (m motorClaude) Rodar(op OpcoesRun) (*ResultadoRun, error) {
 // progresso ao vivo no console, grava cada evento em um .jsonl e devolve o
 // resultado final. resumeID != "" retoma a sessao correspondente (--resume).
 func (motorClaude) rodarUma(op OpcoesRun, resumeID string) (*ResultadoRun, error) {
+	// Falha rápida e acionável (Fase B): o CLI do claude RECUSA
+	// --dangerously-skip-permissions com UID 0 — sem esta checagem o harness
+	// morre no meio da demanda com um erro criptico do vendor.
+	if err := verificarNaoRoot(); err != nil {
+		return nil, err
+	}
 	args := []string{"-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"}
 	if resumeID != "" {
 		args = append(args, "--resume", resumeID)
@@ -174,7 +180,7 @@ func (motorClaude) rodarUma(op OpcoesRun, resumeID string) (*ResultadoRun, error
 	defer cancel()
 
 	fmt.Println("  AVISO: Claude em modo BYPASS (--dangerously-skip-permissions): acesso total ao sistema, sem prompts de permissao. Use apenas em ambiente controlado.")
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, ResolverCLI("claude"), args...)
 	cmd.Dir = op.Dir
 	if err := aplicarPerfil(cmd, "claude", perfilDirDaOp(op)); err != nil {
 		return nil, err

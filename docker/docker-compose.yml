@@ -1,0 +1,26 @@
+# Praxis Autonomous — compose de exemplo.
+#
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# O serviço roda como usuário não-root (ver Dockerfile). A porta é publicada só
+# no loopback do host por padrão — para acesso pela rede, prefira um
+# reverse-proxy com TLS ou uma VPN na frente (guia, seção 9).
+services:
+  praxis:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: praxis-autonomous
+    container_name: praxis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7799:7799"
+    volumes:
+      # Dados do Praxis (banco, logs, backups, worktrees, chaves SSH da Fase C).
+      - praxis-home:/home/praxis/.config/praxis
+      # Repositórios locais registrados por caminho (cadastro clássico). Quem só
+      # cadastra por clone SSH (Fase C) pode remover esta linha.
+      - ${PRAXIS_REPOS:-./repos}:/repos
+
+volumes:
+  praxis-home:

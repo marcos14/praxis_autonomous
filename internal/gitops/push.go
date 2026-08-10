@@ -34,7 +34,7 @@ func (o *Ops) Push(repo, branch string, tentativas int) error {
 		if i > 0 {
 			time.Sleep(time.Duration(i) * EsperaEntreTentativas)
 		}
-		if _, err = git(repo, "push", "-u", "origin", branch); err == nil {
+		if _, err = o.gitRede(repo, "push", "-u", "origin", branch); err == nil {
 			return nil
 		}
 	}

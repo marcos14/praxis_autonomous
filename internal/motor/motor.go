@@ -117,14 +117,15 @@ func Selecionar(nome string) (Motor, error) {
 	return f(), nil
 }
 
-// Instalado informa se o CLI do motor esta no PATH.
+// Instalado informa se o CLI do motor esta disponivel (PATH, override
+// PRAXIS_CLI_<VENDOR> ou diretorio gerenciado do instalador).
 func Instalado(nome string) bool {
 	nome = normalizarNomeMotor(nome)
 	if nome == "" {
 		return false
 	}
-	_, err := exec.LookPath(nome)
-	return err == nil
+	_, ok := CLIDisponivel(nome)
+	return ok
 }
 
 // Instalados lista os motores conhecidos cujo CLI esta no PATH.

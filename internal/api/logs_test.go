@@ -73,7 +73,8 @@ func TestLogsSSEEntregaLinhas(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/demands/"+strconv.FormatInt(demID, 10)+"/logs", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/demands/"+strconv.FormatInt(demID, 10)+"/logs?token="+tokenAdminTeste(t, srv), nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -106,7 +107,7 @@ func TestLogsSSEAppendAoVivo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
-		ts.URL+"/api/v1/demands/"+strconv.FormatInt(demID, 10)+"/logs", nil)
+		ts.URL+"/api/v1/demands/"+strconv.FormatInt(demID, 10)+"/logs?token="+tokenAdminTeste(t, srv), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET logs: %v", err)

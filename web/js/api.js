@@ -114,6 +114,14 @@ export const api = {
   // projeto. Listas vazias = aberto a todos. Exige projetos.gerir.
   obterAcessoProjeto: (id) => req("GET", `/api/v1/projects/${id}/access`),
   definirAcessoProjeto: (id, acesso) => req("PUT", `/api/v1/projects/${id}/access`, acesso),
+  // cadastro por clone (Fase C): o POST /projects com url_git devolve 202 +
+  // job_id; o job é acompanhado aqui.
+  obterClone: (jobId) => req("GET", `/api/v1/clones/${jobId}`),
+  // chave SSH do usuário logado (Fase C): pública + fingerprint; a privada
+  // nunca sai do servidor.
+  obterChaveSSH: () => req("GET", "/api/v1/me/ssh-key"),
+  gerarChaveSSH: () => req("POST", "/api/v1/me/ssh-key"),
+  testarChaveSSH: (url) => req("POST", "/api/v1/me/ssh-key/testar", { url }),
 
   // grupos de repositórios (feature de consultas): N:N com projetos; o primeiro
   // project_id é o repositório principal.
@@ -189,6 +197,11 @@ export const api = {
   // (harness instalado + variáveis) e cadastra os detectados com um POST.
   detectarMotores: () => req("GET", "/api/v1/engines/deteccao"),
   autocadastrarMotores: () => req("POST", "/api/v1/engines/deteccao"),
+  // instalador de harnesses (Fase D): baixa o CLI oficial do vendor no servidor
+  // (job em background — acompanhe por obterInstalacao). Exige config.gerir.
+  harnessesInstalaveis: () => req("GET", "/api/v1/engines/instalaveis"),
+  instalarHarness: (vendor) => req("POST", "/api/v1/engines/instalar", { vendor }),
+  obterInstalacao: (jobId) => req("GET", `/api/v1/engines/instalar/${jobId}`),
   // uso: consumo do Praxis por motor/perfil + franquia do vendor (monitor).
   usoMotores: () => req("GET", "/api/v1/engines/uso"),
   criarConta: (engineID, c) => req("POST", `/api/v1/engines/${engineID}/accounts`, c),
