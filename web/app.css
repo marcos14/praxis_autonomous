@@ -552,7 +552,7 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
 .usuario-inativo { opacity: .55; }
 
 /* Notificações externas (Configurações) e por projeto. */
-.notif-sub { font-size: 13px; margin: 6px 0 -4px; color: var(--ink-2); }
+.notif-sub, .form-sub { font-size: 13px; margin: 6px 0 -4px; color: var(--ink-2); }
 .notif-canal { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface-2); }
 .notif-canal-head { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; cursor: pointer; }
 .notif-canal-head b { font-weight: 600; }

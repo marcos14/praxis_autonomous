@@ -5,7 +5,7 @@
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro } from "./ui.js";
 import { temPermissao } from "./auth.js";
-import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
+import { camposDoEscopo, campoEntrada, listasDinamicas, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
 import { GRUPOS_EVENTOS, CANAIS, resolverEventos } from "./notify-events.js";
 import { t } from "./i18n.js";
 
@@ -25,21 +25,28 @@ export async function montarConfig() {
   }
   bannerErro("");
   desconhecidas = preservarDesconhecidas(cfg);
+  const dinamicas = await listasDinamicas();
 
   limpar(painel);
   const form = el("div", { class: "form" });
   const campos = camposDoEscopo("global");
   const inputs = new Map();
 
+  let grupoAtual = null;
   for (const c of campos) {
+    if (c.grupo && c.grupo !== grupoAtual) {
+      grupoAtual = c.grupo;
+      form.append(el("h3", { class: "form-sub", text: c.grupo }));
+    }
     const valorTexto = jsonParaTexto(cfg[c.chave], c.tipo);
-    const entrada = c.tipo === "lines"
-      ? el("textarea", { id: `g-${c.chave}` }, valorTexto)
-      : el("input", { id: `g-${c.chave}`, type: c.tipo === "number" ? "number" : "text",
-                      step: c.tipo === "number" ? "any" : null, value: valorTexto });
+    // Nenhuma chave é obrigatória: a opção vazia diz o que vale sem ela, em vez
+    // de deixar o formulário mudo sobre o comportamento em vigor.
+    const vazio = c.padrao ? t("config.opcao_padrao", { valor: c.padrao }) : t("config.opcao_nao_definido");
+    const entrada = campoEntrada(c, valorTexto, { vazio, dinamicas });
+    entrada.id = `g-${c.chave}`;
     inputs.set(c.chave, entrada);
     form.append(el("div", {},
-      el("label", {}, c.rotulo),
+      el("label", { for: entrada.id }, c.rotulo),
       entrada,
       c.hint ? el("div", { class: "hint", text: c.hint }) : null,
     ));
@@ -271,6 +278,11 @@ async function salvar(inputs, campos, btn) {
   for (const c of campos) {
     const texto = inputs.get(c.chave).value;
     // Campo vazio → chave ausente (não grava). Para number, exige valor válido.
+    if (c.tipo === "bool") {
+      const r = textoParaJSON(texto, c.tipo);
+      if (r.ok) entradas[c.chave] = r.valor;
+      continue;
+    }
     if (c.tipo === "number") {
       if (texto.trim() === "") continue;
       const r = textoParaJSON(texto, c.tipo);

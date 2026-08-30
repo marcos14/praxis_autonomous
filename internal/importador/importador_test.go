@@ -36,7 +36,6 @@ func pastaClassica(t *testing.T) string {
 		"max_budget_usd": 12.5,
 		"max_correcoes": 3,
 		"max_ciclos_revisao": 2,
-		"max_fases_novas": 5,
 		"gates": [{"nome":"build","comandos":["go build ./...","go vet ./..."]}],
 		"motores": {"ordem": ["claude","codex"]}
 	}`
@@ -90,8 +89,10 @@ func TestImportarCriaProjetoConfigEFases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config projeto: %v", err)
 	}
-	if _, ok := cfg["budget_demanda_usd"]; !ok {
-		t.Fatalf("config sem budget_demanda_usd: %v", cfg)
+	// max_budget_usd do autopilot.json vira o budget da DEMANDA importada, nao
+	// uma chave de config (budget_demanda_usd nao era lido por ninguem).
+	if _, ok := cfg["budget_demanda_usd"]; ok {
+		t.Fatalf("config nao deveria ter budget_demanda_usd: %v", cfg)
 	}
 	if _, ok := cfg["gates"]; !ok {
 		t.Fatalf("config sem gates: %v", cfg)
@@ -110,6 +111,9 @@ func TestImportarCriaProjetoConfigEFases(t *testing.T) {
 	}
 	if demandas[0].PlanoMD == "" {
 		t.Fatal("plano_md não importado")
+	}
+	if demandas[0].BudgetUSD != 12.5 {
+		t.Fatalf("budget_usd da demanda = %v, quero 12.5", demandas[0].BudgetUSD)
 	}
 }
 

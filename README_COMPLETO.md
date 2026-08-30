@@ -221,9 +221,8 @@ Recognized keys (all inherit from global when not set on the project):
 | `gates_simultaneos` | How many gate batteries run at the same time (default 1). |
 | `max_correcoes` | Fixer cycles per round of gates. |
 | `max_ciclos_revisao` | Fix cycles after a reviewer rejection. |
-| `max_fases_novas` | Cap of discovered phases inserted per round. |
-| `budget_demanda_usd` | Cost cap per demand. |
 | `gates` | Validation commands (one per line), e.g. `go build ./...`, `go test ./...`. A phase only completes with all of them green. |
+| `git_sufixo_praxis` | Appends " - Praxis" to the author name of commits made by Praxis (on by default). |
 | `idioma` | The **instance** language (`pt-BR`, `en`, `es`, `zh-CN`; default `pt-BR`). Applies to whatever has no user in context: stored events, channel notifications, and the repository overview. Global only; takes effect without a restart. |
 
 > The **gates** run in the target repository, so use that project's commands

@@ -211,9 +211,8 @@ Chaves reconhecidas (todas herdam do global quando não definidas no projeto):
 | `gates_simultaneos` | Quantas baterias de gates rodam ao mesmo tempo (default 1). |
 | `max_correcoes` | Ciclos de corretor por rodada de gates. |
 | `max_ciclos_revisao` | Ciclos de correção após reprovação do revisor. |
-| `max_fases_novas` | Teto de fases descobertas inseridas por rodada. |
-| `budget_demanda_usd` | Teto de custo por demanda. |
 | `gates` | Comandos de validação (um por linha), ex.: `go build ./...`, `go test ./...`. Uma fase só conclui com todos verdes. |
+| `git_sufixo_praxis` | Acrescenta " - Praxis" ao nome do autor dos commits feitos pelo Praxis (padrão ligado). |
 | `idioma` | Idioma da **instância** (`pt-BR`, `en`, `es`, `zh-CN`; padrão `pt-BR`). Vale para o que não tem um usuário no contexto: eventos gravados, notificações nos canais e o overview do repositório. Só global; aplica sem reiniciar. |
 
 > Os **gates** rodam no repositório-alvo, então use os comandos daquele projeto

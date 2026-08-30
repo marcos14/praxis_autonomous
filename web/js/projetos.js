@@ -3,7 +3,7 @@
 
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, mdEditor } from "./ui.js";
-import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
+import { camposDoEscopo, campoEntrada, listasDinamicas, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
 import { GRUPOS_EVENTOS, resolverEventos } from "./notify-events.js";
 import { t } from "./i18n.js";
 import { escolherPasta } from "./pasta-picker.js";
@@ -412,7 +412,9 @@ async function salvarCore(p, core, btn) {
 
 // renderOverride desenha os campos de config do projeto com herança explícita:
 // cada campo tem um checkbox "herdar do global". Herdado → não persiste (cai no
-// global); desmarcado → persiste como override.
+// global); desmarcado → persiste como override. O rótulo da opção vazia mostra
+// o valor que vem do global (ou o padrão do sistema), para a herança ser um
+// valor visível e não uma incógnita.
 async function renderOverride(painel, p) {
   let override, desconhecidas;
   try {
@@ -422,17 +424,27 @@ async function renderOverride(painel, p) {
     return;
   }
   desconhecidas = preservarDesconhecidas(override);
+  const dinamicas = await listasDinamicas();
+  // A config global só serve para rotular a herança de cada campo; falhar aqui
+  // não impede editar (o rótulo cai no padrão do sistema).
+  let cfgGlobal = {};
+  try {
+    cfgGlobal = (await api.obterConfigGlobal()) || {};
+  } catch { /* sem valor global exibido */ }
 
   const form = el("div", { class: "form" });
   const campos = camposDoEscopo("project");
   const controles = new Map();
 
+  let grupoAtual = null;
   for (const c of campos) {
+    if (c.grupo && c.grupo !== grupoAtual) {
+      grupoAtual = c.grupo;
+      form.append(el("h3", { class: "form-sub", text: c.grupo }));
+    }
     const temOverride = Object.prototype.hasOwnProperty.call(override, c.chave);
     const valorTexto = jsonParaTexto(override[c.chave], c.tipo);
-    const entrada = c.tipo === "lines"
-      ? el("textarea", {}, valorTexto)
-      : el("input", { type: c.tipo === "number" ? "number" : "text", step: c.tipo === "number" ? "any" : null, value: valorTexto });
+    const entrada = campoEntrada(c, valorTexto, { vazio: rotuloHerdado(c, cfgGlobal), dinamicas });
     const chkHerda = el("input", { type: "checkbox" });
     chkHerda.checked = !temOverride;
 
@@ -464,10 +476,24 @@ async function renderOverride(painel, p) {
   painel.append(form);
 }
 
+// rotuloHerdado descreve, para um campo, de onde vem o valor quando o projeto
+// não sobrescreve: o valor da config global, quando ela define a chave, ou o
+// padrão do sistema declarado no campo.
+function rotuloHerdado(c, cfgGlobal) {
+  const doGlobal = jsonParaTexto(cfgGlobal[c.chave], c.tipo);
+  if (doGlobal !== "") return t("config.opcao_herdado", { valor: doGlobal.split("\n").join(" · ") });
+  if (c.padrao) return t("config.opcao_herdado_padrao", { valor: c.padrao });
+  return t("config.opcao_nao_definido");
+}
+
 async function salvarOverride(p, controles, desconhecidas, btn, boxEfetiva) {
   const entradas = { ...desconhecidas };
   for (const [chave, ctl] of controles) {
     if (ctl.chkHerda.checked) continue; // herdado: não persiste
+    // Campo deixado em branco (ou na opção "herdar") equivale a herdar — só
+    // "lines" persiste vazio, porque lista vazia é um override com sentido
+    // ("este projeto não roda gates").
+    if (ctl.tipo !== "lines" && ctl.entrada.value.trim() === "") continue;
     const r = textoParaJSON(ctl.entrada.value, ctl.tipo);
     if (ctl.tipo === "number" && !r.ok) {
       bannerErro(t("projetos.override_numero", { rotulo: ctl.rotulo }));

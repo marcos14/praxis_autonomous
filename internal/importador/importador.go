@@ -31,7 +31,6 @@ type configClassica struct {
 	TimeoutMin       int      `json:"timeout_min"`
 	MaxCorrecoes     int      `json:"max_correcoes"`
 	MaxCiclosRevisao int      `json:"max_ciclos_revisao"`
-	MaxFasesNovas    int      `json:"max_fases_novas"`
 	Gates            []struct {
 		Comandos []string `json:"comandos"`
 	} `json:"gates"`
@@ -150,17 +149,11 @@ func configEntries(cfg configClassica) map[string]json.RawMessage {
 			entradas[chave] = b
 		}
 	}
-	if cfg.MaxBudgetUSD > 0 {
-		set("budget_demanda_usd", cfg.MaxBudgetUSD)
-	}
 	if cfg.MaxCorrecoes > 0 {
 		set("max_correcoes", cfg.MaxCorrecoes)
 	}
 	if cfg.MaxCiclosRevisao > 0 {
 		set("max_ciclos_revisao", cfg.MaxCiclosRevisao)
-	}
-	if cfg.MaxFasesNovas != 0 {
-		set("max_fases_novas", cfg.MaxFasesNovas)
 	}
 	if motor := motorPreferido(cfg); motor != "" {
 		set("motor_preferido", motor)
