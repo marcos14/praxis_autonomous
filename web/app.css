@@ -126,6 +126,42 @@ p.sub { color: var(--muted); margin-bottom: 22px; font-size: 13px; }
 .list-item .path { font-size: 11px; color: var(--muted); font-family: Consolas, monospace; }
 .list-item .meta { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
+/* ---------- seletor de pasta do servidor (campo `pasta` do projeto) ---------- */
+.campo-pasta { display: flex; gap: 8px; align-items: center; }
+.campo-pasta input { flex: 1; }
+.campo-pasta button { white-space: nowrap; }
+.fs-corpo { padding: 0 22px 22px; display: grid; gap: 10px; }
+.fs-barra { display: flex; gap: 8px; align-items: center; }
+.fs-barra .fs-caminho {
+  flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink);
+  border-radius: 8px; padding: 8px 10px; font-size: 12.5px;
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+.fs-raizes { display: flex; gap: 6px; flex-wrap: wrap; }
+.fs-raizes .sel { border-color: var(--blue); color: var(--ink); }
+.fs-corpo > input:not(.fs-caminho) {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--ink);
+  border-radius: 8px; padding: 7px 10px; font-size: 12.5px; font-family: inherit; width: 100%;
+}
+.fs-lista { border: 1px solid var(--border); border-radius: 10px; max-height: 320px; overflow-y: auto; }
+.fs-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+  border-bottom: 1px solid var(--grid); font-size: 13px;
+}
+.fs-item:last-child { border-bottom: none; }
+.fs-item:hover { background: var(--surface-2); }
+.fs-item .ico { width: 14px; text-align: center; color: var(--muted); }
+.fs-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-item.fs-acima .nm { color: var(--muted); }
+.fs-item.bloqueado { cursor: default; opacity: .55; }
+.fs-item .fs-usar { visibility: hidden; }
+.fs-item:hover .fs-usar { visibility: visible; }
+.fs-vazio { padding: 14px 10px; font-size: 12px; color: var(--muted); text-align: center; }
+.fs-aviso { margin: 0; }
+.fs-aviso.ok { color: var(--good); }
+.fs-aviso.erro { color: var(--warning); }
+.fs-acoes { display: flex; gap: 8px; justify-content: flex-end; }
+
 /* ---------- motor-row ---------- */
 .motor-row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; margin-bottom: 9px; }
 .motor-row .ord { display: flex; flex-direction: column; gap: 1px; }

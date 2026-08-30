@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,15 +16,24 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/db"
 )
 
-// consultorFake captura os disparos do seam ConsultorSvc (os handlers disparam
-// na mesma goroutine do teste — sem corrida).
+// consultorFake captura os disparos do seam ConsultorSvc e resolve as pastas de
+// trabalho numa raiz temporária (os handlers disparam na mesma goroutine do
+// teste — sem corrida). Com raiz vazia, Pasta devolve "" (serviço sem pasta de
+// trabalho: as rotas de anexo respondem 503).
 type consultorFake struct {
 	respostas []int64
 	overviews []int64
+	raiz      string
 }
 
 func (f *consultorFake) DispararResposta(id int64) { f.respostas = append(f.respostas, id) }
 func (f *consultorFake) DispararOverview(id int64) { f.overviews = append(f.overviews, id) }
+func (f *consultorFake) Pasta(id int64) string {
+	if f.raiz == "" {
+		return ""
+	}
+	return filepath.Join(f.raiz, fmt.Sprintf("c%d", id))
+}
 
 func decodGrupo(t *testing.T, rec *httptest.ResponseRecorder) db.Grupo {
 	t.Helper()
@@ -404,5 +414,159 @@ func TestResumirLinhaStreamFailClosed(t *testing.T) {
 	resumo, ok = resumirLinhaStream(`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebFetch","input":{"url":"http://interno"}}]}}`)
 	if !ok || strings.Contains(resumo, "interno") {
 		t.Fatalf("tool desconhecida: %q ok=%v", resumo, ok)
+	}
+}
+
+func TestArquivosAnexadosNaConsulta(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	fake := &consultorFake{raiz: t.TempDir()}
+	srv := Novo(Opcoes{Banco: banco, Consultas: fake})
+	projID := criarProjetoTeste(t, srv)
+
+	cons, _, err := banco.CriarConsultaComChat(context.Background(),
+		db.Consulta{ProjectID: &projID}, db.MensagemConsulta{Conteudo: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("/api/v1/consultas/%d/referencias", cons.ID)
+
+	// Upload válido (nome com acento e espaço, como arquivos reais).
+	rec := fazerUpload(t, srv, base, "E-mail do cliente.md", []byte("## Caso\n\nO cliente relata X."))
+	if rec.Code != 201 {
+		t.Fatalf("upload = %d (%s), quero 201", rec.Code, rec.Body.String())
+	}
+	// Extensão proibida é recusada.
+	if rec = fazerUpload(t, srv, base, "virus.exe", []byte("x")); rec.Code != 400 {
+		t.Fatalf("extensão proibida = %d, quero 400", rec.Code)
+	}
+	// Nome com traversal é neutralizado (filepath.Base) — nada sai da pasta.
+	rec = fazerUpload(t, srv, base, `..\..\evil.md`, []byte("x"))
+	if rec.Code == 201 {
+		if _, err := os.Stat(filepath.Join(fake.Pasta(cons.ID), "referencias", "evil.md")); err != nil {
+			t.Fatalf("upload com traversal não foi neutralizado (%d)", rec.Code)
+		}
+	}
+
+	// O anexo vira fala de sistema (o consultor fica sabendo no próximo turno).
+	msgs, _ := banco.ListarMensagensConsulta(context.Background(), cons.ID)
+	temFala := false
+	for _, m := range msgs {
+		if m.Papel == db.PapelConsultaSistema && strings.Contains(m.Conteudo, "E-mail do cliente.md") {
+			temFala = true
+		}
+	}
+	if !temFala {
+		t.Fatalf("anexo não virou fala de sistema: %+v", msgs)
+	}
+
+	// Listagem devolve o arquivo com tamanho.
+	rec = fazerReq(t, srv, "GET", base, nil)
+	if rec.Code != 200 {
+		t.Fatalf("listar = %d", rec.Code)
+	}
+	var refs []respReferencia
+	_ = json.Unmarshal(rec.Body.Bytes(), &refs)
+	achou := false
+	for _, ref := range refs {
+		if ref.Arquivo == "E-mail do cliente.md" && ref.Tamanho > 0 {
+			achou = true
+		}
+	}
+	if !achou {
+		t.Fatalf("listagem = %+v, quero o e-mail com tamanho", refs)
+	}
+
+	// Download sempre como attachment (anexo nunca é exibido no domínio).
+	url := base + "/E-mail%20do%20cliente.md"
+	rec = fazerReq(t, srv, "GET", url, nil)
+	if rec.Code != 200 {
+		t.Fatalf("download = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment") {
+		t.Fatalf("Content-Disposition = %q, quero attachment", cd)
+	}
+	if !strings.Contains(rec.Body.String(), "O cliente relata X.") {
+		t.Fatalf("conteúdo divergente: %q", rec.Body.String())
+	}
+
+	// Exclusão remove o arquivo.
+	if rec = fazerReq(t, srv, "DELETE", url, nil); rec.Code != 204 {
+		t.Fatalf("excluir = %d, quero 204", rec.Code)
+	}
+	if rec = fazerReq(t, srv, "GET", url, nil); rec.Code != 404 {
+		t.Fatalf("baixar excluído = %d, quero 404", rec.Code)
+	}
+
+	// Excluir a consulta leva a pasta de trabalho junto.
+	pasta := fake.Pasta(cons.ID)
+	if rec = fazerReq(t, srv, "DELETE", fmt.Sprintf("/api/v1/consultas/%d", cons.ID), nil); rec.Code != 204 {
+		t.Fatalf("excluir consulta = %d, quero 204", rec.Code)
+	}
+	if _, err := os.Stat(pasta); !os.IsNotExist(err) {
+		t.Fatalf("pasta da consulta sobreviveu à exclusão: %v", err)
+	}
+}
+
+// Sem pasta de trabalho (serviço sem PRAXIS_HOME) as rotas de anexo respondem
+// 503 em vez de gravar em lugar nenhum.
+func TestAnexosDeConsultaSemPastaRespondem503(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	srv := Novo(Opcoes{Banco: banco, Consultas: &consultorFake{}})
+	projID := criarProjetoTeste(t, srv)
+	cons, _, err := banco.CriarConsultaComChat(context.Background(),
+		db.Consulta{ProjectID: &projID}, db.MensagemConsulta{Conteudo: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("/api/v1/consultas/%d/referencias", cons.ID)
+	if rec := fazerReq(t, srv, "GET", base, nil); rec.Code != 503 {
+		t.Fatalf("listar sem pasta = %d, quero 503", rec.Code)
+	}
+	if rec := fazerUpload(t, srv, base, "ata.md", []byte("x")); rec.Code != 503 {
+		t.Fatalf("upload sem pasta = %d, quero 503", rec.Code)
+	}
+}
+
+func TestCriacaoDeConsultaComAnexosPendentesSeguraOTurno(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	fake := &consultorFake{raiz: t.TempDir()}
+	srv := Novo(Opcoes{Banco: banco, Consultas: fake})
+	projID := criarProjetoTeste(t, srv)
+
+	// Com anexos pendentes: nasce ociosa e NÃO dispara o consultor.
+	rec := fazerReq(t, srv, "POST", "/api/v1/consultas", map[string]any{
+		"project_id": projID, "mensagem": "veja o e-mail anexado", "anexos_pendentes": true,
+	})
+	if rec.Code != 201 {
+		t.Fatalf("criar = %d (%s)", rec.Code, rec.Body.String())
+	}
+	cons := decodConsulta(t, rec)
+	if cons.Status != db.StatusConsultaOciosa {
+		t.Fatalf("status = %q, quero ociosa (turno segurado)", cons.Status)
+	}
+	if len(fake.respostas) != 0 {
+		t.Fatalf("respostas = %v, quero nenhuma antes dos anexos", fake.respostas)
+	}
+
+	// Sobe o arquivo e dispara o turno explicitamente.
+	rec = fazerUpload(t, srv, fmt.Sprintf("/api/v1/consultas/%d/referencias", cons.ID),
+		"email.md", []byte("## Caso"))
+	if rec.Code != 201 {
+		t.Fatalf("upload = %d (%s)", rec.Code, rec.Body.String())
+	}
+	rec = fazerReq(t, srv, "POST", fmt.Sprintf("/api/v1/consultas/%d/turno", cons.ID), map[string]any{})
+	if rec.Code != 202 {
+		t.Fatalf("disparar turno = %d (%s), quero 202", rec.Code, rec.Body.String())
+	}
+	if len(fake.respostas) != 1 || fake.respostas[0] != cons.ID {
+		t.Fatalf("respostas = %v, quero o turno adiado", fake.respostas)
+	}
+	got, _ := banco.ObterConsulta(context.Background(), cons.ID)
+	if got.Status != db.StatusConsultaPensando {
+		t.Fatalf("status após o disparo = %q, quero pensando", got.Status)
+	}
+	// Turno em voo: novo disparo é recusado com 409.
+	if rec = fazerReq(t, srv, "POST", fmt.Sprintf("/api/v1/consultas/%d/turno", cons.ID), map[string]any{}); rec.Code != 409 {
+		t.Fatalf("disparo com turno em voo = %d, quero 409", rec.Code)
 	}
 }

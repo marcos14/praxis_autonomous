@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/marcos14/praxis-autonomous/internal/i18n"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -575,14 +574,6 @@ func (s *Servidor) handleServirArtefatoPlanejamento(w http.ResponseWriter, r *ht
 	_, _ = w.Write(conteudo)
 }
 
-// respReferencia é uma referência anexada ao planejamento (a listagem vem do
-// disco — a subpasta referencias/ da pasta de trabalho é a fonte da verdade).
-type respReferencia struct {
-	Arquivo      string `json:"arquivo"`
-	Tamanho      int64  `json:"tamanho"`
-	ModificadoEm string `json:"modificado_em"`
-}
-
 // dirReferencias resolve a subpasta de referências do planejamento. Devolve ""
 // quando o serviço de planejamentos não está ativo.
 func (s *Servidor) dirReferencias(planejamentoID int64) string {
@@ -603,26 +594,8 @@ func (s *Servidor) handleListarReferenciasPlanejamento(w http.ResponseWriter, r 
 		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.planejamento_indisponivel")
 		return
 	}
-	refs := []respReferencia{}
-	if entradas, err := os.ReadDir(dir); err == nil {
-		for _, ent := range entradas {
-			if ent.IsDir() || !estrategista.NomeReferenciaValido(ent.Name()) {
-				continue
-			}
-			ref := respReferencia{Arquivo: ent.Name()}
-			if info, err := ent.Info(); err == nil {
-				ref.Tamanho = info.Size()
-				ref.ModificadoEm = info.ModTime().UTC().Format("2006-01-02T15:04:05.000Z")
-			}
-			refs = append(refs, ref)
-		}
-	}
-	responderJSON(w, http.StatusOK, refs)
+	s.listarReferenciasDir(w, dir)
 }
-
-// limiteReferencia é o tamanho máximo de um arquivo de referência (15 MiB —
-// transcrições e PDFs cabem com folga; nada disso deveria ser um vídeo).
-const limiteReferencia = 15 << 20
 
 // handleEnviarReferenciaPlanejamento recebe um arquivo de referência via
 // multipart/form-data (campo "arquivo") e o grava em referencias/. O anexo vira
@@ -637,48 +610,13 @@ func (s *Servidor) handleEnviarReferenciaPlanejamento(w http.ResponseWriter, r *
 		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.planejamento_indisponivel")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, limiteReferencia+(1<<20))
-	if err := r.ParseMultipartForm(limiteReferencia); err != nil {
-		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_envio_invalido")
+	ref, ok := s.receberReferencia(w, r, dir)
+	if !ok {
 		return
 	}
-	f, hdr, err := r.FormFile("arquivo")
-	if err != nil {
-		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_campo_arquivo_obrigatorio")
-		return
-	}
-	defer f.Close()
-
-	nome := filepath.Base(strings.TrimSpace(hdr.Filename))
-	if !estrategista.NomeReferenciaValido(nome) {
-		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_nome_arquivo_invalido")
-		return
-	}
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		s.log.Error("criar pasta de referências", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID)
-		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
-		return
-	}
-	dst, err := os.Create(filepath.Join(dir, nome))
-	if err != nil {
-		s.log.Error("gravar referência", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID, "arquivo", nome)
-		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
-		return
-	}
-	tamanho, err := io.Copy(dst, io.LimitReader(f, limiteReferencia+1))
-	if cerr := dst.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil || tamanho > limiteReferencia {
-		_ = os.Remove(filepath.Join(dir, nome))
-		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_falha_receber_arquivo")
-		return
-	}
-
 	s.registrarFalaReferencia(r, plan.ID,
-		fmt.Sprintf("Referência anexada: %s/%s", estrategista.DirReferencias, nome))
-	responderJSON(w, http.StatusCreated, respReferencia{Arquivo: nome, Tamanho: tamanho})
+		fmt.Sprintf("Referência anexada: %s/%s", estrategista.DirReferencias, ref.Arquivo))
+	responderJSON(w, http.StatusCreated, ref)
 }
 
 // handleBaixarReferenciaPlanejamento devolve o arquivo de referência SEMPRE
@@ -689,23 +627,7 @@ func (s *Servidor) handleBaixarReferenciaPlanejamento(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	dir := s.dirReferencias(plan.ID)
-	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
-	if dir == "" || !estrategista.NomeReferenciaValido(arquivo) {
-		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_referencia_invalida")
-		return
-	}
-	conteudo, err := os.ReadFile(filepath.Join(dir, arquivo))
-	if err != nil {
-		erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.planejamento_referencia_nao_encontrada")
-		return
-	}
-	h := w.Header()
-	h.Set("Content-Type", "application/octet-stream")
-	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", arquivo))
-	h.Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(conteudo)
+	s.baixarReferencia(w, r, s.dirReferencias(plan.ID), strings.TrimSpace(r.PathValue("arquivo")))
 }
 
 // handleExcluirReferenciaPlanejamento remove um arquivo de referência.
@@ -714,19 +636,8 @@ func (s *Servidor) handleExcluirReferenciaPlanejamento(w http.ResponseWriter, r 
 	if !ok {
 		return
 	}
-	dir := s.dirReferencias(plan.ID)
 	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
-	if dir == "" || !estrategista.NomeReferenciaValido(arquivo) {
-		erroT(w, r, http.StatusBadRequest, "invalido", "erro.planejamento_referencia_invalida")
-		return
-	}
-	if err := os.Remove(filepath.Join(dir, arquivo)); err != nil {
-		if os.IsNotExist(err) {
-			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.planejamento_referencia_nao_encontrada")
-			return
-		}
-		s.log.Error("remover referência", "erro", err, i18n.TI("evento.etapa_planejamento"), plan.ID, "arquivo", arquivo)
-		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
+	if !s.excluirReferencia(w, r, s.dirReferencias(plan.ID), arquivo) {
 		return
 	}
 	s.registrarFalaReferencia(r, plan.ID,

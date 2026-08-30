@@ -21,6 +21,10 @@ const PAPEIS = {
   sistema: ["", "sys"],
 };
 
+// FORMATOS_ANEXO espelha as extensões que o backend aceita como arquivo de
+// apoio (internal/referencias) — os tipos que os harnesses sabem ler.
+const FORMATOS_ANEXO = ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp";
+
 export async function montarConsultas() {
   document.getElementById("btn-nova-consulta").onclick = () => renderNova();
   await recarregarLista();
@@ -121,18 +125,47 @@ async function renderNova() {
     rows: 5,
     placeholder: t("consultas.ph_pergunta"),
   });
+
+  // Arquivos opcionais anexados já na criação (e-mail do cliente, print de
+  // erro, planilha de casos…): a consulta nasce sem disparar o turno, os
+  // arquivos sobem e só então o consultor roda — assim o 1º turno já os enxerga.
+  const inputAnexos = el("input", {
+    type: "file", multiple: true, hidden: true,
+    accept: FORMATOS_ANEXO,
+  });
+  const listaAnexos = el("span", { class: "hint", text: t("consultas.nenhum_arquivo") });
+  const btnAnexos = el("button", { class: "btn ghost sm", text: t("consultas.selecionar_arquivos") });
+  btnAnexos.onclick = (ev) => { ev.preventDefault(); inputAnexos.click(); };
+  inputAnexos.onchange = () => {
+    const nomes = [...inputAnexos.files].map((f) => f.name);
+    listaAnexos.textContent = nomes.length ? nomes.join(" · ") : t("consultas.nenhum_arquivo");
+  };
+
   const btn = el("button", { class: "btn", text: t("consultas.iniciar") });
   btn.onclick = async () => {
     const mensagem = ed.ta.value.trim();
     if (!mensagem) { bannerErro(t("consultas.escreva_pergunta")); return; }
     bannerErro("");
     btn.disabled = true;
+    const anexos = [...inputAnexos.files];
     try {
       const [tipo, id] = sel.value.split(":");
       const corpo = { mensagem };
       if (tipo === "g") corpo.group_id = Number(id);
       else corpo.project_id = Number(id);
+      if (anexos.length > 0) corpo.anexos_pendentes = true;
+
       const criada = await api.criarConsulta(corpo);
+      if (anexos.length > 0) {
+        for (const arq of anexos) {
+          try {
+            await api.enviarReferenciaConsulta(criada.id, arq);
+          } catch (e) {
+            bannerErro(t("consultas.falha_anexar_segue", { arquivo: arq.name, erro: e.message }));
+          }
+        }
+        await api.dispararTurnoConsulta(criada.id);
+      }
       toast(t("consultas.iniciada"), "ok");
       selecionadaID = criada.id;
       await recarregarLista();
@@ -148,6 +181,10 @@ async function renderNova() {
       el("div", { class: "hint", text: t("consultas.hint_grupo") })),
     el("div", {}, el("label", {}, t("consultas.sua_pergunta")), ed.no,
       el("div", { class: "hint", text: t("consultas.hint_pergunta") })),
+    el("div", {}, el("label", {}, t("consultas.arquivos"), " ",
+      el("span", { class: "opt", text: t("configx.opcional") })),
+      el("div", { style: "display:flex;align-items:center;gap:10px" }, btnAnexos, inputAnexos, listaAnexos),
+      el("div", { class: "hint", text: t("consultas.hint_anexos") })),
     el("div", { class: "acoes" }, btn),
   ));
   ed.ta.focus();
@@ -191,13 +228,48 @@ async function abrirConsulta(id) {
   const sub = el("p", { class: "sub", style: "margin:4px 0 10px", text: alvo +
     (cons.custo_usd > 0 ? " · " + t("consultas.custo_acumulado", { valor: cons.custo_usd.toFixed(2) }) : "") });
 
+  // Abas: Conversa | Arquivos (os anexos ficam ao lado do chat, como no
+  // planejamento — o consultor os lê como insumo do próximo turno).
+  const corpoConversa = el("div", { class: "tab-body active" });
+  const corpoArquivos = el("div", { class: "tab-body" });
+  const abas = [
+    [t("consultas.aba_conversa"), corpoConversa, null],
+    [t("consultas.aba_arquivos"), corpoArquivos, () => renderArquivos(corpoArquivos, cons)],
+  ];
+  const corpos = [corpoConversa, corpoArquivos];
+  const barra = el("div", { class: "tabs" });
+  for (const [nome, corpo, ativar] of abas) {
+    const b = el("button", { class: "tab" + (corpo === corpoConversa ? " active" : ""), text: nome });
+    b.onclick = async () => {
+      barra.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+      corpos.forEach((c) => c.classList.remove("active"));
+      b.classList.add("active");
+      corpo.classList.add("active");
+      if (ativar) await ativar();
+    };
+    barra.append(b);
+  }
+
   const box = el("div", { class: "chat" });
   const progresso = el("div", { class: "hint", hidden: true });
   const inp = el("textarea", { rows: "1",
     placeholder: t("consultas.ph_resposta") });
   const ajustarAltura = autoCrescer(inp);
   const btn = el("button", { class: "btn", text: t("consultas.enviar") });
-  painel.append(cab, sub, box, progresso, el("div", { class: "chat-input" }, inp, btn));
+
+  // 📎 anexa arquivos direto da conversa (fica ativo mesmo com turno em voo: o
+  // anexo vale a partir do turno seguinte).
+  const inputClip = el("input", { type: "file", multiple: true, hidden: true, accept: FORMATOS_ANEXO });
+  const btnClip = el("button", { class: "btn ghost", text: "📎", title: t("consultas.title_anexar") });
+  btnClip.onclick = () => inputClip.click();
+  inputClip.onchange = async () => {
+    const enviados = await anexarArquivos(cons.id, [...inputClip.files]);
+    inputClip.value = "";
+    if (enviados > 0) toast(t("consultas.anexados_cite", { n: enviados }), "ok");
+  };
+
+  corpoConversa.append(box, progresso, el("div", { class: "chat-input" }, btnClip, inputClip, inp, btn));
+  painel.append(cab, sub, barra, corpoConversa, corpoArquivos);
 
   async function recarregarChat() {
     let msgs;
@@ -304,6 +376,97 @@ async function abrirConsulta(id) {
   if (cons.status === "falhou" && cons.erro) {
     bannerErro(t("consultas.turno_falhou", { erro: cons.erro }));
   }
+}
+
+// ---------- aba Arquivos ----------
+
+// anexarArquivos sobe cada arquivo e devolve quantos entraram (os que falharem
+// viram banner de erro — os demais seguem).
+async function anexarArquivos(consultaID, arquivos) {
+  let enviados = 0;
+  for (const arq of arquivos) {
+    try {
+      await api.enviarReferenciaConsulta(consultaID, arq);
+      enviados++;
+    } catch (e) {
+      bannerErro(t("consultas.falha_anexar", { arquivo: arq.name, erro: e.message }));
+    }
+  }
+  return enviados;
+}
+
+// renderArquivos lista os arquivos de apoio anexados à consulta e permite
+// anexar novos — o próximo turno do consultor já os enxerga.
+async function renderArquivos(corpo, cons) {
+  limpar(corpo).append(el("p", { class: "vazio", text: t("consultas.carregando_arquivos") }));
+  let refs;
+  try {
+    refs = (await api.listarReferenciasConsulta(cons.id)) || [];
+  } catch (e) {
+    limpar(corpo).append(el("p", { class: "vazio", text: t("consultas.falha_arquivos", { erro: e.message }) }));
+    return;
+  }
+  limpar(corpo);
+
+  const inputArquivos = el("input", { type: "file", multiple: true, hidden: true, accept: FORMATOS_ANEXO });
+  const btnAnexar = el("button", { class: "btn", text: t("consultas.anexar_arquivos") });
+  btnAnexar.onclick = () => inputArquivos.click();
+  inputArquivos.onchange = async () => {
+    const arquivos = [...inputArquivos.files];
+    if (arquivos.length === 0) return;
+    btnAnexar.disabled = true;
+    const enviados = await anexarArquivos(cons.id, arquivos);
+    if (enviados > 0) toast(t("consultas.anexados", { n: enviados }), "ok");
+    await renderArquivos(corpo, cons);
+  };
+  corpo.append(el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:12px" },
+    btnAnexar, inputArquivos,
+    el("span", { class: "hint", text: t("consultas.hint_formatos") }),
+  ));
+
+  if (refs.length === 0) {
+    corpo.append(el("p", { class: "vazio", text: t("consultas.sem_arquivos") }));
+    return;
+  }
+  for (const ref of refs) {
+    corpo.append(el("div", { class: "list-item", style: "cursor:default" },
+      el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px" },
+        el("b", { text: ref.arquivo }),
+        el("div", { style: "display:flex;gap:6px" },
+          el("button", {
+            class: "btn ghost sm", text: t("consultas.baixar"),
+            onclick: () => {
+              const a = el("a", { href: api.urlReferenciaConsulta(cons.id, ref.arquivo) });
+              a.download = "";
+              a.click();
+            },
+          }),
+          el("button", {
+            class: "btn ghost sm", text: t("consultas.excluir"),
+            onclick: async () => {
+              if (!confirm(t("consultas.confirmar_excluir_arquivo", { arquivo: ref.arquivo }))) return;
+              try {
+                await api.excluirReferenciaConsulta(cons.id, ref.arquivo);
+                toast(t("consultas.arquivo_excluido"), "ok");
+                await renderArquivos(corpo, cons);
+              } catch (e) {
+                bannerErro(t("consultas.falha_excluir_arquivo", { erro: e.message }));
+              }
+            },
+          }),
+        ),
+      ),
+      el("div", { class: "meta" }, el("span", { class: "pill", text: formatarTamanho(ref.tamanho) })),
+    ));
+  }
+  corpo.append(el("p", { class: "hint", text: t("consultas.hint_arquivos_leitura") }));
+}
+
+function formatarTamanho(bytes) {
+  if (!bytes) return "0 KB";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
 // bolha renderiza uma fala como bolha de chat. O conteúdo é sempre textContent

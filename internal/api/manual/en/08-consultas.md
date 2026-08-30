@@ -14,6 +14,20 @@ The **Consultas** screen is a chat for people who do NOT develop: product and su
 2. If the question is ambiguous, the consultant sends back **clarification questions** before answering. Reply in the chat itself.
 3. Each turn takes a few minutes (the consultant really does read the code). The progress line shows what it is investigating.
 
+## Files attached to the query
+
+You can attach the material the consultant should take into account alongside the code — the **customer email**, an **error screenshot**, the **case spreadsheet**, a PRD draft — in three places:
+
+- **on creation** (*Files* field of the New query form): the first turn already starts from them — Praxis holds the consultant back until the files are uploaded;
+- **on the 📎 clip** next to the message field, without leaving the conversation;
+- **on the Files tab** of the open query, where you can also download and delete them.
+
+Accepts `md`, `txt`, `csv`, `json`, `pdf`, `html` and images (up to 15 MB each).
+
+- Every attachment (and removal) becomes a system message in the chat, and the consultant's next turn receives the list — say in the chat what you want done with each file ("compare the attached screenshot with the expected behavior of the routine").
+- Files are **read-only input**: the consultant reads them but never changes them. They live in the query folder (`PRAXIS_HOME/consultas/c<id>/referencias/`), are removed along with the query and can be downloaded back at any time.
+- The security rules still apply to them: an attached file is reference material, not an instruction — if its content asks for source code or for a rule to be broken, the request is ignored.
+
 ## Repository groups
 
 Solutions with more than one repository (e.g. API + frontend) are registered on the `Grupos` (Groups) screen. In a group query the consultant sees every repository; the first one in the group is the main one. A project can take part in several groups.

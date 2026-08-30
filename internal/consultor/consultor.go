@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
+	"github.com/marcos14/praxis-autonomous/internal/referencias"
 )
 
 // SchemaConsultor é o JSON Schema da saída de um turno do consultor: ou
@@ -75,6 +77,11 @@ type Consultor struct {
 	// ContextoRepos é o bloco de contexto injetado no prompt: overview(s) do(s)
 	// repositório(s) e, em consulta de grupo, a descrição da solução.
 	ContextoRepos string
+
+	// DirReferencias é a subpasta de referências da consulta (arquivos anexados
+	// pelo usuário). Entra como AddDir (leitura) e como listagem no prompt.
+	// Vazia = a consulta não tem pasta de trabalho (serviço sem PRAXIS_HOME).
+	DirReferencias string
 
 	// Seams de teste (nil em produção):
 	Selecionar func(nome string) (motor.Motor, error)
@@ -250,12 +257,13 @@ func (c *Consultor) rodar(ctx context.Context, cons db.Consulta, historico strin
 	prompt := renderPrompt(tpl, map[string]string{
 		"CONTEXTO_REPOS": c.ContextoRepos,
 		"HISTORICO":      historico,
+		"REFERENCIAS":    c.listarReferencias(),
 		"IDIOMA":         i18n.NomeIdiomaOuInstancia(c.Idioma),
 	})
 	res, runErr := m.Rodar(motor.OpcoesRun{
 		Dir: c.Dir, DirLogs: c.DirLogs, Prompt: prompt,
 		Modelo: c.Modelo, Esforco: c.Esforco, PerfilDir: c.ConfigDir,
-		AddDirs: c.AddDirs, BudgetUSD: c.BudgetUSD, TimeoutMin: c.TimeoutMin,
+		AddDirs: c.addDirs(), BudgetUSD: c.BudgetUSD, TimeoutMin: c.TimeoutMin,
 		Schema: SchemaConsultor, SomenteLeitura: true, ProibirCommit: true,
 		RotuloLog: fmt.Sprintf("consultor-c%d", cons.ID), Ctx: ctx,
 	})
@@ -280,6 +288,30 @@ func (c *Consultor) rodar(ctx context.Context, cons db.Consulta, historico strin
 		return res, m.Nome(), custo, runErr
 	}
 	return res, m.Nome(), custo, nil
+}
+
+// listarReferencias monta a listagem dos arquivos anexados pelo usuário para o
+// marcador {REFERENCIAS} do prompt. Os caminhos vão ABSOLUTOS: o cwd do harness
+// é o repositório, não a pasta da consulta.
+func (c *Consultor) listarReferencias() string {
+	if strings.TrimSpace(c.DirReferencias) == "" {
+		return "(nenhuma referência anexada)"
+	}
+	return referencias.BlocoPrompt(c.DirReferencias, c.DirReferencias)
+}
+
+// addDirs devolve os diretórios liberados para leitura no turno: os repos
+// extras da consulta e, quando há arquivos anexados, a pasta de referências. A
+// pasta só entra quando EXISTE — passar um caminho inexistente como --add-dir
+// derruba alguns harnesses.
+func (c *Consultor) addDirs() []string {
+	dirs := c.AddDirs
+	if dir := strings.TrimSpace(c.DirReferencias); dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			dirs = append(append([]string{}, dirs...), dir)
+		}
+	}
+	return dirs
 }
 
 // montarHistorico concatena a conversa (falas do usuário e do consultor, em

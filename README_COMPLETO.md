@@ -120,6 +120,8 @@ PRAXIS_HOME/
 ├─ praxis.db            # SQLite (WAL): projects, engines, demands, chat, phases, costs, events…
 ├─ worktrees/<project>/<demand>/    # git working trees isolated per demand
 ├─ logs/d<id>/          # .jsonl live log of each execution
+├─ planejamentos/p<id>/ # planning documents (.md), artifacts (.html) and referencias/
+├─ consultas/c<id>/     # referencias/ — files the user attached to the query
 ├─ backups/             # praxis-YYYYMMDD-HHMMSS.db (rotation: keeps the 7 most recent)
 ├─ pids/                # PIDs of the harnesses and the web IDE (to kill orphans on boot)
 ├─ tls/                 # self-signed cert.pem/key.pem from -tls (generated on 1st run)
@@ -279,6 +281,9 @@ GET      /overlaps                    GET /manual   GET /manual/{slug}
 POST/GET /consultas                   # queries: create (project or group) / list
 GET      /consultas/{id}              DELETE /consultas/{id}
 GET/POST /consultas/{id}/chat         GET /consultas/{id}/progresso
+POST     /consultas/{id}/turno        # turn with no new message (pending attachments / retry)
+GET/POST /consultas/{id}/referencias  # attached files (POST = multipart, field "arquivo")
+GET/DEL  /consultas/{id}/referencias/{arquivo}
 POST/GET /tokens                      DELETE /tokens/{id}
 ```
 

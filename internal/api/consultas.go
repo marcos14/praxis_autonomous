@@ -7,21 +7,27 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/referencias"
 )
 
 // reqNovaConsulta é o corpo de POST /consultas: o alvo (projeto OU grupo,
 // exclusivo), um título opcional e a primeira pergunta do usuário.
+// AnexosPendentes=true segura o primeiro turno: a consulta nasce ociosa para o
+// usuário subir os arquivos e então disparar via POST /consultas/{id}/turno —
+// sem isso o consultor rodaria antes de os anexos chegarem.
 type reqNovaConsulta struct {
-	ProjectID int64  `json:"project_id"`
-	GroupID   int64  `json:"group_id"`
-	Titulo    string `json:"titulo"`
-	Mensagem  string `json:"mensagem"`
+	ProjectID       int64  `json:"project_id"`
+	GroupID         int64  `json:"group_id"`
+	Titulo          string `json:"titulo"`
+	Mensagem        string `json:"mensagem"`
+	AnexosPendentes bool   `json:"anexos_pendentes"`
 }
 
 // reqChatConsulta é o corpo de POST /consultas/{id}/chat: uma fala do usuário.
@@ -40,7 +46,12 @@ func (s *Servidor) registrarRotasConsultas(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/consultas/{id}", s.handleExcluirConsulta)
 	mux.HandleFunc("GET /api/v1/consultas/{id}/chat", s.handleListarChatConsulta)
 	mux.HandleFunc("POST /api/v1/consultas/{id}/chat", s.handleChatConsulta)
+	mux.HandleFunc("POST /api/v1/consultas/{id}/turno", s.handleDispararTurnoConsulta)
 	mux.HandleFunc("GET /api/v1/consultas/{id}/progresso", s.handleProgressoConsulta)
+	mux.HandleFunc("GET /api/v1/consultas/{id}/referencias", s.handleListarReferenciasConsulta)
+	mux.HandleFunc("POST /api/v1/consultas/{id}/referencias", s.handleEnviarReferenciaConsulta)
+	mux.HandleFunc("GET /api/v1/consultas/{id}/referencias/{arquivo}", s.handleBaixarReferenciaConsulta)
+	mux.HandleFunc("DELETE /api/v1/consultas/{id}/referencias/{arquivo}", s.handleExcluirReferenciaConsulta)
 }
 
 // handleCriarConsulta cria a consulta com a primeira fala do usuário e dispara
@@ -81,7 +92,13 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cons := db.Consulta{Titulo: strings.TrimSpace(req.Titulo), Status: db.StatusConsultaPensando}
+	status := db.StatusConsultaPensando
+	if req.AnexosPendentes {
+		// Nasce ociosa: o usuário ainda vai subir os arquivos e disparar o
+		// primeiro turno explicitamente (POST /turno).
+		status = db.StatusConsultaOciosa
+	}
+	cons := db.Consulta{Titulo: strings.TrimSpace(req.Titulo), Status: status}
 	if req.ProjectID > 0 {
 		cons.ProjectID = &req.ProjectID
 	} else {
@@ -101,10 +118,36 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 		s.responderErroConsulta(w, r, err)
 		return
 	}
-	if s.consultor != nil {
+	if !req.AnexosPendentes && s.consultor != nil {
 		s.consultor.DispararResposta(criada.ID)
 	}
 	responderJSON(w, http.StatusCreated, criada)
+}
+
+// handleDispararTurnoConsulta roda um turno do consultor SEM fala nova: é o
+// disparo adiado da criação com anexos pendentes e o "tentar novamente" após um
+// turno falhado (o motor é stateless — o turno reprocessa a conversa e as
+// referências atuais). Com turno em voo responde 409.
+func (s *Servidor) handleDispararTurnoConsulta(w http.ResponseWriter, r *http.Request) {
+	cons, ok := s.obterConsultaOu404(w, r)
+	if !ok {
+		return
+	}
+	if cons.Status == db.StatusConsultaPensando {
+		erroT(w, r, http.StatusConflict, "pensando", "erro.consulta_pensando")
+		return
+	}
+	cons.Status = db.StatusConsultaPensando
+	cons.Erro = ""
+	atualizada, err := s.banco.AtualizarConsulta(r.Context(), cons)
+	if err != nil {
+		s.responderErroConsulta(w, r, err)
+		return
+	}
+	if s.consultor != nil {
+		s.consultor.DispararResposta(cons.ID)
+	}
+	responderJSON(w, http.StatusAccepted, atualizada)
 }
 
 // handleListarConsultas lista as consultas (filtros ?project= e ?group=). Para
@@ -188,6 +231,15 @@ func (s *Servidor) handleExcluirConsulta(w http.ResponseWriter, r *http.Request)
 	if err := s.banco.ExcluirConsulta(r.Context(), cons.ID); err != nil {
 		s.responderErroConsulta(w, r, err)
 		return
+	}
+	// A pasta de trabalho (arquivos anexados) sai junto — best-effort: o banco é
+	// a fonte da verdade da consulta.
+	if s.consultor != nil {
+		if pasta := s.consultor.Pasta(cons.ID); pasta != "" {
+			if err := os.RemoveAll(pasta); err != nil {
+				s.log.Warn("remover pasta da consulta", "erro", err, "consulta", cons.ID)
+			}
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -401,6 +453,94 @@ func alvoDaTool(input json.RawMessage) string {
 		return ""
 	}
 	return filepath.Base(strings.TrimSpace(caminho))
+}
+
+// dirReferenciasConsulta resolve a subpasta de referências da consulta (os
+// arquivos que o usuário anexa como insumo da análise). Devolve "" quando o
+// serviço de consultas não está ativo ou subiu sem pasta de trabalho.
+func (s *Servidor) dirReferenciasConsulta(consultaID int64) string {
+	if s.consultor == nil {
+		return ""
+	}
+	pasta := s.consultor.Pasta(consultaID)
+	if pasta == "" {
+		return ""
+	}
+	return filepath.Join(pasta, referencias.Dir)
+}
+
+// handleListarReferenciasConsulta lista os arquivos anexados à consulta.
+func (s *Servidor) handleListarReferenciasConsulta(w http.ResponseWriter, r *http.Request) {
+	cons, ok := s.obterConsultaOu404(w, r)
+	if !ok {
+		return
+	}
+	dir := s.dirReferenciasConsulta(cons.ID)
+	if dir == "" {
+		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.consulta_servico_inativo")
+		return
+	}
+	s.listarReferenciasDir(w, dir)
+}
+
+// handleEnviarReferenciaConsulta recebe um arquivo via multipart/form-data
+// (campo "arquivo") e o grava em referencias/. O anexo vira fala de sistema no
+// chat — o próximo turno do consultor o vê listado e pode lê-lo (somente
+// leitura, como o código dos repositórios).
+func (s *Servidor) handleEnviarReferenciaConsulta(w http.ResponseWriter, r *http.Request) {
+	cons, ok := s.obterConsultaOu404(w, r)
+	if !ok {
+		return
+	}
+	dir := s.dirReferenciasConsulta(cons.ID)
+	if dir == "" {
+		erroT(w, r, http.StatusServiceUnavailable, "indisponivel", "erro.consulta_servico_inativo")
+		return
+	}
+	ref, ok := s.receberReferencia(w, r, dir)
+	if !ok {
+		return
+	}
+	s.registrarFalaReferenciaConsulta(r, cons.ID,
+		fmt.Sprintf("Arquivo anexado: %s", ref.Arquivo))
+	responderJSON(w, http.StatusCreated, ref)
+}
+
+// handleBaixarReferenciaConsulta devolve o arquivo anexado sempre como download.
+func (s *Servidor) handleBaixarReferenciaConsulta(w http.ResponseWriter, r *http.Request) {
+	cons, ok := s.obterConsultaOu404(w, r)
+	if !ok {
+		return
+	}
+	s.baixarReferencia(w, r, s.dirReferenciasConsulta(cons.ID), strings.TrimSpace(r.PathValue("arquivo")))
+}
+
+// handleExcluirReferenciaConsulta remove um arquivo anexado.
+func (s *Servidor) handleExcluirReferenciaConsulta(w http.ResponseWriter, r *http.Request) {
+	cons, ok := s.obterConsultaOu404(w, r)
+	if !ok {
+		return
+	}
+	arquivo := strings.TrimSpace(r.PathValue("arquivo"))
+	if !s.excluirReferencia(w, r, s.dirReferenciasConsulta(cons.ID), arquivo) {
+		return
+	}
+	s.registrarFalaReferenciaConsulta(r, cons.ID, fmt.Sprintf("Arquivo removido: %s", arquivo))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// registrarFalaReferenciaConsulta grava a fala de sistema de anexo/remoção
+// (best-effort), com o autor quando a sessão o identifica — é assim que o
+// consultor fica sabendo da mudança nos arquivos da consulta.
+func (s *Servidor) registrarFalaReferenciaConsulta(r *http.Request, consultaID int64, texto string) {
+	if pr := principalDaRequisicao(r); strings.TrimSpace(pr.nome) != "" {
+		texto += " (por " + strings.TrimSpace(pr.nome) + ")"
+	}
+	if _, err := s.banco.CriarMensagemConsulta(r.Context(), db.MensagemConsulta{
+		ConsultaID: consultaID, Papel: db.PapelConsultaSistema, Conteudo: texto,
+	}); err != nil {
+		s.log.Warn("registrar fala de referência", "erro", err, "consulta", consultaID)
+	}
 }
 
 // tituloDaMensagem deriva um título curto da primeira pergunta (a UI lista as

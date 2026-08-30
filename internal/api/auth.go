@@ -317,6 +317,12 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 		return false, db.PermProjetosGerir
 	}
 
+	// Navegação de pastas do servidor (fs/dirs): só para quem cadastra projetos
+	// — a listagem expõe o disco da máquina onde o Praxis roda.
+	if seg[0] == "fs" {
+		return false, db.PermProjetosGerir
+	}
+
 	// Leituras (GET/HEAD) das demais rotas: basta autenticação (visualização).
 	if metodo == http.MethodGet || metodo == http.MethodHead {
 		return false, ""

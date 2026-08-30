@@ -30,6 +30,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/i18n"
 	"github.com/marcos14/praxis-autonomous/internal/intake"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
+	"github.com/marcos14/praxis-autonomous/internal/referencias"
 )
 
 // SchemaEstrategista é o JSON Schema da saída de um turno do estrategista: ou
@@ -70,34 +71,13 @@ func NomeArtefatoValido(nome string) bool { return nomeArtefatoValido.MatchStrin
 // DirReferencias é a subpasta da pasta do planejamento onde ficam os documentos
 // de referência anexados pelo usuário (ADRs de outros projetos, transcrições de
 // reunião, rascunhos…). O harness a lê como insumo; a ingestão de artefatos a
-// ignora (só varre a raiz).
-const DirReferencias = "referencias"
+// ignora (só varre a raiz). As regras são as do pacote referencias, comuns a
+// planejamentos e consultas.
+const DirReferencias = referencias.Dir
 
-// extensoesReferencia são os tipos aceitos como referência — documentos que os
-// harnesses sabem ler (texto, pdf e imagem).
-var extensoesReferencia = map[string]bool{
-	".md": true, ".txt": true, ".csv": true, ".json": true, ".pdf": true,
-	".html": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
-}
-
-// NomeReferenciaValido informa se nome é um arquivo de referência aceitável:
-// nome simples (sem caminho, sem ponto inicial, sem caracteres de controle) com
-// extensão da lista de tipos legíveis. Aceita acentos e espaços — nomes reais
-// de arquivos de usuário ("Transcrição da reunião.md").
-func NomeReferenciaValido(nome string) bool {
-	if nome == "" || len(nome) > 120 || strings.HasPrefix(nome, ".") {
-		return false
-	}
-	if nome != filepath.Base(nome) || strings.ContainsAny(nome, `/\:*?"<>|`) || strings.Contains(nome, "..") {
-		return false
-	}
-	for _, r := range nome {
-		if r < 0x20 {
-			return false
-		}
-	}
-	return extensoesReferencia[strings.ToLower(filepath.Ext(nome))]
-}
+// NomeReferenciaValido informa se nome é um arquivo de referência aceitável
+// (ver referencias.NomeValido).
+func NomeReferenciaValido(nome string) bool { return referencias.NomeValido(nome) }
 
 // PerguntaEstrategista é uma pergunta de clarificação na saída do estrategista.
 type PerguntaEstrategista struct {
@@ -387,27 +367,10 @@ func (e *Estrategista) ingerirArtefatos(ctx context.Context, planejamentoID int6
 
 // listarReferencias monta a listagem de referências anexadas para o marcador
 // {REFERENCIAS} do prompt — o harness só lê o que a listagem apontar como
-// existente (a pasta pode nem existir quando nada foi anexado).
+// existente (a pasta pode nem existir quando nada foi anexado). Os caminhos são
+// relativos porque o cwd do harness JÁ é a pasta do planejamento.
 func (e *Estrategista) listarReferencias() string {
-	entradas, err := os.ReadDir(filepath.Join(e.DirTrabalho, DirReferencias))
-	if err != nil {
-		return "(nenhuma referência anexada)"
-	}
-	var linhas []string
-	for _, ent := range entradas {
-		if ent.IsDir() || !NomeReferenciaValido(ent.Name()) {
-			continue
-		}
-		tamanho := int64(0)
-		if info, err := ent.Info(); err == nil {
-			tamanho = info.Size()
-		}
-		linhas = append(linhas, fmt.Sprintf("- %s/%s (%d bytes)", DirReferencias, ent.Name(), tamanho))
-	}
-	if len(linhas) == 0 {
-		return "(nenhuma referência anexada)"
-	}
-	return strings.Join(linhas, "\n")
+	return referencias.BlocoPrompt(filepath.Join(e.DirTrabalho, DirReferencias), DirReferencias)
 }
 
 // montarFala converte a saída estruturada na fala persistida do estrategista.

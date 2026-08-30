@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/db"
 	"github.com/marcos14/praxis-autonomous/internal/gitops"
 	"github.com/marcos14/praxis-autonomous/internal/motor"
+	"github.com/marcos14/praxis-autonomous/internal/referencias"
 )
 
 // Servico resolve a config do banco e dispara o consultor/gerador de overview em
@@ -18,10 +20,11 @@ import (
 // a API o chama ao criar uma consulta, ao receber uma fala do usuário e ao pedir
 // a geração de overview; o `serve` o injeta.
 type Servico struct {
-	store   *db.DB
-	dirLogs string
-	ctx     context.Context
-	logf    func(string)
+	store        *db.DB
+	dirLogs      string
+	dirConsultas string // raiz das pastas de trabalho (PRAXIS_HOME/consultas)
+	ctx          context.Context
+	logf         func(string)
 
 	wg sync.WaitGroup
 
@@ -39,9 +42,13 @@ type Servico struct {
 // OpcoesServico configura o Servico. Store e Ctx são obrigatórios.
 type OpcoesServico struct {
 	Store   *db.DB
-	DirLogs string          // pasta dos .jsonl (PRAXIS_HOME/logs)
-	Ctx     context.Context // ctx de vida do serviço (cancelado no shutdown)
-	Log     func(string)
+	DirLogs string // pasta dos .jsonl (PRAXIS_HOME/logs)
+	// DirConsultas é a raiz das pastas de trabalho das consultas
+	// (PRAXIS_HOME/consultas), onde ficam os arquivos anexados pelo usuário.
+	// Vazia = consultas sem anexos (as rotas de referência respondem 503).
+	DirConsultas string
+	Ctx          context.Context // ctx de vida do serviço (cancelado no shutdown)
+	Log          func(string)
 	// Git é o Ops compartilhado do serviço (mutex por projeto — passa o MESMO
 	// do scheduler para as operações no repo nunca correrem em paralelo). Nil =
 	// cria um próprio.
@@ -89,6 +96,7 @@ func NovoServico(o OpcoesServico) *Servico {
 	return &Servico{
 		store:         o.Store,
 		dirLogs:       o.DirLogs,
+		dirConsultas:  o.DirConsultas,
 		ctx:           ctx,
 		logf:          logf,
 		selecionar:    o.Selecionar,
@@ -124,6 +132,17 @@ func (s *Servico) DispararOverview(projectID int64) {
 
 // Aguardar bloqueia até os turnos/gerações em voo terminarem (shutdown gracioso).
 func (s *Servico) Aguardar() { s.wg.Wait() }
+
+// Pasta devolve a pasta de trabalho da consulta (onde vive a subpasta de
+// referências anexadas). A API a usa para gravar/servir os anexos e para
+// remover a pasta na exclusão da consulta. "" quando o serviço subiu sem
+// DirConsultas — a API responde 503 nas rotas de referência.
+func (s *Servico) Pasta(consultaID int64) string {
+	if strings.TrimSpace(s.dirConsultas) == "" {
+		return ""
+	}
+	return filepath.Join(s.dirConsultas, fmt.Sprintf("c%d", consultaID))
+}
 
 // Responder monta o Consultor a partir do banco e roda um turno (síncrono).
 // Exposto para testes e para o `serve` rodar sem a goroutine.
@@ -203,23 +222,28 @@ func (s *Servico) montarConsultor(ctx context.Context, consultaID int64) (*Consu
 	}
 
 	motorNome, modelo, esforco, conta, configDir, budget, timeout := s.resolverMotorConsulta(ctx, cons.CriadoPor, consultaID)
+	dirRefs := ""
+	if pasta := s.Pasta(consultaID); pasta != "" {
+		dirRefs = filepath.Join(pasta, referencias.Dir)
+	}
 	return &Consultor{
-		Store:         s.store,
-		Idioma:        s.store.IdiomaDoUsuario(ctx, cons.CriadoPor),
-		Motor:         motorNome,
-		Modelo:        modelo,
-		Esforco:       esforco,
-		Conta:         conta,
-		ConfigDir:     configDir,
-		Dir:           dir,
-		DirLogs:       s.dirLogs,
-		AddDirs:       addDirs,
-		BudgetUSD:     budget,
-		TimeoutMin:    timeout,
-		ContextoRepos: contexto,
-		Selecionar:    s.selecionar,
-		Prompt:        s.prompt,
-		Agora:         s.agora,
+		Store:          s.store,
+		Idioma:         s.store.IdiomaDoUsuario(ctx, cons.CriadoPor),
+		Motor:          motorNome,
+		Modelo:         modelo,
+		Esforco:        esforco,
+		Conta:          conta,
+		ConfigDir:      configDir,
+		Dir:            dir,
+		DirLogs:        s.dirLogs,
+		AddDirs:        addDirs,
+		BudgetUSD:      budget,
+		TimeoutMin:     timeout,
+		ContextoRepos:  contexto,
+		DirReferencias: dirRefs,
+		Selecionar:     s.selecionar,
+		Prompt:         s.prompt,
+		Agora:          s.agora,
 	}, nil
 }
 

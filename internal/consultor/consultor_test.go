@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -62,14 +63,15 @@ func criarProjetoComOverview(t *testing.T, d *db.DB, nome, overview string) db.P
 func servicoDeTeste(t *testing.T, d *db.DB, fn func(op motor.OpcoesRun) (*motor.ResultadoRun, error)) *Servico {
 	t.Helper()
 	return NovoServico(OpcoesServico{
-		Store:   d,
-		DirLogs: t.TempDir(),
-		Ctx:     context.Background(),
+		Store:        d,
+		DirLogs:      t.TempDir(),
+		DirConsultas: t.TempDir(),
+		Ctx:          context.Background(),
 		Selecionar: func(nome string) (motor.Motor, error) {
 			return stubMotor{nome: "claude", fn: fn}, nil
 		},
 		Prompt: func(_ context.Context, nome string) (string, error) {
-			return "consultor: {CONTEXTO_REPOS} ### {HISTORICO}", nil
+			return "consultor: {CONTEXTO_REPOS} ### {HISTORICO} ### anexos: {REFERENCIAS}", nil
 		},
 		StatPasta:     func(string) error { return nil },
 		AtualizarRepo: func(string, string) (string, error) { return "", nil },
@@ -559,4 +561,61 @@ func TestErroDoMotorCarimbaFalhouComFalaDeSistema(t *testing.T) {
 	// Sem LogPath (motor nem rodou) não há log; basta não quebrar.
 	_ = exec
 	_ = tem
+}
+
+// TestArquivosAnexadosEntramNoPromptEEmLeitura cobre o insumo do usuário: os
+// arquivos que a API grava na pasta da consulta são listados no prompt (com
+// caminho absoluto — o cwd do harness é o repo) e liberados como add-dir, sem
+// nunca sair do modo somente leitura.
+func TestArquivosAnexadosEntramNoPromptEEmLeitura(t *testing.T) {
+	d := abrirDB(t)
+	ctx := context.Background()
+	proj := criarProjetoComOverview(t, d, "ERP8", "")
+	cons := criarConsultaProjeto(t, d, proj, "veja o e-mail anexado")
+
+	var opRecebida motor.OpcoesRun
+	s := servicoDeTeste(t, d, func(op motor.OpcoesRun) (*motor.ResultadoRun, error) {
+		opRecebida = op
+		return resultadoJSON(t, SaidaConsultor{Tipo: TurnoResposta, RespostaMD: "Analisei o caso relatado."})
+	})
+
+	// Sem anexos: nada é liberado além dos repos e o prompt diz que não há nada.
+	if err := s.Responder(ctx, cons.ID); err != nil {
+		t.Fatalf("Responder: %v", err)
+	}
+	dirRefs := filepath.Join(s.Pasta(cons.ID), "referencias")
+	for _, dir := range opRecebida.AddDirs {
+		if dir == dirRefs {
+			t.Fatal("pasta de anexos inexistente não deveria virar add-dir")
+		}
+	}
+	if !strings.Contains(opRecebida.Prompt, "nenhuma referência anexada") {
+		t.Fatalf("prompt sem o aviso de ausência de anexos:\n%s", opRecebida.Prompt)
+	}
+
+	// Usuário anexou um arquivo (a API grava nesta subpasta).
+	if err := os.MkdirAll(dirRefs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirRefs, "email-cliente.md"), []byte("## Caso"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Responder(ctx, cons.ID); err != nil {
+		t.Fatalf("Responder com anexo: %v", err)
+	}
+	if !strings.Contains(opRecebida.Prompt, "email-cliente.md") {
+		t.Fatalf("prompt sem o arquivo anexado:\n%s", opRecebida.Prompt)
+	}
+	liberado := false
+	for _, dir := range opRecebida.AddDirs {
+		if dir == dirRefs {
+			liberado = true
+		}
+	}
+	if !liberado {
+		t.Fatalf("AddDirs = %v, quero a pasta de anexos liberada para leitura", opRecebida.AddDirs)
+	}
+	if !opRecebida.SomenteLeitura {
+		t.Fatal("anexo não pode afrouxar o modo somente leitura do consultor")
+	}
 }

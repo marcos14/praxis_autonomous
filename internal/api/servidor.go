@@ -68,6 +68,9 @@ type Opcoes struct {
 type ConsultorSvc interface {
 	DispararResposta(consultaID int64)
 	DispararOverview(projectID int64)
+	// Pasta é a pasta de trabalho da consulta (arquivos anexados pelo usuário).
+	// "" quando o serviço subiu sem pasta — as rotas de referência respondem 503.
+	Pasta(consultaID int64) string
 }
 
 // EstrategistaSvc dispara turnos de planejamento em background e resolve a
@@ -181,6 +184,7 @@ func Novo(opts Opcoes) *Servidor {
 	s.registrarRotasOverlap(mux)
 	s.registrarRotasIDE(mux)
 	s.registrarRotasCert(mux)
+	s.registrarRotasFS(mux)
 	s.registrarRotasWeb(mux)
 
 	// A ordem coloca o recover na camada mais externa e a autorização (comAuth)

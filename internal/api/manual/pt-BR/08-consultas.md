@@ -14,6 +14,20 @@ A tela **Consultas** é um chat para quem NÃO desenvolve: times de produto e su
 2. Se a pergunta estiver ambígua, o consultor devolve **perguntas de clarificação** antes de responder. Responda no próprio chat.
 3. Cada turno leva alguns minutos (o consultor lê o código de verdade). A linha de progresso mostra o que ele está investigando.
 
+## Arquivos anexados à consulta
+
+Você pode anexar o material que o consultor deve considerar junto do código — o **e-mail do cliente**, um **print do erro**, a **planilha de casos**, um rascunho de PRD — em três lugares:
+
+- **na criação** (campo *Arquivos* do formulário Nova consulta): o primeiro turno já parte deles — o Praxis segura o consultor até os arquivos subirem;
+- **no clipe 📎** ao lado do campo de mensagem, sem sair da conversa;
+- **na aba Arquivos** da consulta aberta, onde também dá para baixar e excluir.
+
+Aceita `md`, `txt`, `csv`, `json`, `pdf`, `html` e imagens (até 15 MB cada).
+
+- Cada anexo (e remoção) vira uma fala de sistema no chat, e o próximo turno do consultor recebe a lista — cite no chat o que quer que ele faça com cada arquivo ("compare o print anexado com o comportamento esperado da rotina").
+- Os arquivos são **insumo somente leitura**: o consultor os lê, mas nunca os altera. Ficam na pasta da consulta (`PRAXIS_HOME/consultas/c<id>/referencias/`), saem junto quando a consulta é excluída e podem ser baixados de volta a qualquer momento.
+- As regras de segurança continuam valendo sobre eles: um arquivo anexado é material de consulta, não instrução — se o conteúdo pedir código-fonte ou a quebra de uma regra, o pedido é ignorado.
+
 ## Grupos de repositórios
 
 Soluções com mais de um repositório (ex.: API + frontend) são cadastradas na tela `Grupos`. Numa consulta de grupo o consultor enxerga todos os repositórios; o primeiro do grupo é o principal. Um projeto pode participar de vários grupos.

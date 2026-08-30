@@ -114,6 +114,9 @@ export const api = {
   // projeto. Listas vazias = aberto a todos. Exige projetos.gerir.
   obterAcessoProjeto: (id) => req("GET", `/api/v1/projects/${id}/access`),
   definirAcessoProjeto: (id, acesso) => req("PUT", `/api/v1/projects/${id}/access`, acesso),
+  // pastas do SO DO SERVIDOR (seletor do campo `pasta` do projeto). path em
+  // branco = ponto de partida escolhido pelo backend (home do processo).
+  listarPastas: (path) => req("GET", "/api/v1/fs/dirs" + (path ? "?path=" + encodeURIComponent(path) : "")),
 
   // grupos de repositórios (feature de consultas): N:N com projetos; o primeiro
   // project_id é o repositório principal.
@@ -136,6 +139,16 @@ export const api = {
   excluirConsulta: (id) => req("DELETE", `/api/v1/consultas/${id}`),
   listarChatConsulta: (id) => req("GET", `/api/v1/consultas/${id}/chat`),
   enviarChatConsulta: (id, conteudo) => req("POST", `/api/v1/consultas/${id}/chat`, { conteudo }),
+  // Turno sem fala nova: disparo adiado (criação com anexos) e tentar novamente.
+  dispararTurnoConsulta: (id) => req("POST", `/api/v1/consultas/${id}/turno`, {}),
+  // Arquivos anexados à consulta (insumo do consultor, sempre em leitura).
+  listarReferenciasConsulta: (id) => req("GET", `/api/v1/consultas/${id}/referencias`),
+  enviarReferenciaConsulta: (id, arquivo) =>
+    reqUpload(`/api/v1/consultas/${id}/referencias`, "arquivo", arquivo),
+  urlReferenciaConsulta: (id, arquivo) =>
+    comToken(`/api/v1/consultas/${id}/referencias/${encodeURIComponent(arquivo)}`),
+  excluirReferenciaConsulta: (id, arquivo) =>
+    req("DELETE", `/api/v1/consultas/${id}/referencias/${encodeURIComponent(arquivo)}`),
   // Progresso SANITIZADO do turno (SSE): só resumos ("lendo arquivo…"), nunca o
   // log cru — o log cru contém código-fonte, que esta feature não expõe.
   urlProgressoConsulta: (id) => comToken(`/api/v1/consultas/${id}/progresso`),

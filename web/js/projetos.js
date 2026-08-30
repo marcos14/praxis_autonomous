@@ -6,6 +6,7 @@ import { el, limpar, toast, bannerErro, mdEditor } from "./ui.js";
 import { camposDoEscopo, jsonParaTexto, textoParaJSON, preservarDesconhecidas } from "./config-fields.js";
 import { GRUPOS_EVENTOS, resolverEventos } from "./notify-events.js";
 import { t } from "./i18n.js";
+import { escolherPasta } from "./pasta-picker.js";
 
 let projetos = [];
 let selecionadoID = null;
@@ -86,6 +87,13 @@ function camposCore(p) {
   const slug = el("input", { value: p ? p.slug : "", placeholder: t("projetos.ph_slug") });
   const branch = el("input", { value: p ? p.branch_principal : "main" });
   const pasta = el("input", { value: p ? p.pasta : "", placeholder: t("projetos.ph_pasta") });
+  // Seletor de pasta: navega o disco DO SERVIDOR (a pasta do projeto vive lá,
+  // não na máquina do navegador) e preenche o campo com o caminho escolhido.
+  const btnProcurar = el("button", { class: "btn ghost sm", type: "button", text: t("projetos.procurar_pasta") });
+  btnProcurar.onclick = async () => {
+    const escolhida = await escolherPasta(pasta.value.trim());
+    if (escolhida) pasta.value = escolhida;
+  };
   const modo = el("select", {},
     el("option", { value: "merge_request", selected: !p || p.modo_integracao === "merge_request" }, t("projetos.modo.merge_request")),
     el("option", { value: "merge_local", selected: p && p.modo_integracao === "merge_local" }, t("projetos.modo.merge_local")),
@@ -101,7 +109,8 @@ function camposCore(p) {
       el("div", {}, el("label", {}, t("projetos.branch_principal")), branch),
     ),
     el("div", {}, el("label", {}, t("projetos.slug") + " ", el("span", { class: "opt" }, t("projetos.opcional"))), slug),
-    el("div", {}, el("label", {}, t("projetos.pasta")), pasta,
+    el("div", {}, el("label", {}, t("projetos.pasta")),
+      el("div", { class: "campo-pasta" }, pasta, btnProcurar),
       el("div", { class: "hint", text: t("projetos.pasta_hint") })),
     el("div", { class: "row" },
       el("div", {}, el("label", {}, t("projetos.modo_integracao")), modo),

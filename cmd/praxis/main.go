@@ -295,18 +295,20 @@ func novoIntake(ctx context.Context, banco *db.DB, git *gitops.Ops, logger *slog
 // produto/suporte) com a mesma pasta de logs e ctx de vida do intake. O Ops de
 // git é o mesmo do scheduler — o mutex por projeto serializa pull e worktree.
 func novoConsultor(ctx context.Context, banco *db.DB, git *gitops.Ops, logger *slog.Logger) *consultor.Servico {
-	dirLogs := ""
+	dirLogs, dirConsultas := "", ""
 	if home, err := db.PraxisHome(); err == nil {
 		dirLogs = filepath.Join(home, "logs")
+		dirConsultas = filepath.Join(home, "consultas")
 	} else {
-		logger.Warn("consultor: resolver PRAXIS_HOME para logs", "erro", err)
+		logger.Warn("consultor: resolver PRAXIS_HOME", "erro", err)
 	}
 	return consultor.NovoServico(consultor.OpcoesServico{
-		Store:   banco,
-		DirLogs: dirLogs,
-		Ctx:     ctx,
-		Log:     func(msg string) { logger.Info(msg) },
-		Git:     git,
+		Store:        banco,
+		DirLogs:      dirLogs,
+		DirConsultas: dirConsultas,
+		Ctx:          ctx,
+		Log:          func(msg string) { logger.Info(msg) },
+		Git:          git,
 	})
 }
 
