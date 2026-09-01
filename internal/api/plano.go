@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/pipeline"
 )
 
 // reqEditarFases é o corpo de PUT /demands/{id}/phases: o conjunto COMPLETO de
@@ -316,9 +317,16 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 		interrompido = s.exec.Interromper(dem.ID)
 	}
 
-	// 3) descarta a sobra não commitada do run interrompido — a fase recomeça do
-	// zero. Uma falha aqui não bloqueia o reinício (a pré-checagem de árvore
-	// limpa da fase dá um erro claro e o usuário pode reiniciar de novo).
+	// 3) descarta a sobra do run interrompido — a fase recomeça do zero. Além do
+	// não commitado, desfaz os commits de resguardo DESTA fase que estejam no topo
+	// da branch: é o trabalho parcial que a pipeline salva quando uma fase falha
+	// ou é pausada (ver pipeline/residuo.go). Sem isso o "reiniciar" não seria um
+	// recomeço de verdade — a fase voltaria a rodar em cima do parcial, que é
+	// justamente o que o usuário pediu para jogar fora. Commits de fase concluída
+	// e de trabalho manual preservado ([praxis-externo]) nunca entram na conta.
+	//
+	// Uma falha aqui não bloqueia o reinício: a fase roda mesmo assim (a
+	// pré-checagem preserva o que encontrar em vez de barrar).
 	descarte := ""
 	if dir := strings.TrimSpace(dem.WorktreePath); dir != "" {
 		if _, statErr := os.Stat(dir); statErr == nil {
@@ -326,6 +334,12 @@ func (s *Servidor) handleReiniciarFase(w http.ResponseWriter, r *http.Request) {
 			if err := s.descartarComRetentativas(dir); err != nil {
 				descarte = "Não consegui descartar as mudanças não commitadas do worktree: " + err.Error()
 				s.log.Warn("reiniciar fase: descartar mudanças do worktree", "erro", err, "demanda", dem.ID)
+			} else if s.git != nil {
+				if n := pipeline.ContarParciaisDoTopo(dir, alvo.Codigo); n > 0 {
+					if err := s.git.DesfazerCommitsDoTopo(dir, n, false); err != nil {
+						s.log.Warn("reiniciar fase: desfazer commits parciais", "erro", err, "demanda", dem.ID, "fase", alvo.Codigo)
+					}
+				}
 			}
 		}
 	}

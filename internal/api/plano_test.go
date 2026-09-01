@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
+	"github.com/marcos14/praxis-autonomous/internal/pipeline"
 )
 
 // planejadorStub registra as demandas cujo planejamento foi disparado (Fase 3c).
@@ -471,5 +473,44 @@ func TestReiniciarFaseRegras(t *testing.T) {
 	if rec := fazerReq(t, srv, http.MethodPost,
 		"/api/v1/demands/"+strconv.FormatInt(demAprov.ID, 10)+"/phases/1/restart", nil); rec.Code != http.StatusConflict {
 		t.Fatalf("aguardando_aprovacao: status = %d, quero 409", rec.Code)
+	}
+}
+
+// TestReiniciarFaseDescartaOsCommitsDeResguardoDaFase: reiniciar precisa ser um
+// recomeço de verdade. Quando uma fase falha, a pipeline guarda o que ela chegou
+// a produzir num commit de resguardo (pipeline/residuo.go) — sem desfazê-lo, a
+// fase voltaria a rodar em cima do trabalho que o usuário acabou de mandar jogar
+// fora. O que NÃO é resguardo dessa fase continua intocado.
+func TestReiniciarFaseDescartaOsCommitsDeResguardoDaFase(t *testing.T) {
+	banco := abrirBancoTemp(t)
+	ctl := &ctlFake{rodando: map[int64]bool{}}
+	srv := Novo(Opcoes{Banco: banco, Exec: ctl})
+	dem, wt := seedDemandaFaseTravada(t, banco, db.StatusDemandaFalhou)
+
+	// resguardo da fase 1, no topo da branch.
+	if err := os.WriteFile(filepath.Join(wt, "parcial.txt"), []byte("meio caminho\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTeste(t, wt, "add", "-A")
+	gitTeste(t, wt, "commit", "-q", "-m", pipeline.AssuntoParcial("1", "Presa"))
+
+	rec := fazerReq(t, srv, http.MethodPost,
+		"/api/v1/demands/"+strconv.FormatInt(dem, 10)+"/phases/1/restart", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (corpo=%q)", rec.Code, rec.Body.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(wt, "parcial.txt")); !os.IsNotExist(err) {
+		t.Fatalf("o commit de resguardo deveria ter sido desfeito (err=%v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, "a.txt")); err != nil {
+		t.Fatalf("a.txt (commit anterior à fase) não deveria sumir: %v", err)
+	}
+	out, err := exec.Command("git", "-C", wt, "log", "--format=%s").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v — %s", err, out)
+	}
+	if strings.Contains(string(out), pipeline.MarcadorParcial) {
+		t.Fatalf("histórico ainda tem resguardo da fase:\n%s", out)
 	}
 }

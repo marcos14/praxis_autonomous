@@ -194,6 +194,54 @@ func (o *Ops) DescartarMudancas(dir string) error {
 	return nil
 }
 
+// AssuntosDoTopo devolve o assunto (primeira linha da mensagem) dos ate n
+// commits mais recentes de dir, do mais novo para o mais antigo. Leitura pura
+// (nao toma o mutex do repo). Branch sem commits devolve lista vazia.
+//
+// Serve para reconhecer, pelo assunto, os commits de resguardo que a pipeline
+// cria quando uma fase termina sem concluir (ver pipeline/residuo.go): sao eles
+// que o commit final da fase funde e que o "reiniciar fase" desfaz.
+func AssuntosDoTopo(dir string, n int) ([]string, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	out, err := git(dir, "log", fmt.Sprintf("-%d", n), "--format=%s")
+	if err != nil {
+		return nil, err
+	}
+	texto := strings.TrimRight(strings.ReplaceAll(out, "\r\n", "\n"), "\n")
+	if texto == "" {
+		return nil, nil
+	}
+	return strings.Split(texto, "\n"), nil
+}
+
+// DesfazerCommitsDoTopo remove os n commits mais recentes de dir, mantendo ou
+// nao as mudancas na arvore de trabalho:
+//
+//   - manterMudancas=true → `git reset --soft HEAD~n`: o conteudo dos commits
+//     desfeitos volta ao index, pronto para entrar num commit unico. E o squash
+//     dos commits parciais de uma fase no commit final dela.
+//   - manterMudancas=false → `git reset --hard HEAD~n`: o conteudo vai junto. E
+//     o "reiniciar a fase do zero" pedido pelo usuario na UI.
+//
+// n <= 0 e no-op. Serializado pelo mutex do repo.
+func (o *Ops) DesfazerCommitsDoTopo(dir string, n int, manterMudancas bool) error {
+	if n <= 0 {
+		return nil
+	}
+	defer o.trava(dir)()
+	modo := "--hard"
+	if manterMudancas {
+		modo = "--soft"
+	}
+	alvo := fmt.Sprintf("HEAD~%d", n)
+	if out, err := git(dir, "reset", modo, alvo); err != nil {
+		return fmt.Errorf("git reset %s %s em %s: %w — %s", modo, alvo, dir, err, out)
+	}
+	return nil
+}
+
 // validarBranchPraxis rejeita nomes de branch fora do prefixo praxis/ (e o
 // prefixo sozinho, sem sufixo).
 func validarBranchPraxis(branch string) error {

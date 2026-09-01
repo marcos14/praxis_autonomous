@@ -523,6 +523,13 @@ const AGENDAVEIS = ["pronta", "executando", "aguardando_franquia"];
 const RETOMAVEIS = ["pausada", "aguardando_franquia"];
 const TERMINAIS = ["concluida", "integrada", "cancelada", "falhou"];
 
+// REINICIAVEIS espelha os estados em que o backend aceita reiniciar uma fase
+// (handleReiniciarFase, em plano.go). "falhou" ENTRA na lista, embora seja
+// terminal para as ações da demanda: é justamente o estado em que o usuário mais
+// precisa do botão — uma fase travada só sai do lugar por ali. Usar TERMINAIS
+// aqui escondia o "Reiniciar ↻" exatamente quando ele era necessário.
+const REINICIAVEIS = ["pronta", "executando", "pausada", "aguardando_franquia", "falhou"];
+
 // botoesAcao devolve os botões pausar/retomar/cancelar aplicáveis ao status atual.
 function botoesAcao(dados, overlay) {
   const botoes = [];
@@ -836,7 +843,7 @@ function renderFases(cont, dados, overlay) {
           try {
             await api.concluirFaseHumana(dados.id, f.codigo);
           } catch (e) {
-            bannerErro("Falha ao concluir a fase: " + e.message);
+            bannerErro(t("demandas.falha_concluir_fase", { erro: e.message }));
             b.disabled = false;
             return;
           }
@@ -848,22 +855,22 @@ function renderFases(cont, dados, overlay) {
     }
 
     // Botão de reinício forçado: fase automática executando/pausada/falhou.
-    // Interrompe o run em andamento, descarta o trabalho não commitado do
-    // worktree e devolve a fase a pendente (recomeça do zero) — a saída para
-    // uma fase travada sem mexer no banco à mão.
+    // Interrompe o run em andamento, joga fora o trabalho desta fase (o não
+    // commitado e os commits de resguardo dela) e devolve a fase a pendente
+    // (recomeça do zero) — a saída para uma fase travada sem mexer no banco à mão.
     let botaoReiniciar = null;
     const reiniciavel = !f.requer_humano && ["executando", "pausada", "falhou"].includes(f.status);
-    if (reiniciavel && !TERMINAIS.includes(dados.status)) {
+    if (reiniciavel && REINICIAVEIS.includes(dados.status)) {
       botaoReiniciar = el("button", { class: "btn sm", text: t("demandas.reiniciar"),
         title: t("demandas.reiniciar_title"),
         onclick: async (ev) => {
-          if (!confirm(`Reiniciar a fase ${f.codigo} do zero? O run em andamento é interrompido e o trabalho não commitado desta fase é descartado.`)) return;
+          if (!confirm(t("demandas.reiniciar_confirmar", { codigo: f.codigo }))) return;
           const b = ev.currentTarget;
           b.disabled = true;
           try {
             await api.reiniciarFase(dados.id, f.codigo);
           } catch (e) {
-            bannerErro("Falha ao reiniciar a fase: " + e.message);
+            bannerErro(t("demandas.falha_reiniciar_fase", { erro: e.message }));
             b.disabled = false;
             return;
           }

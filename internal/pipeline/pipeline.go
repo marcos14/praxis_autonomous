@@ -123,8 +123,16 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 	// retomada: uma fase `pausada` — ou presa em `executando` por uma queda do
 	// servico que impediu o pipeline de persistir o desfecho — foi interrompida
 	// no meio e pode ter trabalho nao commitado que pertence a ela mesma — nao
-	// exigimos arvore limpa. Nos demais casos, a arvore do worktree deve estar
-	// limpa antes de comecar.
+	// exigimos arvore limpa.
+	//
+	// Nos demais casos a arvore deveria estar limpa (a fase anterior commitou o
+	// que fez, e um desfecho sem conclusao guarda o resto num commit de resguardo
+	// — ver residuo.go). Se mesmo assim houver algo solto, a origem e externa a
+	// pipeline: quase sempre a edicao manual de uma fase requer_humano (concluir
+	// uma fase humana pela UI nao commita nada) ou o usuario mexendo no worktree.
+	// Isso NAO falha mais a fase: falhar deixava o usuario sem saida na UI, e
+	// descartar destruiria trabalho legitimo. Preservamos num commit proprio e
+	// seguimos.
 	retomando := f.Status == db.StatusFasePausada || f.Status == db.StatusFaseExecutando
 	if !retomando {
 		limpo, err := gitops.Limpo(c.Worktree)
@@ -132,9 +140,8 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 			return ResultadoFase{Situacao: SituacaoFalhou, Erro: err.Error()}, err
 		}
 		if !limpo {
-			motivo := fmt.Sprintf("worktree %s tem mudancas nao commitadas antes da fase", c.Worktree)
-			res, perr := c.finalizarFalha(&f, 0, "", motivo, nil)
-			return res, perr
+			c.commitarResiduo(f, MarcadorExterno, fmt.Sprintf(
+				"Havia trabalho nao commitado no worktree antes da Fase %s. Preservado num commit proprio para nao se perder nem se misturar ao da fase.", f.Codigo))
 		}
 	}
 
@@ -336,8 +343,13 @@ func (c *ContextoExec) ExecutarFase() (ResultadoFase, error) {
 		}
 	}
 
-	// 4) commit local do worktree (sem push — push automatico e a Fase 2f)
+	// 4) commit local do worktree (sem push — push automatico e a Fase 2f).
+	// Antes, funde os commits de resguardo das tentativas anteriores DESTA fase
+	// (residuo.go): o conteudo deles volta ao index e entra no commit unico da
+	// fase, entao o historico nao guarda o vaivem de uma fase que precisou de
+	// duas tentativas.
 	commitFeito := false
+	c.fundirParciais(f)
 	limpo, err := gitops.Limpo(c.Worktree)
 	if err != nil {
 		return ResultadoFase{Situacao: SituacaoFalhou, Erro: err.Error(), CustoUSD: custo, MotorExec: motorExecutor}, err
@@ -375,8 +387,12 @@ func (c *ContextoExec) finalizarConcluida(f *db.Fase, custo float64, motorExec s
 	}, nil
 }
 
-// finalizarFalha marca a fase como falhou e devolve o resultado.
+// finalizarFalha marca a fase como falhou e devolve o resultado. O trabalho que
+// o executor alcancou antes de falhar e preservado num commit de resguardo
+// (residuo.go): a arvore fica limpa para a proxima passada e a reexecucao da
+// fase parte do que ja foi feito, em vez de recomecar do zero.
 func (c *ContextoExec) finalizarFalha(f *db.Fase, custo float64, motorExec, motivo string, fasesNovas []FaseNova) (ResultadoFase, error) {
+	c.commitarResiduo(*f, MarcadorParcial, fmt.Sprintf("Fase %s interrompida por falha: %s", f.Codigo, primeirasLinhas(motivo, 3)))
 	f.Status = db.StatusFaseFalhou
 	f.CustoUSD += custo
 	f.Observacao = primeirasLinhas(motivo, 1)
@@ -389,7 +405,10 @@ func (c *ContextoExec) finalizarFalha(f *db.Fase, custo float64, motorExec, moti
 }
 
 // finalizarPausa marca a fase como pausada (retomavel) apos cancelamento do ctx.
+// Como na falha, o que ja foi produzido vira commit de resguardo — a pausa nao
+// deixa o worktree sujo para a retomada.
 func (c *ContextoExec) finalizarPausa(f *db.Fase, custo float64) (ResultadoFase, error) {
+	c.commitarResiduo(*f, MarcadorParcial, fmt.Sprintf("Fase %s pausada no meio; trabalho preservado para a retomada.", f.Codigo))
 	f.Status = db.StatusFasePausada
 	f.CustoUSD += custo
 	f.Observacao = "pausada — retomavel"
@@ -405,6 +424,7 @@ func (c *ContextoExec) finalizarPausa(f *db.Fase, custo float64) (ResultadoFase,
 // retomada para o scheduler reagendar. NAO bloqueia (contraste com o Praxis
 // atual, que dormia ate o reset).
 func (c *ContextoExec) finalizarFranquia(f *db.Fase, custo float64, ef *ErroFranquia) (ResultadoFase, error) {
+	c.commitarResiduo(*f, MarcadorParcial, fmt.Sprintf("Fase %s parada pela franquia do motor %s; trabalho preservado para a retomada automatica.", f.Codigo, ef.Motor))
 	f.Status = db.StatusFasePausada
 	f.CustoUSD += custo
 	f.Observacao = fmt.Sprintf("aguardando franquia (%s) — retomar em %s", ef.Motor, ef.RetomarEm.Format(time.RFC3339))
