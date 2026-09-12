@@ -43,11 +43,11 @@ func TestCriarAutenticarUsuario(t *testing.T) {
 	ctx := context.Background()
 	admin := idPapelAdmin(t, d)
 
-	u, err := d.CriarUsuario(ctx, "Marcos", "Marcos@Junsoft.com.BR", "segredo123", []int64{admin})
+	u, err := d.CriarUsuario(ctx, "Teste", "Teste@Exemplo.com.BR", "segredo123", []int64{admin})
 	if err != nil {
 		t.Fatalf("CriarUsuario: %v", err)
 	}
-	if u.Email != "marcos@junsoft.com.br" {
+	if u.Email != "teste@exemplo.com.br" {
 		t.Errorf("email não foi normalizado: %q", u.Email)
 	}
 	if len(u.Papeis) != 1 || u.Papeis[0].Nome != "admin" {
@@ -55,7 +55,7 @@ func TestCriarAutenticarUsuario(t *testing.T) {
 	}
 
 	// Login case-insensitive no e-mail, senha correta.
-	got, err := d.AutenticarUsuario(ctx, "marcos@junsoft.com.br", "segredo123")
+	got, err := d.AutenticarUsuario(ctx, "teste@exemplo.com.br", "segredo123")
 	if err != nil {
 		t.Fatalf("AutenticarUsuario válido: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestCriarAutenticarUsuario(t *testing.T) {
 	}
 
 	// Senha errada → ErrCredenciais.
-	if _, err := d.AutenticarUsuario(ctx, "marcos@junsoft.com.br", "errada"); !errors.Is(err, ErrCredenciais) {
+	if _, err := d.AutenticarUsuario(ctx, "teste@exemplo.com.br", "errada"); !errors.Is(err, ErrCredenciais) {
 		t.Errorf("senha errada: erro = %v, quero ErrCredenciais", err)
 	}
 	// E-mail inexistente → ErrCredenciais (não vaza que não existe).

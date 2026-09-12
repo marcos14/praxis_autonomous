@@ -13,15 +13,15 @@ func TestAutorNomeEEmail(t *testing.T) {
 	}{
 		{
 			nome:      "usuario com sufixo (default)",
-			id:        Identidade{Nome: "Marcos Agnes", Email: "marcos@junsoft.com.br", Sufixo: true},
-			wantNome:  "Marcos Agnes - Praxis",
-			wantEmail: "marcos@junsoft.com.br",
+			id:        Identidade{Nome: "Joao Teste", Email: "joao@exemplo.com.br", Sufixo: true},
+			wantNome:  "Joao Teste - Praxis",
+			wantEmail: "joao@exemplo.com.br",
 		},
 		{
 			nome:      "usuario sem sufixo (admin desligou)",
-			id:        Identidade{Nome: "Marcos Agnes", Email: "marcos@junsoft.com.br"},
-			wantNome:  "Marcos Agnes",
-			wantEmail: "marcos@junsoft.com.br",
+			id:        Identidade{Nome: "Joao Teste", Email: "joao@exemplo.com.br"},
+			wantNome:  "Joao Teste",
+			wantEmail: "joao@exemplo.com.br",
 		},
 		{
 			nome:      "valor zero cai no Praxis",
@@ -68,12 +68,12 @@ func TestCommitIdentidade(t *testing.T) {
 	o := Novo()
 
 	escrever(t, repo, "b.txt", "novo\n")
-	autor := Identidade{Nome: "Marcos Agnes", Email: "marcos@junsoft.com.br", Sufixo: true}
+	autor := Identidade{Nome: "Joao Teste", Email: "joao@exemplo.com.br", Sufixo: true}
 	if err := o.Commit(repo, "commit com autor", autor); err != nil {
 		t.Fatal(err)
 	}
 	ident := gitT(t, repo, "log", "-1", "--pretty=%an|%ae|%cn|%ce")
-	want := "Marcos Agnes - Praxis|marcos@junsoft.com.br|" + PraxisNome + "|" + PraxisEmail
+	want := "Joao Teste - Praxis|joao@exemplo.com.br|" + PraxisNome + "|" + PraxisEmail
 	if ident != want {
 		t.Fatalf("ident do commit = %q, esperava %q", ident, want)
 	}
@@ -102,12 +102,12 @@ func TestMergeNoFFIdentidade(t *testing.T) {
 	if err := o.Commit(repo, "fase da d7", Identidade{}); err != nil {
 		t.Fatal(err)
 	}
-	autor := Identidade{Nome: "Ana Souza", Email: "ana@junsoft.com.br", Sufixo: true}
+	autor := Identidade{Nome: "Ana Souza", Email: "ana@exemplo.com.br", Sufixo: true}
 	if err := o.MergeNoFF(repo, "main", "praxis/d7-ident", "merge da d7", autor); err != nil {
 		t.Fatal(err)
 	}
 	ident := gitT(t, repo, "log", "-1", "--pretty=%an|%ae|%cn|%ce")
-	want := "Ana Souza - Praxis|ana@junsoft.com.br|" + PraxisNome + "|" + PraxisEmail
+	want := "Ana Souza - Praxis|ana@exemplo.com.br|" + PraxisNome + "|" + PraxisEmail
 	if ident != want {
 		t.Fatalf("ident do merge = %q, esperava %q", ident, want)
 	}

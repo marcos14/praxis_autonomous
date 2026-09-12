@@ -282,7 +282,7 @@ func TestRodarFaseComitaComAutorDaDemanda(t *testing.T) {
 	r, base, _ := runnerComProjeto(t, repo)
 	ctx := context.Background()
 
-	u, err := r.Store.CriarUsuario(ctx, "Marcos Agnes", "marcos@junsoft.com.br", "senha-bem-longa", nil)
+	u, err := r.Store.CriarUsuario(ctx, "Joao Teste", "joao@exemplo.com.br", "senha-bem-longa", nil)
 	if err != nil {
 		t.Fatalf("CriarUsuario: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestRodarFaseComitaComAutorDaDemanda(t *testing.T) {
 	}
 
 	ident := gitCmd(t, dem.WorktreePath, "log", "-1", "--pretty=%an|%ae|%cn|%ce")
-	want := "Marcos Agnes - Praxis|marcos@junsoft.com.br|" + gitops.PraxisNome + "|" + gitops.PraxisEmail
+	want := "Joao Teste - Praxis|joao@exemplo.com.br|" + gitops.PraxisNome + "|" + gitops.PraxisEmail
 	if got := strings.TrimSpace(ident); got != want {
 		t.Fatalf("ident do commit da fase = %q, esperava %q", got, want)
 	}
