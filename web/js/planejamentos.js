@@ -173,7 +173,7 @@ async function renderNovo() {
   // sobem e só então o estrategista roda — assim o 1º turno já as enxerga.
   const inputAnexos = el("input", {
     type: "file", multiple: true, hidden: true,
-    accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
+    accept: ".md,.txt,.csv,.json,.pdf,.html,.xml,.tx2,.png,.jpg,.jpeg,.webp",
   });
   const listaAnexos = el("span", { class: "hint", text: t("planejamentos.nenhum_arquivo") });
   const btnAnexos = el("button", { class: "btn ghost sm", text: t("planejamentos.selecionar_arquivos") });
@@ -344,7 +344,7 @@ async function abrirPlanejamento(id, abaInicial) {
   // o anexo vale a partir do turno seguinte).
   const inputClip = el("input", {
     type: "file", multiple: true, hidden: true,
-    accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
+    accept: ".md,.txt,.csv,.json,.pdf,.html,.xml,.tx2,.png,.jpg,.jpeg,.webp",
   });
   const btnClip = el("button", { class: "btn ghost", text: "📎", title: t("planejamentos.title_anexar") });
   btnClip.onclick = () => inputClip.click();
@@ -765,7 +765,7 @@ async function renderReferencias(corpo, plan) {
 
   const inputArquivos = el("input", {
     type: "file", multiple: true, hidden: true,
-    accept: ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp",
+    accept: ".md,.txt,.csv,.json,.pdf,.html,.xml,.tx2,.png,.jpg,.jpeg,.webp",
   });
   const btnAnexar = el("button", { class: "btn", text: t("planejamentos.anexar_arquivos") });
   btnAnexar.onclick = () => inputArquivos.click();

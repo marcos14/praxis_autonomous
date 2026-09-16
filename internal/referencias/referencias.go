@@ -25,7 +25,8 @@ const Dir = "referencias"
 // sabem ler (texto, pdf e imagem).
 var extensoes = map[string]bool{
 	".md": true, ".txt": true, ".csv": true, ".json": true, ".pdf": true,
-	".html": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
+	".html": true, ".xml": true, ".tx2": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
 }
 
 // NomeValido informa se nome é um arquivo de referência aceitável: nome simples

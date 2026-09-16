@@ -23,7 +23,7 @@ const PAPEIS = {
 
 // FORMATOS_ANEXO espelha as extensões que o backend aceita como arquivo de
 // apoio (internal/referencias) — os tipos que os harnesses sabem ler.
-const FORMATOS_ANEXO = ".md,.txt,.csv,.json,.pdf,.html,.png,.jpg,.jpeg,.webp";
+const FORMATOS_ANEXO = ".md,.txt,.csv,.json,.pdf,.html,.xml,.tx2,.png,.jpg,.jpeg,.webp";
 
 export async function montarConsultas() {
   document.getElementById("btn-nova-consulta").onclick = () => renderNova();
