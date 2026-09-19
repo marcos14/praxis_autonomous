@@ -29,8 +29,24 @@ const PAPEIS = {
 const FOCOS = { prd: t("planejamentos.foco_prd"), adr: t("planejamentos.foco_adr"), ambos: t("planejamentos.foco_ambos") };
 const NIVEIS = { documento: t("planejamentos.nivel_documento"), apresentacao: t("planejamentos.nivel_apresentacao"), prototipo: t("planejamentos.nivel_prototipo") };
 
+// escopoAtual é o filtro Todos · Meus · Do grupo da lista (lembrado por tela).
+let escopoAtual = "todos";
+
+function montarFiltroEscopo() {
+  const lista = document.getElementById("lista-planejamentos");
+  let cont = document.getElementById("filtro-planejamentos");
+  if (!cont) {
+    cont = el("div", { id: "filtro-planejamentos", class: "filtros" });
+    lista.before(cont);
+  }
+  const f = filtroEscopo("planejamentos", (e) => { escopoAtual = e; recarregarLista(); });
+  escopoAtual = f.valor();
+  limpar(cont).append(f.no);
+}
+
 export async function montarPlanejamentos() {
   document.getElementById("btn-novo-planejamento").onclick = () => renderNovo();
+  montarFiltroEscopo();
   await recarregarLista();
   if (selecionadoID != null) {
     const p = planejamentos.find((x) => x.id === selecionadoID);
@@ -51,7 +67,7 @@ function pararAcompanhamento() {
 
 async function recarregarLista() {
   try {
-    planejamentos = (await api.listarPlanejamentos()) || [];
+    planejamentos = (await api.listarPlanejamentos({ escopo: paramEscopo(escopoAtual) })) || [];
   } catch (e) {
     bannerErro("Falha ao carregar planejamentos: " + e.message);
     return;
@@ -72,6 +88,8 @@ async function recarregarLista() {
       el("div", { class: "path", text: alvo }),
       el("div", { class: "meta" },
         pillStatusPlanejamento(p.status),
+        pillVisibilidade(p),
+        pillAutor(p),
         el("span", { class: "pill", text: FOCOS[p.foco] || p.foco }),
         p.demandas_criadas > 0 ? el("span", { class: "pill" }, el("span", { class: "dot dot-done" }),
           p.demandas_criadas === 1 ? "1 demanda" : `${p.demandas_criadas} demandas`) : null,
@@ -262,7 +280,9 @@ async function abrirPlanejamento(id, abaInicial) {
 
   const cab = el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px" },
     el("h3", { style: "margin:0", text: plan.titulo || `Planejamento #${plan.id}` }),
-    el("div", { style: "display:flex;gap:6px" },
+    el("div", { style: "display:flex;gap:6px;align-items:center" },
+      // Quem enxerga (dono ou admin); a lista reflete a mudança.
+      controleVisibilidade(plan, api.definirVisibilidadePlanejamento, () => recarregarLista()),
       botaoCriarDemanda(plan),
       el("button", {
         class: "btn ghost sm", text: t("consultas.excluir"),

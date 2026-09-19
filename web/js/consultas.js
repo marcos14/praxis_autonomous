@@ -29,8 +29,25 @@ const PAPEIS = {
 // apoio (internal/referencias) — os tipos que os harnesses sabem ler.
 const FORMATOS_ANEXO = ".md,.txt,.csv,.json,.pdf,.html,.xml,.tx2,.png,.jpg,.jpeg,.webp";
 
+// escopoAtual é o filtro Todos · Meus · Do grupo da lista (lembrado por tela).
+let escopoAtual = "todos";
+
+// montarFiltroEscopo coloca o controle segmentado logo acima da lista.
+function montarFiltroEscopo() {
+  const lista = document.getElementById("lista-consultas");
+  let cont = document.getElementById("filtro-consultas");
+  if (!cont) {
+    cont = el("div", { id: "filtro-consultas", class: "filtros" });
+    lista.before(cont);
+  }
+  const f = filtroEscopo("consultas", (e) => { escopoAtual = e; recarregarLista(); });
+  escopoAtual = f.valor();
+  limpar(cont).append(f.no);
+}
+
 export async function montarConsultas() {
   document.getElementById("btn-nova-consulta").onclick = () => renderNova();
+  montarFiltroEscopo();
   await recarregarLista();
   if (selecionadaID != null) {
     const c = consultas.find((x) => x.id === selecionadaID);
@@ -51,7 +68,7 @@ function pararAcompanhamento() {
 
 async function recarregarLista() {
   try {
-    consultas = (await api.listarConsultas()) || [];
+    consultas = (await api.listarConsultas({ escopo: paramEscopo(escopoAtual) })) || [];
   } catch (e) {
     bannerErro(t("consultas.falha_carregar", { erro: e.message }));
     return;
@@ -72,6 +89,8 @@ async function recarregarLista() {
       el("div", { class: "path", text: alvo }),
       el("div", { class: "meta" },
         pillStatusConsulta(c.status),
+        pillVisibilidade(c),
+        pillAutor(c),
         c.custo_usd > 0 ? el("span", { class: "pill", text: t("consultas.custo", { valor: c.custo_usd.toFixed(2) }) }) : null,
       ),
     ));
@@ -216,21 +235,25 @@ async function abrirConsulta(id) {
   const alvo = cons.grupo_nome ? t("consultas.grupo", { nome: cons.grupo_nome }) : cons.projeto_nome || "";
   const cab = el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px" },
     el("h3", { style: "margin:0", text: cons.titulo || t("consultas.titulo_n", { id: cons.id }) }),
-    el("button", {
-      class: "btn ghost sm", text: t("consultas.excluir"),
-      onclick: async () => {
-        if (!confirm(t("consultas.confirmar_excluir"))) return;
-        try {
-          await api.excluirConsulta(cons.id);
-          toast(t("consultas.excluida"), "ok");
-          selecionadaID = null;
-          limparPainel();
-          await recarregarLista();
-        } catch (e) {
-          bannerErro(t("consultas.falha_excluir", { erro: e.message }));
-        }
-      },
-    }),
+    el("div", { style: "display:flex;gap:6px;align-items:center" },
+      // Quem enxerga (dono ou admin); a lista reflete a mudança.
+      controleVisibilidade(cons, api.definirVisibilidadeConsulta, () => recarregarLista()),
+      el("button", {
+        class: "btn ghost sm", text: t("consultas.excluir"),
+        onclick: async () => {
+          if (!confirm(t("consultas.confirmar_excluir"))) return;
+          try {
+            await api.excluirConsulta(cons.id);
+            toast(t("consultas.excluida"), "ok");
+            selecionadaID = null;
+            limparPainel();
+            await recarregarLista();
+          } catch (e) {
+            bannerErro(t("consultas.falha_excluir", { erro: e.message }));
+          }
+        },
+      }),
+    ),
   );
   const sub = el("p", { class: "sub", style: "margin:4px 0 10px", text: alvo +
     (cons.custo_usd > 0 ? " · " + t("consultas.custo_acumulado", { valor: cons.custo_usd.toFixed(2) }) : "") });
