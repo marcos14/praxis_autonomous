@@ -155,7 +155,7 @@ func (s *Servidor) handleDispararTurnoConsulta(w http.ResponseWriter, r *http.Re
 func (s *Servidor) handleListarConsultas(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := strconv.ParseInt(r.URL.Query().Get("project"), 10, 64)
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group"), 10, 64)
-	consultas, err := s.banco.ListarConsultas(r.Context(), projectID, groupID)
+	consultas, err := s.banco.ListarConsultas(r.Context(), db.FiltroConsultas{ProjectID: projectID, GroupID: groupID})
 	if err != nil {
 		s.responderErroConsulta(w, r, err)
 		return

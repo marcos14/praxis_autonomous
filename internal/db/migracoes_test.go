@@ -208,6 +208,61 @@ func TestSchemaPromptsCriaTabela(t *testing.T) {
 	}
 }
 
+// TestMigracaoVisibilidadeBackfillPublica cobre a migração 17: o que existia
+// antes vira `publica` (nada some no upgrade), o que nasce depois é `privada`
+// e a coluna recusa valores desconhecidos.
+func TestMigracaoVisibilidadeBackfillPublica(t *testing.T) {
+	db := abrirBruto(t)
+	for _, m := range migracoes {
+		if m.versao > 16 {
+			break
+		}
+		if err := aplicarMigracao(db, m); err != nil {
+			t.Fatalf("migração %d: %v", m.versao, err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO projects (nome, slug, pasta) VALUES ('p','p','x')`); err != nil {
+		t.Fatalf("projeto legado: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO demands (project_id, titulo) VALUES (1,'d')`); err != nil {
+		t.Fatalf("demanda legada: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO consultas (project_id, titulo) VALUES (1,'c')`); err != nil {
+		t.Fatalf("consulta legada: %v", err)
+	}
+
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+	for _, tab := range []string{"demands", "consultas"} {
+		var vis string
+		if err := db.QueryRow(`SELECT visibilidade FROM ` + tab + ` WHERE id = 1`).Scan(&vis); err != nil {
+			t.Fatalf("ler visibilidade de %s: %v", tab, err)
+		}
+		if vis != "publica" {
+			t.Fatalf("%s legada = %q, quero publica (backfill)", tab, vis)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO consultas (project_id, titulo) VALUES (1,'nova')`); err != nil {
+		t.Fatalf("consulta nova: %v", err)
+	}
+	var vis string
+	if err := db.QueryRow(`SELECT visibilidade FROM consultas WHERE id = 2`).Scan(&vis); err != nil {
+		t.Fatalf("ler visibilidade nova: %v", err)
+	}
+	if vis != "privada" {
+		t.Fatalf("consulta nova = %q, quero privada (default)", vis)
+	}
+	if _, err := db.Exec(`INSERT INTO consultas (project_id, titulo, visibilidade) VALUES (1,'x','secreta')`); err == nil {
+		t.Fatal("CHECK deveria rejeitar visibilidade desconhecida")
+	}
+	for _, idx := range []string{"ix_consultas_dono", "ix_planejamentos_dono"} {
+		if !existeNoSchema(t, db, "index", idx) {
+			t.Errorf("índice %q não foi criado", idx)
+		}
+	}
+}
+
 // TestSchemaSessoesCriaTabelaEIndice cobre a migração 16 (sessões persistidas):
 // a tabela, o índice por usuário e o CASCADE ao remover o usuário.
 func TestSchemaSessoesCriaTabelaEIndice(t *testing.T) {

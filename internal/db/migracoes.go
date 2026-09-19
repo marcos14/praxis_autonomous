@@ -99,6 +99,11 @@ var migracoes = []migracao{
 		nome:   "sessões persistidas dos usuários (sessoes) — token de renovação em cookie",
 		sql:    schemaSessoes,
 	},
+	{
+		versao: 17,
+		nome:   "visibilidade por dono/grupo/pública em consultas, planejamentos e demandas",
+		sql:    schemaVisibilidade,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -748,4 +753,23 @@ CREATE TABLE sessoes (
     revogada_em TEXT
 );
 CREATE INDEX ix_sessoes_user ON sessoes (user_id);
+`
+
+// Migração 17 (M2 do PLANO_INTERNET) — quem enxerga cada consulta, planejamento
+// e demanda: `privada` (só o criador), `grupo` (criador + membros do grupo de
+// usuários dele) ou `publica` (todos os autenticados). Administradores e tokens
+// de API ignoram a regra; a ACL de projeto continua valendo por cima. O que já
+// existia vira `publica` para nada sumir da tela de ninguém no upgrade; itens
+// novos nascem `privada` (default da coluna). Itens sem criador (token de
+// API/bootstrap) seguem a config global sem_dono_visibilidade, avaliada na
+// leitura — ver visao.go.
+const schemaVisibilidade = `
+ALTER TABLE consultas     ADD COLUMN visibilidade TEXT NOT NULL DEFAULT 'privada' CHECK (visibilidade IN ('privada','grupo','publica'));
+ALTER TABLE planejamentos ADD COLUMN visibilidade TEXT NOT NULL DEFAULT 'privada' CHECK (visibilidade IN ('privada','grupo','publica'));
+ALTER TABLE demands       ADD COLUMN visibilidade TEXT NOT NULL DEFAULT 'privada' CHECK (visibilidade IN ('privada','grupo','publica'));
+UPDATE consultas     SET visibilidade = 'publica';
+UPDATE planejamentos SET visibilidade = 'publica';
+UPDATE demands       SET visibilidade = 'publica';
+CREATE INDEX ix_consultas_dono     ON consultas (criado_por);
+CREATE INDEX ix_planejamentos_dono ON planejamentos (criado_por);
 `

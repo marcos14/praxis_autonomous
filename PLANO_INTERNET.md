@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1 concluído** (código, testes e docs); próxi
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M2.F1.E1`
+**Próxima etapa:** `M2.F1.E2`
 
 **Pendência do M1 para o usuário (não automatizável):** roteiro manual no navegador — com `sessao_jwt_min` em 15 min (mínimo da UI) ou `1` gravado via API, navegar sem cair e ver um único `/auth/refresh` por renovação; reiniciar o servidor com a página aberta e vê-la voltar sozinha; revogar a sessão no banco com texto digitado no chat e confirmar o portão por cima com o texto preservado; instalar em celular e checar o retorno ao primeiro plano. O backend foi validado também num servidor real com `curl` (setup → refresh por cookie → sessões → logout → refresh 401).
 
@@ -25,7 +25,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M1.F3.E1 Fechamento: campos de config na UI, roteiro manual, docs — grupo "Sessões e login" em `config-fields.js` (`sessao_jwt_min`, `sessao_inatividade_dias`, `sessao_maxima_dias` com `select` e hints nos 4 idiomas); README_COMPLETO (EN e pt-BR): nova subseção "Atrás de um reverse proxy", §6.1 reescrita (usuários × tokens × bootstrap, cookie, refresh, sessões, rate limit), §9 com a proteção do login; manual embutido `09-acessos.md` nos 4 idiomas ganhou "Sua conta e sessões"; smoke test no servidor real com curl ok; roteiro no navegador fica com o usuário (ver pendência acima)
 
 ### M2 — Visibilidade meus / grupo / público
-- [ ] M2.F1.E1 Migração 17, `Visao`, `condDono`, config sem dono, testes em consultas
+- [x] M2.F1.E1 Migração 17, `Visao`, `condDono`, config sem dono, testes em consultas — `internal/db/visao.go` (`Visao{Usuario, ACL, Dono, Escopo, SemDono, SemDonoGrupo}`, constantes `Visibilidade*`/`SemDono*`/`Escopo*`, `condDono`/`argsDono`, `anexarCondDono`, `anexarCondEscopo`); `consultas.visibilidade` no struct/scan/insert (default privada, valida), `FiltroConsultas{ProjectID, GroupID, Visao}`, `DefinirVisibilidadeConsulta`; matriz de 15 casos em `visao_test.go` + teste de backfill da migração
 - [ ] M2.F1.E2 Consultas e planejamentos filtrados no banco (+ `criado_por_nome`)
 - [ ] M2.F1.E3 Demandas e eventos com a regra de dono no banco
 - [ ] M2.F2.E1 API: `visaoDaRequisicao`, middleware, consultas/planejamentos, PUT visibilidade, config

@@ -52,8 +52,10 @@ type Consulta struct {
 	Erro         string  `json:"erro"`
 	CriadoEm     string  `json:"criado_em"`
 	AtualizadoEm string  `json:"atualizado_em"`
-	ProjetoNome  string  `json:"projeto_nome,omitempty"`
-	GrupoNome    string  `json:"grupo_nome,omitempty"`
+	// Visibilidade: privada (só o criador), grupo ou publica — ver visao.go.
+	Visibilidade string `json:"visibilidade"`
+	ProjetoNome  string `json:"projeto_nome,omitempty"`
+	GrupoNome    string `json:"grupo_nome,omitempty"`
 }
 
 // MensagemConsulta é uma linha de consulta_messages. Meta é JSON livre (objeto
@@ -70,7 +72,7 @@ type MensagemConsulta struct {
 
 // colunasConsulta lista as colunas de consultas na ordem esperada por scanConsulta.
 const colunasConsulta = `id, project_id, group_id, titulo, status, custo_usd,
-	criado_por, erro, criado_em, atualizado_em`
+	criado_por, erro, criado_em, atualizado_em, visibilidade`
 
 // scanConsulta lê uma linha de consultas (na ordem de colunasConsulta) para
 // Consulta, tratando as FKs opcionais.
@@ -80,7 +82,7 @@ func scanConsulta(sc interface{ Scan(...any) error }) (Consulta, error) {
 		projID, grpID, por sql.NullInt64
 	)
 	if err := sc.Scan(&c.ID, &projID, &grpID, &c.Titulo, &c.Status, &c.CustoUSD,
-		&por, &c.Erro, &c.CriadoEm, &c.AtualizadoEm); err != nil {
+		&por, &c.Erro, &c.CriadoEm, &c.AtualizadoEm, &c.Visibilidade); err != nil {
 		return Consulta{}, err
 	}
 	c.ProjectID = ptrDeNull(projID)
@@ -103,6 +105,12 @@ func (d *DB) CriarConsultaComChat(ctx context.Context, c Consulta, primeira Mens
 	if !PapelConsultaValido(primeira.Papel) {
 		return Consulta{}, MensagemConsulta{}, ErrPapelInvalido
 	}
+	if strings.TrimSpace(c.Visibilidade) == "" {
+		c.Visibilidade = VisibilidadePrivada
+	}
+	if !VisibilidadeValida(c.Visibilidade) {
+		return Consulta{}, MensagemConsulta{}, ErrValorInvalido
+	}
 
 	tx, err := d.Escritor.BeginTx(ctx, nil)
 	if err != nil {
@@ -111,11 +119,11 @@ func (d *DB) CriarConsultaComChat(ctx context.Context, c Consulta, primeira Mens
 	defer tx.Rollback()
 
 	row := tx.QueryRowContext(ctx, `
-		INSERT INTO consultas (project_id, group_id, titulo, status, custo_usd, criado_por, erro)
-		VALUES (?,?,?,?,?,?,?)
+		INSERT INTO consultas (project_id, group_id, titulo, status, custo_usd, criado_por, erro, visibilidade)
+		VALUES (?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em, atualizado_em`,
 		nullInt(c.ProjectID), nullInt(c.GroupID), c.Titulo, c.Status,
-		c.CustoUSD, nullInt(c.CriadoPor), c.Erro,
+		c.CustoUSD, nullInt(c.CriadoPor), c.Erro, c.Visibilidade,
 	)
 	if err := row.Scan(&c.ID, &c.CriadoEm, &c.AtualizadoEm); err != nil {
 		return Consulta{}, MensagemConsulta{}, traduzirErroFK(err)
@@ -143,17 +151,25 @@ func (d *DB) CriarConsultaComChat(ctx context.Context, c Consulta, primeira Mens
 // ListarConsultas devolve as consultas em ordem de atividade (atualizado_em
 // decrescente, id decrescente no empate), com nome do projeto/grupo resolvido
 // por join. projectID/groupID > 0 filtram. Slice não-nil.
-func (d *DB) ListarConsultas(ctx context.Context, projectID, groupID int64) ([]Consulta, error) {
-	where, args := "", []any{}
+func (d *DB) ListarConsultas(ctx context.Context, f FiltroConsultas) ([]Consulta, error) {
+	cond, args := []string{}, []any{}
 	switch {
-	case projectID > 0:
-		where, args = "WHERE c.project_id = ?", []any{projectID}
-	case groupID > 0:
-		where, args = "WHERE c.group_id = ?", []any{groupID}
+	case f.ProjectID > 0:
+		cond, args = append(cond, "c.project_id = ?"), append(args, f.ProjectID)
+	case f.GroupID > 0:
+		cond, args = append(cond, "c.group_id = ?"), append(args, f.GroupID)
+	}
+	// Regra de dono e escopo (M2): quem não ignora a regra só vê o que criou,
+	// o que é do grupo dele, o público e os sem dono conforme a config.
+	cond, args = anexarCondDono(cond, args, "c", f.Visao)
+	cond, args = anexarCondEscopo(cond, args, "c", f.Visao)
+	where := ""
+	if len(cond) > 0 {
+		where = "WHERE " + strings.Join(cond, " AND ")
 	}
 	rows, err := d.Leitor.QueryContext(ctx, `
 		SELECT c.id, c.project_id, c.group_id, c.titulo, c.status, c.custo_usd,
-		       c.criado_por, c.erro, c.criado_em, c.atualizado_em,
+		       c.criado_por, c.erro, c.criado_em, c.atualizado_em, c.visibilidade,
 		       COALESCE(p.nome, ''), COALESCE(g.nome, '')
 		FROM consultas c
 		LEFT JOIN projects p       ON p.id = c.project_id
@@ -172,7 +188,7 @@ func (d *DB) ListarConsultas(ctx context.Context, projectID, groupID int64) ([]C
 			projID, grpID, por sql.NullInt64
 		)
 		if err := rows.Scan(&c.ID, &projID, &grpID, &c.Titulo, &c.Status, &c.CustoUSD,
-			&por, &c.Erro, &c.CriadoEm, &c.AtualizadoEm, &c.ProjetoNome, &c.GrupoNome); err != nil {
+			&por, &c.Erro, &c.CriadoEm, &c.AtualizadoEm, &c.Visibilidade, &c.ProjetoNome, &c.GrupoNome); err != nil {
 			return nil, err
 		}
 		c.ProjectID = ptrDeNull(projID)
@@ -184,6 +200,37 @@ func (d *DB) ListarConsultas(ctx context.Context, projectID, groupID int64) ([]C
 		return nil, fmt.Errorf("listar consultas: %w", err)
 	}
 	return consultas, nil
+}
+
+// FiltroConsultas restringe ListarConsultas. ProjectID/GroupID zerados não
+// filtram (o primeiro não-zero vence); Visao aplica a regra de dono e o escopo
+// (valor zero = sem restrição).
+type FiltroConsultas struct {
+	ProjectID int64
+	GroupID   int64
+	Visao     Visao
+}
+
+// DefinirVisibilidadeConsulta muda quem enxerga a consulta (dono ou admin —
+// checado na API). Valor desconhecido vira ErrValorInvalido; consulta
+// inexistente, ErrNaoEncontrado.
+func (d *DB) DefinirVisibilidadeConsulta(ctx context.Context, id int64, visibilidade string) error {
+	if !VisibilidadeValida(visibilidade) {
+		return ErrValorInvalido
+	}
+	res, err := d.Escritor.ExecContext(ctx,
+		`UPDATE consultas SET visibilidade = ? WHERE id = ?`, visibilidade, id)
+	if err != nil {
+		return fmt.Errorf("definir visibilidade da consulta %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("definir visibilidade da consulta %d: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNaoEncontrado
+	}
+	return nil
 }
 
 // ObterConsulta devolve a consulta de id. Se não existir, devolve ErrNaoEncontrado.

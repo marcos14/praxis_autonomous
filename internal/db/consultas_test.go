@@ -174,7 +174,7 @@ func TestListarConsultasComNomesEFiltros(t *testing.T) {
 		t.Fatalf("consulta de grupo: %v", err)
 	}
 
-	todas, err := d.ListarConsultas(ctx, 0, 0)
+	todas, err := d.ListarConsultas(ctx, FiltroConsultas{})
 	if err != nil {
 		t.Fatalf("ListarConsultas: %v", err)
 	}
@@ -194,14 +194,14 @@ func TestListarConsultasComNomesEFiltros(t *testing.T) {
 		}
 	}
 
-	soProjeto, err := d.ListarConsultas(ctx, pid, 0)
+	soProjeto, err := d.ListarConsultas(ctx, FiltroConsultas{ProjectID: pid})
 	if err != nil {
 		t.Fatalf("filtrar por projeto: %v", err)
 	}
 	if len(soProjeto) != 1 || soProjeto[0].ID != c1.ID {
 		t.Fatalf("filtro por projeto = %+v, quero só c1", soProjeto)
 	}
-	soGrupo, err := d.ListarConsultas(ctx, 0, g.ID)
+	soGrupo, err := d.ListarConsultas(ctx, FiltroConsultas{GroupID: g.ID})
 	if err != nil {
 		t.Fatalf("filtrar por grupo: %v", err)
 	}
