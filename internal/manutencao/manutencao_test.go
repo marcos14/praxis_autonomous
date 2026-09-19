@@ -136,3 +136,39 @@ func TestCicloRemoveEventosAntigos(t *testing.T) {
 		t.Fatalf("após retenção: %+v, quero só o recente", evs)
 	}
 }
+
+func TestCicloRemoveSessoesExpiradas(t *testing.T) {
+	d := abrirBanco(t)
+	ctx := context.Background()
+	u, err := d.CriarUsuario(ctx, "U", "u@x.test", "senha-forte-123", nil)
+	if err != nil {
+		t.Fatalf("criar usuário: %v", err)
+	}
+	prazos := db.PrazosSessao{Inatividade: time.Hour, Maxima: 24 * time.Hour}
+	ativa, err := d.CriarSessao(ctx, u.ID, "", "", prazos)
+	if err != nil {
+		t.Fatalf("sessão ativa: %v", err)
+	}
+	expirada, err := d.CriarSessao(ctx, u.ID, "", "", prazos)
+	if err != nil {
+		t.Fatalf("sessão expirada: %v", err)
+	}
+	if _, err := d.Escritor.ExecContext(ctx,
+		`UPDATE sessoes SET expira_em = '2020-01-01T00:00:00.000Z' WHERE id = ?`, expirada.ID); err != nil {
+		t.Fatalf("expirar sessão: %v", err)
+	}
+
+	m := Nova(Opcoes{Store: d})
+	m.Ciclo(ctx, time.Now())
+
+	var n int
+	if err := d.Leitor.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessoes`).Scan(&n); err != nil {
+		t.Fatalf("contar sessões: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("sessões após o ciclo = %d, quero 1 (só a ativa)", n)
+	}
+	if _, err := d.AutenticarSessao(ctx, ativa.Token, time.Hour); err != nil {
+		t.Fatalf("a sessão ativa deveria sobreviver ao ciclo: %v", err)
+	}
+}

@@ -118,6 +118,8 @@ type Servidor struct {
 	uso          *uso.Monitor
 	// proxyConfiavel espelha Opcoes.ProxyConfiavel.
 	proxyConfiavel bool
+	// limiteLogin conta falhas de login por IP e por e-mail (força bruta).
+	limiteLogin *limitadorLogin
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -176,6 +178,7 @@ func Novo(opts Opcoes) *Servidor {
 		git: gitOps, ideWeb: opts.IDE, loginMotores: loginMotores,
 		uso:                  opts.Uso,
 		proxyConfiavel:       opts.ProxyConfiavel,
+		limiteLogin:          novoLimitadorLogin(limiteFalhasLogin, janelaFalhasLogin),
 		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 

@@ -16,6 +16,9 @@ import (
 type Store interface {
 	BackupPara(ctx context.Context, destino string) error
 	RemoverEventosAntesDe(ctx context.Context, corte string) (int64, error)
+	// RemoverSessoesExpiradas apaga as sessões de login que já não autenticam
+	// em `agora` (revogadas ou vencidas) — M1 do PLANO_INTERNET.
+	RemoverSessoesExpiradas(ctx context.Context, agora time.Time) (int64, error)
 }
 
 // Opcoes configura a manutenção.
@@ -88,6 +91,13 @@ func (m *Manutencao) Ciclo(ctx context.Context, agora time.Time) {
 			m.o.Log("manutenção: retenção de eventos falhou: " + err.Error())
 		} else if n > 0 {
 			m.o.Log(fmt.Sprintf("manutenção: %d eventos antigos removidos", n))
+		}
+		// Sessões de login vencidas/revogadas não têm valor histórico: saem no
+		// mesmo ciclo (a tabela não cresce com logins antigos).
+		if n, err := m.o.Store.RemoverSessoesExpiradas(ctx, agora); err != nil {
+			m.o.Log("manutenção: limpeza de sessões falhou: " + err.Error())
+		} else if n > 0 {
+			m.o.Log(fmt.Sprintf("manutenção: %d sessões expiradas removidas", n))
 		}
 	}
 	if m.o.DirLogs != "" {

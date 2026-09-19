@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,9 @@ func (s *Servidor) registrarRotasAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/login", s.handleAuthLogin)
 	mux.HandleFunc("POST /api/v1/auth/refresh", s.handleAuthRefresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.handleAuthLogout)
+	mux.HandleFunc("GET /api/v1/auth/sessoes", s.handleListarSessoes)
+	mux.HandleFunc("DELETE /api/v1/auth/sessoes", s.handleEncerrarOutrasSessoes)
+	mux.HandleFunc("DELETE /api/v1/auth/sessoes/{id}", s.handleEncerrarSessao)
 	mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
 	mux.HandleFunc("PUT /api/v1/auth/senha", s.handleTrocarSenha)
 	mux.HandleFunc("PUT /api/v1/auth/idioma", s.handleDefinirIdioma)
@@ -167,14 +171,28 @@ func (s *Servidor) responderLogin(w http.ResponseWriter, r *http.Request, u db.U
 }
 
 // handleAuthLogin valida e-mail + senha e devolve token + usuário. Falha → 401.
+// Falhas repetidas pelo mesmo IP ou para o mesmo e-mail bloqueiam novas
+// tentativas por um tempo (429 + Retry-After) — proteção contra força bruta.
 func (s *Servidor) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	var req reqLogin
 	if !decodificarCorpo(w, r, &req) {
 		return
 	}
+	chaveIP := "ip:" + s.ipDaRequisicao(r)
+	chaveEmail := "email:" + strings.ToLower(strings.TrimSpace(req.Email))
+	for _, chave := range []string{chaveIP, chaveEmail} {
+		if bloqueado, espera := s.limiteLogin.bloqueado(chave); bloqueado {
+			segundos := strconv.Itoa(int((espera + time.Second - 1) / time.Second))
+			w.Header().Set("Retry-After", segundos)
+			erroT(w, r, http.StatusTooManyRequests, "muitas_tentativas", "erro.muitas_tentativas", "segundos", segundos)
+			return
+		}
+	}
 	u, err := s.banco.AutenticarUsuario(r.Context(), req.Email, req.Senha)
 	if err != nil {
 		if errors.Is(err, db.ErrCredenciais) {
+			s.limiteLogin.registrarFalha(chaveIP)
+			s.limiteLogin.registrarFalha(chaveEmail)
 			erroT(w, r, http.StatusUnauthorized, "credenciais_invalidas", "erro.credenciais_invalidas")
 			return
 		}
@@ -182,6 +200,9 @@ func (s *Servidor) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
+	// Sucesso zera as falhas do e-mail (o dono acertou); o IP segue contando na
+	// janela — um NAT com um invasor não é absolvido por um vizinho que acertou.
+	s.limiteLogin.limpar(chaveEmail)
 	s.responderLogin(w, r, u, http.StatusOK)
 }
 

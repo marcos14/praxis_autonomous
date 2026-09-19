@@ -184,3 +184,76 @@ func (s *Servidor) revogarSessoesDoUsuario(r *http.Request, userID, exceto int64
 		s.log.Error("revogar sessões do usuário", "usuario", userID, "erro", err)
 	}
 }
+
+// usuarioComSessoes devolve o id do usuário logado; principais de token de API
+// e bootstrap não têm sessões → responde 400 e devolve ok=false.
+func usuarioComSessoes(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	pr := principalDaRequisicao(r)
+	if pr.userID <= 0 {
+		erroT(w, r, http.StatusBadRequest, "invalido", "erro.credencial_sem_sessao")
+		return 0, false
+	}
+	return pr.userID, true
+}
+
+// handleListarSessoes lista as sessões ATIVAS do próprio usuário (tela "Minha
+// conta"), marcando a sessão da requisição (pelo cookie) como atual.
+func (s *Servidor) handleListarSessoes(w http.ResponseWriter, r *http.Request) {
+	uid, ok := usuarioComSessoes(w, r)
+	if !ok {
+		return
+	}
+	sessoes, err := s.banco.ListarSessoesDoUsuario(r.Context(), uid)
+	if err != nil {
+		s.log.Error("listar sessões", "erro", err)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
+		return
+	}
+	atual := s.sessaoAtualID(r, s.prazosAuth(r.Context()).Sessao.Inatividade)
+	for i := range sessoes {
+		sessoes[i].Atual = sessoes[i].ID == atual
+	}
+	responderJSON(w, http.StatusOK, sessoes)
+}
+
+// handleEncerrarSessao revoga uma sessão do próprio usuário (inclusive a atual,
+// se for o caso — o cliente decide o que fazer). Sessão de outro usuário ou
+// inexistente → 404.
+func (s *Servidor) handleEncerrarSessao(w http.ResponseWriter, r *http.Request) {
+	uid, ok := usuarioComSessoes(w, r)
+	if !ok {
+		return
+	}
+	id, ok := idDaRota(w, r)
+	if !ok {
+		return
+	}
+	if err := s.banco.RevogarSessao(r.Context(), id, uid); err != nil {
+		if errors.Is(err, db.ErrNaoEncontrado) {
+			erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.sessao_nao_encontrada")
+			return
+		}
+		s.log.Error("encerrar sessão", "erro", err)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleEncerrarOutrasSessoes revoga todas as sessões do usuário menos a da
+// requisição (identificada pelo cookie; sem cookie, revoga todas — o JWT em
+// mãos ainda vale até vencer). Devolve quantas foram encerradas.
+func (s *Servidor) handleEncerrarOutrasSessoes(w http.ResponseWriter, r *http.Request) {
+	uid, ok := usuarioComSessoes(w, r)
+	if !ok {
+		return
+	}
+	atual := s.sessaoAtualID(r, s.prazosAuth(r.Context()).Sessao.Inatividade)
+	n, err := s.banco.RevogarSessoesDoUsuario(r.Context(), uid, atual)
+	if err != nil {
+		s.log.Error("encerrar outras sessões", "erro", err)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
+		return
+	}
+	responderJSON(w, http.StatusOK, map[string]int64{"revogadas": n})
+}
