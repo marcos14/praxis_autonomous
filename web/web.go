@@ -15,7 +15,7 @@ import (
 // os nomes literais (index.html, app.css, js/…); use Assets para obter um FS já
 // com esses arquivos na raiz.
 //
-//go:embed index.html app.css js locales
+//go:embed index.html app.css js locales manifest.webmanifest sw.js icons
 var arquivos embed.FS
 
 // Assets é o sistema de arquivos com os assets do frontend na raiz

@@ -2,8 +2,18 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Praxis Autonomous</title>
+<!-- PWA (M3): instalável, com ícone e cor de tema; o service worker é
+     registrado pelo app.js. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1a1a19">
+<meta name="application-name" content="Praxis">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Praxis">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>

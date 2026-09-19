@@ -42,6 +42,53 @@ func TestAssetsEmbutidosServem(t *testing.T) {
 	}
 }
 
+// TestServiceWorkerEManifest cobre o PWA (M3): o SW sai com a versão e a lista
+// do shell injetadas, sem cache do navegador e sem se listar; o manifest sai com
+// o tipo MIME certo; os ícones são servidos.
+func TestServiceWorkerEManifest(t *testing.T) {
+	srv := Novo(Opcoes{})
+	get := func(caminho string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, caminho, nil))
+		return rec
+	}
+
+	rec := get("/sw.js")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /sw.js: status %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") {
+		t.Errorf("Content-Type do SW = %q", ct)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("Cache-Control do SW = %q, quero no-cache", cc)
+	}
+	corpo := rec.Body.String()
+	for _, trecho := range []string{`const VERSAO = "dev";`, `const SHELL = [`, `"/"`, `"/app.css"`, `"/js/app.js"`, `"/manifest.webmanifest"`, `"/icons/icon-192.png"`, `addEventListener("fetch"`} {
+		if !strings.Contains(corpo, trecho) {
+			t.Errorf("SW sem %q", trecho)
+		}
+	}
+	if strings.Contains(corpo, `"/sw.js"`) && strings.Index(corpo, `"/sw.js"`) < strings.Index(corpo, "addEventListener") {
+		t.Error("o SW não deve se listar no shell")
+	}
+
+	rec = get("/manifest.webmanifest")
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/manifest+json") {
+		t.Fatalf("manifest: status %d, Content-Type %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Body.String(), `"short_name": "Praxis"`) {
+		t.Error("manifest sem short_name")
+	}
+
+	for _, ic := range []string{"/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png"} {
+		rec = get(ic)
+		if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "image/png") {
+			t.Errorf("%s: status %d, Content-Type %q", ic, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
+}
+
 // TestAssetInexistente404 confirma que um asset inexistente cai em 404 (o file
 // server não vaza para outras rotas).
 func TestAssetInexistente404(t *testing.T) {
