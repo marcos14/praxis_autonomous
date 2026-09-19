@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1 concluído**; **M2: banco (F1) e API (F2) con
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M2.F3.E3`
+**Próxima etapa:** `M2.F4.E1`
 
 **Estado funcional entre F2 e F3:** o backend já aplica a regra de dono (itens novos nascem privados; os antigos ficaram públicos pelo backfill), mas a UI ainda não tem seletor de visibilidade nem filtro. Até a F3, tudo que um usuário criar pela tela fica privado e só ele e os admins veem; para compartilhar é preciso chamar `PUT /…/{id}/visibilidade` pela API.
 
@@ -34,7 +34,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M2.F2.E2 API: demandas, board, home, overlap, ordem, SSE, herança do planejamento — `GET /demands` e `/board` com `visaoComEscopo`; pendências, atividade recente, sobreposições e SSE `/events` com `visaoDaRequisicao` (métricas seguem só com ACL, limitação registrada); `PUT /demands/ordem` responde 404 a id fora da visão; `/planejamentos/{id}/demandas` só lista vínculos visíveis; `PUT /demands/{id}/visibilidade` (mapeada como `""` em `permissaoMutacao`); criação aceita `visibilidade` nos dois modos (chat e fases) e `CriarDemandaComChat` no store também normaliza; demanda de planejamento herda a visibilidade dele; IDE web usa `DemandaVisivel`; testes em `visao_demandas_api_test.go`; testes antigos de ACL/RBAC ajustados (item privado alheio agora é 404)
 - [x] M2.F3.E1 UI: tipo `select` na config, campos sem dono, seletor nos 3 formulários, i18n — a config já tinha `opcoes`/`opcoesDe` (viram `<select>`), então só entraram os campos `sem_dono_visibilidade` (opções fixas) e `sem_dono_grupo_id` (grupos de usuários carregados em `listasDinamicas`) no grupo "Visibilidade"; módulo novo `web/js/visibilidade.js` (seletor com "grupo" desabilitado sem grupo, última escolha lembrada, pills de visibilidade e de autor, `filtroEscopo` persistido por tela, `controleVisibilidade`); seletor em Nova demanda, nova consulta e novo planejamento; `api.js` com `escopo` nas 4 listagens e `definirVisibilidade*`; 23 chaves i18n nos 4 catálogos web (o teste de paridade exige chaves literais em `t("…")`)
 - [x] M2.F3.E2 UI: consultas e planejamentos — pill, autor, filtro, alterar visibilidade — filtro segmentado acima das listas (`filtro-consultas`/`filtro-planejamentos`, lembrado por tela, `?escopo=`), pills 🔒/👥/🌐 e "por Fulano" nos cards, `controleVisibilidade` no cabeçalho do painel (dono ou admin) que recarrega a lista ao mudar
-- [ ] M2.F3.E3 UI: demandas e kanban — pill, filtro, alterar no card
+- [x] M2.F3.E3 UI: demandas e kanban — pill, filtro, alterar no card — filtro de escopo ao lado de projeto/status (Demandas) e projeto/motor (Kanban), pills de visibilidade e autor na lista e nos cards do quadro, select de "quem enxerga" no cabeçalho do card da demanda (dono/admin; os demais veem a pill)
 - [ ] M2.F4.E1 Fechamento: docs, manual, roteiro manual
 
 ### M3 — PWA + layout móvel

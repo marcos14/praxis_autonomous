@@ -5,9 +5,10 @@
 import { api } from "./api.js";
 import { el, limpar, bannerErro, toast, renderMarkdown, autoCrescer } from "./ui.js";
 import { t, tn, idiomaAtivo } from "./i18n.js";
+import { pillVisibilidade, pillAutor, controleVisibilidade, filtroEscopo, paramEscopo, escopoSalvo } from "./visibilidade.js";
 
 let projetos = [];
-let filtro = { project: "", status: "" };
+let filtro = { project: "", status: "", escopo: escopoSalvo("demandas") };
 
 // setProjetos permite a outras telas (kanban, Home) preencher a lista de
 // projetos usada pelo card modal antes de chamar abrirCard, para o card exibir
@@ -91,14 +92,18 @@ function renderFiltros() {
     selStatus.append(o);
   }
 
-  cont.append(selProj, selStatus);
+  // Todos · Meus · Do grupo (M2), lembrado por tela.
+  const escopo = filtroEscopo("demandas", (e) => { filtro.escopo = e; recarregarLista(); });
+  filtro.escopo = escopo.valor();
+
+  cont.append(selProj, selStatus, escopo.no);
 }
 
 async function recarregarLista() {
   const lista = limpar(document.getElementById("lista-demandas"));
   let demandas;
   try {
-    demandas = (await api.listarDemandas(filtro)) || [];
+    demandas = (await api.listarDemandas({ ...filtro, escopo: paramEscopo(filtro.escopo) })) || [];
   } catch (e) {
     bannerErro(t("demandas.falha_carregar", { erro: e.message }));
     return;
@@ -115,6 +120,8 @@ async function recarregarLista() {
       el("div", { class: "title", text: `#${d.id} — ${d.titulo}` }),
       el("div", { class: "meta" },
         pillStatus(d.status),
+        pillVisibilidade(d),
+        pillAutor(d),
         el("span", { class: "pill", text: d.budget_usd ? t("demandas.custo_de", { custo: dinheiro(d.custo_usd), orcamento: dinheiro(d.budget_usd) }) : dinheiro(d.custo_usd) }),
       ),
     );
@@ -260,6 +267,9 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
       ),
       el("div", { class: "modal-actions" },
         pillStatus(dados.status),
+        // Quem enxerga (M2): o dono/admin troca no select; os demais veem a pill.
+        controleVisibilidade(dados, api.definirVisibilidadeDemanda) || pillVisibilidade(dados),
+        pillAutor(dados),
         el("span", { class: "pill", text: dinheiro(dados.custo_usd) + (dados.budget_usd ? " de " + dinheiro(dados.budget_usd) : "") }),
         dados.erro ? el("span", { class: "pill", style: "color:var(--critical)", text: t("demandas.erro"), title: dados.erro }) : null,
         ...botoesAcao(dados, overlay),

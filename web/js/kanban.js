@@ -7,6 +7,7 @@ import { api } from "./api.js";
 import { el, limpar, bannerErro } from "./ui.js";
 import { abrirCard, setProjetos, pillStatus, dinheiro, STATUS } from "./demandas.js";
 import { t, tn } from "./i18n.js";
+import { pillVisibilidade, pillAutor, filtroEscopo, paramEscopo, escopoSalvo } from "./visibilidade.js";
 
 // COLUNAS é a ordem das colunas do quadro (subconjunto/ordem dos status).
 const COLUNAS = [
@@ -19,7 +20,7 @@ const COLUNAS = [
 const STATUS_ALERTA = new Set(["aguardando_respostas", "aguardando_aprovacao", "conflito"]);
 
 let projetos = [];
-let filtro = { project: "", motor: "" };
+let filtro = { project: "", motor: "", escopo: escopoSalvo("kanban") };
 let sseEventos = null; // EventSource global (fechado ao sair da tela)
 let recarregarTimer = null;
 
@@ -53,7 +54,10 @@ function renderFiltros() {
   // O filtro de motor é preenchido a partir dos motores presentes no board.
   const selMotor = el("select", { id: "filtro-motor", onchange: (e) => { filtro.motor = e.target.value; renderColunas(cacheBoard); } },
     el("option", { value: "", text: t("kanban.todos_motores") }));
-  cont.append(selProj, selMotor);
+  // Todos · Meus · Do grupo (M2), lembrado por tela.
+  const escopo = filtroEscopo("kanban", (e) => { filtro.escopo = e; recarregar(); });
+  filtro.escopo = escopo.valor();
+  cont.append(selProj, selMotor, escopo.no);
 }
 
 let cacheBoard = [];
@@ -62,7 +66,7 @@ let cacheOverlaps = {}; // demandID (string) → sobreposições[]
 async function recarregar() {
   let board;
   try {
-    board = (await api.board({ project: filtro.project })) || [];
+    board = (await api.board({ project: filtro.project, escopo: paramEscopo(filtro.escopo) })) || [];
   } catch (e) {
     bannerErro(t("kanban.falha_quadro", { erro: e.message }));
     return;
@@ -160,7 +164,7 @@ function cardEl(d) {
     card.append(el("div", { class: "kb-prog-txt", text: t("kanban.fases", { feitas: d.fases_concluidas, total: d.fases_total }) }));
   }
 
-  const meta = el("div", { class: "meta" }, pillStatus(d.status));
+  const meta = el("div", { class: "meta" }, pillStatus(d.status), pillVisibilidade(d), pillAutor(d));
   if (d.motor) meta.append(el("span", { class: "pill", text: d.motor }));
   meta.append(el("span", { class: "pill", text: dinheiro(d.custo_usd) }));
   if (alerta) meta.append(el("span", { class: "pill alerta-pill", text: t("kanban.precisa") }));
