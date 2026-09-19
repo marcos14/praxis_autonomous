@@ -121,8 +121,8 @@ func (s *Servidor) handleCriarSessaoIDE(w http.ResponseWriter, r *http.Request) 
 	}
 	// ACL de projetos: o id veio no corpo, então a visibilidade não foi checada
 	// pelo middleware (que só olha o caminho). Responde 404 como lá.
-	if uid := filtroVisibilidade(pr); uid != nil {
-		ve, err := s.banco.UsuarioVeDemanda(r.Context(), *uid, dem.ID)
+	if v := s.visaoDe(r.Context(), pr); v.ACL != nil || v.Dono != nil {
+		ve, err := s.banco.DemandaVisivel(r.Context(), dem.ID, v)
 		if err != nil {
 			s.log.Error("checar visibilidade para IDE", "erro", err)
 			erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")

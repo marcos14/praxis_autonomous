@@ -144,6 +144,9 @@ func (d *DB) CriarDemandaComChat(ctx context.Context, dem Demanda, primeira Mens
 	if !PapelValido(primeira.Papel) {
 		return Demanda{}, MensagemChat{}, ErrPapelInvalido
 	}
+	if err := normalizarVisibilidade(&dem); err != nil {
+		return Demanda{}, MensagemChat{}, err
+	}
 
 	tx, err := d.Escritor.BeginTx(ctx, nil)
 	if err != nil {
@@ -154,12 +157,12 @@ func (d *DB) CriarDemandaComChat(ctx context.Context, dem Demanda, primeira Mens
 	row := tx.QueryRowContext(ctx, `
 		INSERT INTO demands
 			(project_id, titulo, origem, origem_ref, status, prioridade,
-			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por, visibilidade)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em, atualizado_em`,
 		dem.ProjectID, dem.Titulo, dem.Origem, dem.OrigemRef, dem.Status, dem.Prioridade,
 		dem.Branch, dem.WorktreePath, dem.PlanoMD, dem.CustoUSD, dem.BudgetUSD, dem.Erro,
-		nullInt(dem.CriadoPor),
+		nullInt(dem.CriadoPor), dem.Visibilidade,
 	)
 	if err := row.Scan(&dem.ID, &dem.CriadoEm, &dem.AtualizadoEm); err != nil {
 		return Demanda{}, MensagemChat{}, traduzirErroFK(err)

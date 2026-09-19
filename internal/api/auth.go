@@ -381,6 +381,9 @@ func permissaoMutacao(seg []string, resto string) string {
 				// A permissão varia com a ação (operar vs. integrar): o handler
 				// decide. Aqui basta estar autenticado.
 				return ""
+			case "visibilidade":
+				// Quem enxerga a demanda: o handler exige dono ou admin.
+				return ""
 			}
 		}
 		return db.PermCuringa // mutação inesperada em demands: só admin

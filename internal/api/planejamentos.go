@@ -109,6 +109,22 @@ func (s *Servidor) handleListarDemandasDoPlanejamento(w http.ResponseWriter, r *
 		s.responderErroPlanejamento(w, r, err)
 		return
 	}
+	// Uma demanda gerada pode ter visibilidade mais restrita que o planejamento
+	// (o dono pode ter mudado): só lista as que este usuário enxerga.
+	if v := s.visaoDaRequisicao(r); v.ACL != nil || v.Dono != nil {
+		visiveis := vinculos[:0]
+		for _, vinc := range vinculos {
+			ve, err := s.banco.DemandaVisivel(r.Context(), vinc.DemandID, v)
+			if err != nil {
+				s.responderErroPlanejamento(w, r, err)
+				return
+			}
+			if ve {
+				visiveis = append(visiveis, vinc)
+			}
+		}
+		vinculos = visiveis
+	}
 	resp := respDemandasDoPlanejamento{Demandas: vinculos}
 	if doc, err := s.banco.ObterDocumentoPlanejamento(r.Context(), plan.ID, "prd.md", 0); err == nil {
 		resp.PRDRevAtual = doc.Revisao
@@ -723,13 +739,15 @@ func (s *Servidor) handleCriarDemandaDePlanejamento(w http.ResponseWriter, r *ht
 	}
 
 	dem := db.Demanda{
-		ProjectID: projectID,
-		Titulo:    titulo,
-		Origem:    db.OrigemUI,
-		OrigemRef: fmt.Sprintf("planejamento #%d", plan.ID),
-		Status:    db.StatusDemandaRecebida,
-		Branch:    branch,
-		CriadoPor: usuarioDaRequisicao(r),
+		// A demanda herda quem enxerga o planejamento que a gerou.
+		Visibilidade: plan.Visibilidade,
+		ProjectID:    projectID,
+		Titulo:       titulo,
+		Origem:       db.OrigemUI,
+		OrigemRef:    fmt.Sprintf("planejamento #%d", plan.ID),
+		Status:       db.StatusDemandaRecebida,
+		Branch:       branch,
+		CriadoPor:    usuarioDaRequisicao(r),
 	}
 	criada, _, err := s.banco.CriarDemandaComChat(r.Context(), dem, db.MensagemChat{
 		Papel:    db.PapelUser,

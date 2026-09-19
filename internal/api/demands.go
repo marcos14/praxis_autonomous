@@ -46,6 +46,8 @@ type reqDemanda struct {
 	// (gitops.NormalizarBranch), pois push/worktree so operam nesse prefixo.
 	Branch string        `json:"branch"`
 	Fases  []reqFaseNova `json:"fases"`
+	// Visibilidade: privada (default) | grupo | publica — quem enxerga a demanda.
+	Visibilidade string `json:"visibilidade"`
 }
 
 // respDemanda serializa a demanda criada junto de suas fases.
@@ -70,6 +72,7 @@ func (s *Servidor) registrarRotasDemandas(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/demands/{id}/phases/{codigo}/complete", s.handleConcluirFaseHumana)
 	mux.HandleFunc("POST /api/v1/demands/{id}/phases/{codigo}/restart", s.handleReiniciarFase)
 	mux.HandleFunc("POST /api/v1/demands/{id}/approve-plan", s.handleAprovarPlano)
+	mux.HandleFunc("PUT /api/v1/demands/{id}/visibilidade", s.handleDefinirVisibilidadeDemanda)
 }
 
 // handleCriarDemanda cria uma demanda sob um projeto, em um de dois modos:
@@ -107,6 +110,11 @@ func (s *Servidor) handleCriarDemanda(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dem.CriadoPor = usuarioDaRequisicao(r)
+	visibilidade, okVis := visibilidadeDoCorpo(w, r, req.Visibilidade)
+	if !okVis {
+		return
+	}
+	dem.Visibilidade = visibilidade
 
 	criada, criadas, err := s.banco.CriarDemandaComFases(r.Context(), dem, fases)
 	if err != nil {
@@ -147,17 +155,22 @@ func (s *Servidor) criarDemandaChat(w http.ResponseWriter, r *http.Request, proj
 		return
 	}
 
+	visibilidade, okVis := visibilidadeDoCorpo(w, r, req.Visibilidade)
+	if !okVis {
+		return
+	}
 	dem := db.Demanda{
-		ProjectID:  projectID,
-		Titulo:     titulo,
-		Origem:     origem,
-		OrigemRef:  strings.TrimSpace(req.OrigemRef),
-		Status:     db.StatusDemandaRecebida,
-		Prioridade: req.Prioridade,
-		PlanoMD:    req.PlanoMD,
-		BudgetUSD:  req.BudgetUSD,
-		Branch:     branch,
-		CriadoPor:  usuarioDaRequisicao(r),
+		ProjectID:    projectID,
+		Titulo:       titulo,
+		Origem:       origem,
+		OrigemRef:    strings.TrimSpace(req.OrigemRef),
+		Status:       db.StatusDemandaRecebida,
+		Prioridade:   req.Prioridade,
+		PlanoMD:      req.PlanoMD,
+		BudgetUSD:    req.BudgetUSD,
+		Branch:       branch,
+		CriadoPor:    usuarioDaRequisicao(r),
+		Visibilidade: visibilidade,
 	}
 	criada, _, err := s.banco.CriarDemandaComChat(r.Context(), dem, db.MensagemChat{
 		Papel:    db.PapelUser,
@@ -225,7 +238,11 @@ func (s *Servidor) handleListarDemandas(w http.ResponseWriter, r *http.Request) 
 		filtro.ProjectID = &pid
 	}
 	filtro.Status = strings.TrimSpace(r.URL.Query().Get("status"))
-	filtro.Visao = db.Visao{ACL: visibilidadeDaRequisicao(r)}
+	visao, ok := s.visaoComEscopo(w, r)
+	if !ok {
+		return
+	}
+	filtro.Visao = visao
 
 	demandas, err := s.banco.ListarDemandas(r.Context(), filtro)
 	if err != nil {
@@ -233,6 +250,28 @@ func (s *Servidor) handleListarDemandas(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	responderJSON(w, http.StatusOK, demandas)
+}
+
+// handleDefinirVisibilidadeDemanda muda quem enxerga a demanda (privada |
+// grupo | publica). Só o criador ou um admin; demanda sem criador (token de
+// API), só o admin.
+func (s *Servidor) handleDefinirVisibilidadeDemanda(w http.ResponseWriter, r *http.Request) {
+	dem, ok := s.obterDemandaOu404(w, r)
+	if !ok {
+		return
+	}
+	if !podeAlterarVisibilidade(w, r, dem.CriadoPor) {
+		return
+	}
+	vis, ok := lerVisibilidadeDoPut(w, r)
+	if !ok {
+		return
+	}
+	if err := s.banco.DefinirVisibilidadeDemanda(r.Context(), dem.ID, vis); err != nil {
+		s.responderErroDemanda(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleObterDemanda devolve a demanda com suas fases (aba Plano & Fases do card).

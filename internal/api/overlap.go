@@ -127,7 +127,7 @@ func intersecao(a, b map[string]bool) []string {
 // handleOverlaps devolve o mapa demandID → sobreposições (para os badges do
 // kanban). Demandas sem sobreposição não aparecem no mapa.
 func (s *Servidor) handleOverlaps(w http.ResponseWriter, r *http.Request) {
-	mapa, err := s.mapaSobreposicoes(r.Context(), db.Visao{ACL: visibilidadeDaRequisicao(r)})
+	mapa, err := s.mapaSobreposicoes(r.Context(), s.visaoDaRequisicao(r))
 	if err != nil {
 		s.responderErroDemanda(w, r, err)
 		return

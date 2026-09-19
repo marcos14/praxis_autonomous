@@ -20,14 +20,14 @@ func TestACLDeProjetosNaAPI(t *testing.T) {
 	// Demanda em cada projeto (como admin).
 	rec := fazerReqToken(t, srv, http.MethodPost,
 		"/api/v1/projects/"+strconv.FormatInt(projA, 10)+"/demands", admin,
-		map[string]any{"prd": "demanda do restrito", "origem": "api"})
+		map[string]any{"prd": "demanda do restrito", "origem": "api", "visibilidade": "publica"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("demanda projA: status %d (corpo=%q)", rec.Code, rec.Body.String())
 	}
 	demA := decodDemanda(t, rec)
 	rec = fazerReqToken(t, srv, http.MethodPost,
 		"/api/v1/projects/"+strconv.FormatInt(projB, 10)+"/demands", admin,
-		map[string]any{"prd": "demanda do aberto", "origem": "api"})
+		map[string]any{"prd": "demanda do aberto", "origem": "api", "visibilidade": "publica"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("demanda projB: status %d", rec.Code)
 	}

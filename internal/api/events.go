@@ -67,7 +67,7 @@ func (s *Servidor) handleEventosGlobais(w http.ResponseWriter, r *http.Request) 
 
 	ctx, cancelar := contextoDoStream(r)
 	defer cancelar()
-	s.transmitirEventos(ctx, w, flusher, cursor, db.Visao{ACL: visibilidadeDaRequisicao(r)})
+	s.transmitirEventos(ctx, w, flusher, cursor, s.visaoDaRequisicao(r))
 	avisarTokenExpirado(ctx, r, w, flusher)
 }
 

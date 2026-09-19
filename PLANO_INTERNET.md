@@ -1,12 +1,14 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — **M1 concluído** (código, testes e docs); próxima etapa é a primeira do M2.
+Atualizado em: 2026-09-19 — **M1 concluído**; **M2: banco (F1) e API (F2) concluídos**, falta o frontend (F3) e o fechamento (F4).
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M2.F2.E2`
+**Próxima etapa:** `M2.F3.E1`
+
+**Estado funcional entre F2 e F3:** o backend já aplica a regra de dono (itens novos nascem privados; os antigos ficaram públicos pelo backfill), mas a UI ainda não tem seletor de visibilidade nem filtro. Até a F3, tudo que um usuário criar pela tela fica privado e só ele e os admins veem; para compartilhar é preciso chamar `PUT /…/{id}/visibilidade` pela API.
 
 **Pendência do M1 para o usuário (não automatizável):** roteiro manual no navegador — com `sessao_jwt_min` em 15 min (mínimo da UI) ou `1` gravado via API, navegar sem cair e ver um único `/auth/refresh` por renovação; reiniciar o servidor com a página aberta e vê-la voltar sozinha; revogar a sessão no banco com texto digitado no chat e confirmar o portão por cima com o texto preservado; instalar em celular e checar o retorno ao primeiro plano. O backend foi validado também num servidor real com `curl` (setup → refresh por cookie → sessões → logout → refresh 401).
 
@@ -29,7 +31,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M2.F1.E2 Consultas e planejamentos filtrados no banco (+ `criado_por_nome`) — `planejamentos.visibilidade` (struct/scan/insert/`DefinirVisibilidadePlanejamento`), `FiltroPlanejamentos{ProjectID, GroupID, Visao}`; ACL de projeto OU grupo no SQL (`condAcessoAlvo`/`anexarCondAcessoAlvo` em `project_access.go`, grupo só visível com todos os membros visíveis) nas duas listagens; `LEFT JOIN users` → `CriadoPorNome`; `ConsultaVisivel`/`PlanejamentoVisivel(ctx, id, Visao)` (inexistente → true); os antigos `UsuarioVe*` e os filtros em memória da API saem na F2.E1
 - [x] M2.F1.E3 Demandas e eventos com a regra de dono no banco — `demands.visibilidade` (struct/scan/2 inserts com default+validação), `FiltroDemandas.Visao` no lugar de `VisiveisPara`, `ListarDemandas`/`ListarDemandasResumo` com `LEFT JOIN users` (`CriadoPorNome`) e dono/escopo, `ListarDemandasPorStatus(…, Visao)`, `DemandaVisivel`, `DefinirVisibilidadeDemanda`; `FiltroEventos.Visao` e `EventosApos(…, Visao)` com `anexarCondEventos` (evento de demanda invisível não passa); `notify.FonteEventos` e chamadores da API ajustados (provisoriamente `Visao{ACL: uid}` até a F2)
 - [x] M2.F2.E1 API: `visaoDaRequisicao`, middleware, consultas/planejamentos, PUT visibilidade, config — `internal/api/visao.go` (`visaoDe`/`visaoDaRequisicao`/`visaoComEscopo` com `?escopo=`, cache de 30 s da config `sem_dono_*` invalidado no PUT da config, `validarConfigSemDono`, `podeAlterarVisibilidade`); `autorizarVisibilidade` usa `DemandaVisivel`/`ConsultaVisivel`/`PlanejamentoVisivel`; listagens de consultas/planejamentos sem filtro em memória (`filtrar*Visiveis` removidos); campo `visibilidade` nos POST; `PUT /consultas/{id}/visibilidade` e `PUT /planejamentos/{id}/visibilidade`; 5 chaves i18n; `visao_api_test.go` (consultas, planejamentos, itens sem dono nos 3 modos da config). Os `UsuarioVe*` antigos do banco ficam (ainda usados em testes e no `ide.go` até a E2)
-- [ ] M2.F2.E2 API: demandas, board, home, overlap, ordem, SSE, herança do planejamento
+- [x] M2.F2.E2 API: demandas, board, home, overlap, ordem, SSE, herança do planejamento — `GET /demands` e `/board` com `visaoComEscopo`; pendências, atividade recente, sobreposições e SSE `/events` com `visaoDaRequisicao` (métricas seguem só com ACL, limitação registrada); `PUT /demands/ordem` responde 404 a id fora da visão; `/planejamentos/{id}/demandas` só lista vínculos visíveis; `PUT /demands/{id}/visibilidade` (mapeada como `""` em `permissaoMutacao`); criação aceita `visibilidade` nos dois modos (chat e fases) e `CriarDemandaComChat` no store também normaliza; demanda de planejamento herda a visibilidade dele; IDE web usa `DemandaVisivel`; testes em `visao_demandas_api_test.go`; testes antigos de ACL/RBAC ajustados (item privado alheio agora é 404)
 - [ ] M2.F3.E1 UI: tipo `select` na config, campos sem dono, seletor nos 3 formulários, i18n
 - [ ] M2.F3.E2 UI: consultas e planejamentos — pill, autor, filtro, alterar visibilidade
 - [ ] M2.F3.E3 UI: demandas e kanban — pill, filtro, alterar no card

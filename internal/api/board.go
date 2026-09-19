@@ -30,7 +30,11 @@ func (s *Servidor) handleBoard(w http.ResponseWriter, r *http.Request) {
 		filtro.ProjectID = &pid
 	}
 	filtro.Status = strings.TrimSpace(r.URL.Query().Get("status"))
-	filtro.Visao = db.Visao{ACL: visibilidadeDaRequisicao(r)}
+	visao, ok := s.visaoComEscopo(w, r)
+	if !ok {
+		return
+	}
+	filtro.Visao = visao
 
 	resumos, err := s.banco.ListarDemandasResumo(r.Context(), filtro)
 	if err != nil {
@@ -50,6 +54,21 @@ func (s *Servidor) handleReordenarDemandas(w http.ResponseWriter, r *http.Reques
 	if len(req.IDs) == 0 {
 		erroT(w, r, http.StatusBadRequest, "invalido", "erro.ordem_sem_ids")
 		return
+	}
+	// Os ids vieram no corpo (o middleware só checa o caminho): uma demanda que
+	// este usuário não enxerga não pode ser reordenada por ele — 404, como lá.
+	if v := s.visaoDaRequisicao(r); v.ACL != nil || v.Dono != nil {
+		for _, id := range req.IDs {
+			ve, err := s.banco.DemandaVisivel(r.Context(), id, v)
+			if err != nil {
+				s.responderErroDemanda(w, r, err)
+				return
+			}
+			if !ve {
+				erroT(w, r, http.StatusNotFound, "nao_encontrado", "erro.demanda_nao_encontrada")
+				return
+			}
+		}
 	}
 	if err := s.banco.ReordenarDemandas(r.Context(), req.IDs); err != nil {
 		s.responderErroDemanda(w, r, err)
