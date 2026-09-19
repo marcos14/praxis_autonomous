@@ -36,6 +36,7 @@ type Despachante struct {
 	fonte     FonteEventos
 	cfg       ProvedorConfig
 	override  ProvedorOverride
+	usuarios  FonteUsuarios // nil = sem notificações por usuário (só webhooks)
 	notif     *Notificador
 	intervalo time.Duration
 	log       func(string)
@@ -51,6 +52,7 @@ type OpcoesDespachante struct {
 	Fonte     FonteEventos
 	Config    ProvedorConfig
 	Override  ProvedorOverride // nil = sem override por projeto (só-global)
+	Usuarios  FonteUsuarios    // nil = sem notificações por usuário (só webhooks)
 	Notif     *Notificador     // nil = Novo()
 	Intervalo time.Duration    // <=0 = intervaloPollPadrao
 	Log       func(string)
@@ -74,7 +76,7 @@ func NovoDespachante(o OpcoesDespachante) *Despachante {
 	if n.Aviso == nil {
 		n.Aviso = func(msg string) { logf("notify: " + msg) }
 	}
-	return &Despachante{fonte: o.Fonte, cfg: o.Config, override: o.Override, notif: n, intervalo: iv, log: logf, aoIniciar: o.AoIniciar}
+	return &Despachante{fonte: o.Fonte, cfg: o.Config, override: o.Override, usuarios: o.Usuarios, notif: n, intervalo: iv, log: logf, aoIniciar: o.AoIniciar}
 }
 
 // Rodar tail-a a tabela de eventos até ctx ser cancelado. O cursor inicial é o
@@ -116,10 +118,13 @@ func (d *Despachante) processar(ctx context.Context, cursor int64) int64 {
 	// decidir se há para onde enviar.
 	notificar := AlgumCanalAtivo(cfg)
 	efetivaPorProjeto := map[int64]Config{} // cache dentro do ciclo (evita relê-lo por evento)
+	ciclo := novoCiclo()                    // donos e preferências lidos uma vez por ciclo
 	for _, ev := range novos {
 		if notificar {
 			d.notif.EnviarEvento(ctx, d.configDoEvento(ctx, cfg, ev, efetivaPorProjeto), ev.Tipo, ev.Titulo, ev.Detalhe)
 		}
+		// Notificação por usuário (M4): o dono do item, se tiver o tipo ligado.
+		d.notificarUsuario(ctx, ev, ciclo)
 		cursor = ev.ID
 	}
 	return cursor

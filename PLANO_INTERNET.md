@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1, M2 e M3 concluídos** (código, testes e doc
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M4.F3.E1`
+**Próxima etapa:** `M4.F3.E2`
 
 **Pendência do M3 para o usuário (não automatizável):** auditoria Lighthouse "PWA" sem erros; instalar em Windows (Chrome/Edge), Android (Chrome) e iOS (Safari) com HTTPS válido; passar por todas as views a 400 px conferindo que nada rola na horizontal, que o ← volta da lista, que o kanban desliza coluna a coluna e que o card da demanda abre em tela cheia. Os handlers do SW e do manifest têm teste Go; o comportamento no navegador não.
 
@@ -53,7 +53,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M4.F1.E2 Eventos com `consulta_id`/`planejamento_id`, `demanda_concluida`, catálogo — `Evento.ConsultaID/PlanejamentoID` (scan/insert), `anexarCondEventos` também esconde eventos de consulta/planejamento invisíveis; consultor e estrategista preenchem o id; executor registra `demanda_concluida` (i18n `evento.demanda_concluida[.detalhe]` nos 4 catálogos); `notify-events.js` ganha `demanda_concluida` e o flag `padrao_usuario` (os demais flags entram na F5)
 - [x] M4.F2.E1 `internal/webpush`: VAPID + `aes128gcm` com vetores das RFCs — `GerarChaves`, `AssinarVAPID` (ES256, exp ≤ 24 h), `Cifrar` (ECDH P-256 efêmero + HKDF + AES-128-GCM, um registro, rs 4096), `Enviar` (headers aes128gcm/TTL/Urgency/Topic/Authorization vapid) e `AssinaturaMorta`; teste reproduz o vetor do Apêndice A da RFC 8291 byte a byte, ida e volta com chaves novas, verificação ES256 e envio contra httptest
 - [x] M4.F2.E2 Chaves VAPID no boot, config `push_contato` — `serve` chama `ObterOuGerarVAPID` com `webpush.GerarChaves` (best-effort, como o segredo do JWT); `db.EmailPrimeiroAdmin` e `db.ContatoPush` (config `push_contato` → senão e-mail do primeiro admin ativo; `mailto:` automático, URLs passam); campo `push_contato` no novo grupo "Notificações e push" do `config-fields.js` com i18n nos 4 idiomas; teste `TestContatoPush`
-- [ ] M4.F3.E1 Despachante: destinatário, preferências, gravação em `notificacoes`
+- [x] M4.F3.E1 Despachante: destinatário, preferências, gravação em `notificacoes` — `internal/notify/destinatario.go`: `Preferencias` (`PreferenciasPadrao`, `DecodificarPreferencias`, `TiposPadraoUsuario` espelhando o catálogo), interface `FonteUsuarios` (`*db.DB` satisfaz), `RotaDoEvento`, `destinatario` com cache por ciclo, `notificarUsuario`; `processar` grava a notificação do dono a cada evento; `serve` passa `Usuarios: banco`; testes com fakes (dono, sem dono, item apagado, tipo desligado, preferências parciais, cache)
 - [ ] M4.F3.E2 Despachante: envio push, falhas, retenção na manutenção
 - [ ] M4.F4.E1 API: listar, lida(s), stream SSE por usuário
 - [ ] M4.F4.E2 API: push (chave, assinar, cancelar) e preferências
