@@ -393,6 +393,7 @@ func iniciarNotificacoes(ctx context.Context, banco *db.DB, logger *slog.Logger)
 	desp := notify.NovoDespachante(notify.OpcoesDespachante{
 		Fonte:    banco,
 		Usuarios: banco,
+		Push:     banco,
 		Config:   provedor,
 		Override: override,
 		Log:      func(msg string) { logger.Info(msg) },

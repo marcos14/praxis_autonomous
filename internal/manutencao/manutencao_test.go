@@ -172,3 +172,66 @@ func TestCicloRemoveSessoesExpiradas(t *testing.T) {
 		t.Fatalf("a sessão ativa deveria sobreviver ao ciclo: %v", err)
 	}
 }
+
+func TestCicloRetencaoDeNotificacoesEAssinaturasPush(t *testing.T) {
+	d := abrirBanco(t)
+	ctx := context.Background()
+	u, err := d.CriarUsuario(ctx, "U", "u@x.test", "senha-forte-123", nil)
+	if err != nil {
+		t.Fatalf("criar usuário: %v", err)
+	}
+	agora := time.Now()
+	criar := func(titulo string, idade int, lida bool) int64 {
+		n, err := d.CriarNotificacao(ctx, db.Notificacao{UserID: u.ID, Tipo: "aviso", Titulo: titulo})
+		if err != nil {
+			t.Fatalf("criar notificação: %v", err)
+		}
+		quando := agora.AddDate(0, 0, -idade).UTC().Format("2006-01-02T15:04:05.000Z")
+		if _, err := d.Escritor.ExecContext(ctx, `UPDATE notificacoes SET criado_em = ? WHERE id = ?`, quando, n.ID); err != nil {
+			t.Fatal(err)
+		}
+		if lida {
+			if err := d.MarcarNotificacaoLida(ctx, n.ID, u.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return n.ID
+	}
+	criar("lida velha", 31, true)      // sai (lida > 30 d)
+	criar("lida recente", 29, true)    // fica
+	criar("não lida velha", 91, false) // sai (não lida > 90 d)
+	criar("não lida média", 60, false) // fica (não lida ≤ 90 d, mesmo > 30)
+	assinar := func(endpoint string, idade int) {
+		if _, err := d.SalvarAssinaturaPush(ctx, db.AssinaturaPush{UserID: u.ID, Endpoint: endpoint, P256dh: "p", Auth: "a"}); err != nil {
+			t.Fatal(err)
+		}
+		quando := agora.AddDate(0, 0, -idade).UTC().Format("2006-01-02T15:04:05.000Z")
+		if _, err := d.Escritor.ExecContext(ctx, `UPDATE push_subscriptions SET criado_em = ? WHERE endpoint = ?`, quando, endpoint); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assinar("https://push/velha", 181)  // sai (sem uso > 180 d)
+	assinar("https://push/recente", 10) // fica
+
+	m := Nova(Opcoes{Store: d})
+	m.Ciclo(ctx, agora)
+
+	restantes, err := d.ListarNotificacoes(ctx, u.ID, false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	titulos := map[string]bool{}
+	for _, n := range restantes {
+		titulos[n.Titulo] = true
+	}
+	if len(restantes) != 2 || !titulos["lida recente"] || !titulos["não lida média"] {
+		t.Fatalf("notificações após o ciclo: %+v", restantes)
+	}
+	ass, err := d.ListarAssinaturasDoUsuario(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ass) != 1 || ass[0].Endpoint != "https://push/recente" {
+		t.Fatalf("assinaturas após o ciclo: %+v", ass)
+	}
+}

@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -33,10 +34,11 @@ type ProvedorOverride func(ctx context.Context, projectID int64) (OverrideProjet
 // configurados, respeitando o filtro por tipo de evento. É o elo "eventos do
 // banco → webhooks" da Fase 4e.
 type Despachante struct {
-	fonte     FonteEventos
-	cfg       ProvedorConfig
-	override  ProvedorOverride
-	usuarios  FonteUsuarios // nil = sem notificações por usuário (só webhooks)
+	fonte    FonteEventos
+	cfg      ProvedorConfig
+	override ProvedorOverride
+	usuarios FonteUsuarios // nil = sem notificações por usuário (só webhooks)
+	pushEstado
 	notif     *Notificador
 	intervalo time.Duration
 	log       func(string)
@@ -49,14 +51,16 @@ type Despachante struct {
 
 // OpcoesDespachante configura o despachante.
 type OpcoesDespachante struct {
-	Fonte     FonteEventos
-	Config    ProvedorConfig
-	Override  ProvedorOverride // nil = sem override por projeto (só-global)
-	Usuarios  FonteUsuarios    // nil = sem notificações por usuário (só webhooks)
-	Notif     *Notificador     // nil = Novo()
-	Intervalo time.Duration    // <=0 = intervaloPollPadrao
-	Log       func(string)
-	AoIniciar func() // hook de teste; chamado após capturar o cursor inicial
+	Fonte       FonteEventos
+	Config      ProvedorConfig
+	Override    ProvedorOverride // nil = sem override por projeto (só-global)
+	Usuarios    FonteUsuarios    // nil = sem notificações por usuário (só webhooks)
+	Push        FontePush        // nil = sem Web Push (só a caixa de entrada)
+	ClientePush *http.Client     // nil = timeout padrão
+	Notif       *Notificador     // nil = Novo()
+	Intervalo   time.Duration    // <=0 = intervaloPollPadrao
+	Log         func(string)
+	AoIniciar   func() // hook de teste; chamado após capturar o cursor inicial
 }
 
 // NovoDespachante monta o despachante.
@@ -76,7 +80,7 @@ func NovoDespachante(o OpcoesDespachante) *Despachante {
 	if n.Aviso == nil {
 		n.Aviso = func(msg string) { logf("notify: " + msg) }
 	}
-	return &Despachante{fonte: o.Fonte, cfg: o.Config, override: o.Override, usuarios: o.Usuarios, notif: n, intervalo: iv, log: logf, aoIniciar: o.AoIniciar}
+	return &Despachante{fonte: o.Fonte, cfg: o.Config, override: o.Override, usuarios: o.Usuarios, pushEstado: pushEstado{push: o.Push, cliPush: o.ClientePush}, notif: n, intervalo: iv, log: logf, aoIniciar: o.AoIniciar}
 }
 
 // Rodar tail-a a tabela de eventos até ctx ser cancelado. O cursor inicial é o
@@ -124,7 +128,9 @@ func (d *Despachante) processar(ctx context.Context, cursor int64) int64 {
 			d.notif.EnviarEvento(ctx, d.configDoEvento(ctx, cfg, ev, efetivaPorProjeto), ev.Tipo, ev.Titulo, ev.Detalhe)
 		}
 		// Notificação por usuário (M4): o dono do item, se tiver o tipo ligado.
-		d.notificarUsuario(ctx, ev, ciclo)
+		if n, prefs, ok := d.notificarUsuario(ctx, ev, ciclo); ok {
+			d.enviarPush(ctx, n, prefs)
+		}
 		cursor = ev.ID
 	}
 	return cursor

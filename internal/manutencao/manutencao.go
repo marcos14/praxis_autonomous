@@ -19,7 +19,20 @@ type Store interface {
 	// RemoverSessoesExpiradas apaga as sessões de login que já não autenticam
 	// em `agora` (revogadas ou vencidas) — M1 do PLANO_INTERNET.
 	RemoverSessoesExpiradas(ctx context.Context, agora time.Time) (int64, error)
+	// RemoverNotificacoesAntigas apaga as notificações lidas criadas antes de
+	// corteLidas e as não lidas antes de corteNaoLidas — M4 do PLANO_INTERNET.
+	RemoverNotificacoesAntigas(ctx context.Context, corteLidas, corteNaoLidas time.Time) (int64, error)
+	// RemoverAssinaturasSemUso apaga as assinaturas Web Push sem envio aceito
+	// (ou criação) desde corte.
+	RemoverAssinaturasSemUso(ctx context.Context, corte time.Time) (int64, error)
 }
+
+// Retenção das notificações por usuário e das assinaturas Web Push (M4).
+const (
+	RetencaoNotificacoesLidasDias = 30
+	RetencaoNotificacoesDias      = 90
+	RetencaoAssinaturasPushDias   = 180
+)
 
 // Opcoes configura a manutenção.
 type Opcoes struct {
@@ -98,6 +111,20 @@ func (m *Manutencao) Ciclo(ctx context.Context, agora time.Time) {
 			m.o.Log("manutenção: limpeza de sessões falhou: " + err.Error())
 		} else if n > 0 {
 			m.o.Log(fmt.Sprintf("manutenção: %d sessões expiradas removidas", n))
+		}
+		// Notificações por usuário (M4): lidas saem em 30 dias, não lidas em 90;
+		// assinaturas push sem nenhum envio aceito em 180 dias são dispositivos
+		// abandonados (quem voltar assina de novo ao abrir o Praxis).
+		if n, err := m.o.Store.RemoverNotificacoesAntigas(ctx,
+			agora.AddDate(0, 0, -RetencaoNotificacoesLidasDias), agora.AddDate(0, 0, -RetencaoNotificacoesDias)); err != nil {
+			m.o.Log("manutenção: retenção de notificações falhou: " + err.Error())
+		} else if n > 0 {
+			m.o.Log(fmt.Sprintf("manutenção: %d notificações antigas removidas", n))
+		}
+		if n, err := m.o.Store.RemoverAssinaturasSemUso(ctx, agora.AddDate(0, 0, -RetencaoAssinaturasPushDias)); err != nil {
+			m.o.Log("manutenção: limpeza de assinaturas push falhou: " + err.Error())
+		} else if n > 0 {
+			m.o.Log(fmt.Sprintf("manutenção: %d assinaturas push sem uso removidas", n))
 		}
 	}
 	if m.o.DirLogs != "" {
