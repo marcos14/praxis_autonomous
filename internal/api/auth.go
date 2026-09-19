@@ -140,8 +140,7 @@ func visibilidadeDaRequisicao(r *http.Request) *int64 {
 // Ids inválidos e recursos inexistentes passam (o handler responde 400/404);
 // listagens (sem id) são filtradas nos próprios handlers.
 func (s *Servidor) autorizarVisibilidade(ctx context.Context, pr *principal, caminho string) (bool, error) {
-	uid := filtroVisibilidade(pr)
-	if uid == nil || s.banco == nil || !strings.HasPrefix(caminho, "/api/v1/") {
+	if s.banco == nil || !strings.HasPrefix(caminho, "/api/v1/") {
 		return true, nil
 	}
 	seg := strings.Split(strings.TrimPrefix(caminho, "/api/v1/"), "/")
@@ -152,17 +151,30 @@ func (s *Servidor) autorizarVisibilidade(ctx context.Context, pr *principal, cam
 	if err != nil || id <= 0 {
 		return true, nil // não é um id (ex.: demands/ordem) — o handler decide
 	}
+	// Duas camadas (M2): a ACL de projeto (quem vê o projeto) e a regra de dono
+	// (dentro do projeto, o que é meu, do grupo ou público). Quem ignora as duas
+	// (admin, token de API, bootstrap) passa direto.
+	v := s.visaoDe(ctx, pr)
+	if v.ACL == nil && v.Dono == nil {
+		return true, nil
+	}
 	switch seg[0] {
 	case "projects":
-		return s.banco.UsuarioVeProjeto(ctx, *uid, id)
+		if v.ACL == nil {
+			return true, nil
+		}
+		return s.banco.UsuarioVeProjeto(ctx, *v.ACL, id)
 	case "demands":
-		return s.banco.UsuarioVeDemanda(ctx, *uid, id)
+		return s.banco.DemandaVisivel(ctx, id, v)
 	case "consultas":
-		return s.banco.UsuarioVeConsulta(ctx, *uid, id)
+		return s.banco.ConsultaVisivel(ctx, id, v)
 	case "planejamentos":
-		return s.banco.UsuarioVePlanejamento(ctx, *uid, id)
+		return s.banco.PlanejamentoVisivel(ctx, id, v)
 	case "groups":
-		return s.banco.UsuarioVeGrupoProjetos(ctx, *uid, id)
+		if v.ACL == nil {
+			return true, nil
+		}
+		return s.banco.UsuarioVeGrupoProjetos(ctx, *v.ACL, id)
 	}
 	return true, nil
 }

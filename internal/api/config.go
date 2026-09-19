@@ -38,10 +38,15 @@ func (s *Servidor) handleDefinirConfigGlobal(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	// Itens sem dono (M2): modo no catálogo e, no modo grupo, grupo existente.
+	if !s.validarConfigSemDono(w, r, entradas) {
+		return
+	}
 	if err := s.banco.DefinirConfigGlobal(r.Context(), entradas); err != nil {
 		s.responderErroConfig(w, r, err)
 		return
 	}
+	s.invalidarConfigSemDono()
 	// i18n: a chave global `idioma` alimenta o idioma da instância (eventos e
 	// notificações) — aplica sem reiniciar; ausente/inválida volta ao padrão.
 	var idioma string

@@ -33,6 +33,8 @@ type reqNovoPlanejamento struct {
 	NivelVisual     string `json:"nivel_visual"`
 	Mensagem        string `json:"mensagem"`
 	AnexosPendentes bool   `json:"anexos_pendentes"`
+	// Visibilidade: privada (default) | grupo | publica — quem enxerga o planejamento.
+	Visibilidade string `json:"visibilidade"`
 }
 
 // reqEditarPlanejamento é o corpo de PUT /planejamentos/{id}: campos ajustáveis
@@ -69,6 +71,7 @@ func (s *Servidor) registrarRotasPlanejamentos(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}", s.handleObterPlanejamento)
 	mux.HandleFunc("PUT /api/v1/planejamentos/{id}", s.handleEditarPlanejamento)
 	mux.HandleFunc("DELETE /api/v1/planejamentos/{id}", s.handleExcluirPlanejamento)
+	mux.HandleFunc("PUT /api/v1/planejamentos/{id}/visibilidade", s.handleDefinirVisibilidadePlanejamento)
 	mux.HandleFunc("GET /api/v1/planejamentos/{id}/chat", s.handleListarChatPlanejamento)
 	mux.HandleFunc("POST /api/v1/planejamentos/{id}/chat", s.handleChatPlanejamento)
 	mux.HandleFunc("POST /api/v1/planejamentos/{id}/turno", s.handleDispararTurnoPlanejamento)
@@ -170,9 +173,13 @@ func (s *Servidor) handleCriarPlanejamento(w http.ResponseWriter, r *http.Reques
 		// primeiro turno explicitamente (POST /turno).
 		status = db.StatusPlanejamentoOcioso
 	}
+	visibilidade, okVis := visibilidadeDoCorpo(w, r, req.Visibilidade)
+	if !okVis {
+		return
+	}
 	plan := db.Planejamento{
 		Titulo: strings.TrimSpace(req.Titulo), Foco: foco, NivelVisual: nivel,
-		Status: status,
+		Status: status, Visibilidade: visibilidade,
 	}
 	if req.ProjectID > 0 {
 		plan.ProjectID = &req.ProjectID
@@ -231,55 +238,40 @@ func (s *Servidor) handleDispararTurnoPlanejamento(w http.ResponseWriter, r *htt
 func (s *Servidor) handleListarPlanejamentos(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := strconv.ParseInt(r.URL.Query().Get("project"), 10, 64)
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group"), 10, 64)
-	planejamentos, err := s.banco.ListarPlanejamentos(r.Context(), db.FiltroPlanejamentos{ProjectID: projectID, GroupID: groupID})
+	// A ACL de projeto/grupo, a regra de dono e o escopo (?escopo=) são
+	// aplicados no SQL pela Visao (M2).
+	visao, ok := s.visaoComEscopo(w, r)
+	if !ok {
+		return
+	}
+	planejamentos, err := s.banco.ListarPlanejamentos(r.Context(),
+		db.FiltroPlanejamentos{ProjectID: projectID, GroupID: groupID, Visao: visao})
 	if err != nil {
 		s.responderErroPlanejamento(w, r, err)
 		return
 	}
-	if uid := visibilidadeDaRequisicao(r); uid != nil {
-		if planejamentos, err = s.filtrarPlanejamentosVisiveis(r.Context(), *uid, planejamentos); err != nil {
-			s.responderErroPlanejamento(w, r, err)
-			return
-		}
-	}
 	responderJSON(w, http.StatusOK, planejamentos)
 }
 
-// filtrarPlanejamentosVisiveis descarta os planejamentos de projetos/grupos que
-// a ACL esconde do usuário, memoizando a decisão por alvo.
-func (s *Servidor) filtrarPlanejamentosVisiveis(ctx context.Context, userID int64, planejamentos []db.Planejamento) ([]db.Planejamento, error) {
-	memoProj := map[int64]bool{}
-	memoGrupo := map[int64]bool{}
-	visiveis := []db.Planejamento{}
-	for _, p := range planejamentos {
-		ve := true
-		switch {
-		case p.ProjectID != nil:
-			v, ok := memoProj[*p.ProjectID]
-			if !ok {
-				var err error
-				if v, err = s.banco.UsuarioVeProjeto(ctx, userID, *p.ProjectID); err != nil {
-					return nil, err
-				}
-				memoProj[*p.ProjectID] = v
-			}
-			ve = v
-		case p.GroupID != nil:
-			v, ok := memoGrupo[*p.GroupID]
-			if !ok {
-				var err error
-				if v, err = s.banco.UsuarioVeGrupoProjetos(ctx, userID, *p.GroupID); err != nil {
-					return nil, err
-				}
-				memoGrupo[*p.GroupID] = v
-			}
-			ve = v
-		}
-		if ve {
-			visiveis = append(visiveis, p)
-		}
+// handleDefinirVisibilidadePlanejamento muda quem enxerga o planejamento
+// (privada | grupo | publica). Só o criador ou um admin; sem criador, só o admin.
+func (s *Servidor) handleDefinirVisibilidadePlanejamento(w http.ResponseWriter, r *http.Request) {
+	plan, ok := s.obterPlanejamentoOu404(w, r)
+	if !ok {
+		return
 	}
-	return visiveis, nil
+	if !podeAlterarVisibilidade(w, r, plan.CriadoPor) {
+		return
+	}
+	vis, ok := lerVisibilidadeDoPut(w, r)
+	if !ok {
+		return
+	}
+	if err := s.banco.DefinirVisibilidadePlanejamento(r.Context(), plan.ID, vis); err != nil {
+		s.responderErroPlanejamento(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Servidor) handleObterPlanejamento(w http.ResponseWriter, r *http.Request) {

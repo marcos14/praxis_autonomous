@@ -28,6 +28,8 @@ type reqNovaConsulta struct {
 	Titulo          string `json:"titulo"`
 	Mensagem        string `json:"mensagem"`
 	AnexosPendentes bool   `json:"anexos_pendentes"`
+	// Visibilidade: privada (default) | grupo | publica — quem enxerga a consulta.
+	Visibilidade string `json:"visibilidade"`
 }
 
 // reqChatConsulta é o corpo de POST /consultas/{id}/chat: uma fala do usuário.
@@ -44,6 +46,7 @@ func (s *Servidor) registrarRotasConsultas(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/consultas", s.handleListarConsultas)
 	mux.HandleFunc("GET /api/v1/consultas/{id}", s.handleObterConsulta)
 	mux.HandleFunc("DELETE /api/v1/consultas/{id}", s.handleExcluirConsulta)
+	mux.HandleFunc("PUT /api/v1/consultas/{id}/visibilidade", s.handleDefinirVisibilidadeConsulta)
 	mux.HandleFunc("GET /api/v1/consultas/{id}/chat", s.handleListarChatConsulta)
 	mux.HandleFunc("POST /api/v1/consultas/{id}/chat", s.handleChatConsulta)
 	mux.HandleFunc("POST /api/v1/consultas/{id}/turno", s.handleDispararTurnoConsulta)
@@ -98,7 +101,11 @@ func (s *Servidor) handleCriarConsulta(w http.ResponseWriter, r *http.Request) {
 		// primeiro turno explicitamente (POST /turno).
 		status = db.StatusConsultaOciosa
 	}
-	cons := db.Consulta{Titulo: strings.TrimSpace(req.Titulo), Status: status}
+	visibilidade, okVis := visibilidadeDoCorpo(w, r, req.Visibilidade)
+	if !okVis {
+		return
+	}
+	cons := db.Consulta{Titulo: strings.TrimSpace(req.Titulo), Status: status, Visibilidade: visibilidade}
 	if req.ProjectID > 0 {
 		cons.ProjectID = &req.ProjectID
 	} else {
@@ -155,56 +162,40 @@ func (s *Servidor) handleDispararTurnoConsulta(w http.ResponseWriter, r *http.Re
 func (s *Servidor) handleListarConsultas(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := strconv.ParseInt(r.URL.Query().Get("project"), 10, 64)
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group"), 10, 64)
-	consultas, err := s.banco.ListarConsultas(r.Context(), db.FiltroConsultas{ProjectID: projectID, GroupID: groupID})
+	// A ACL de projeto/grupo, a regra de dono e o escopo (?escopo=) são
+	// aplicados no SQL pela Visao (M2).
+	visao, ok := s.visaoComEscopo(w, r)
+	if !ok {
+		return
+	}
+	consultas, err := s.banco.ListarConsultas(r.Context(),
+		db.FiltroConsultas{ProjectID: projectID, GroupID: groupID, Visao: visao})
 	if err != nil {
 		s.responderErroConsulta(w, r, err)
 		return
 	}
-	if uid := visibilidadeDaRequisicao(r); uid != nil {
-		if consultas, err = s.filtrarConsultasVisiveis(r.Context(), *uid, consultas); err != nil {
-			s.responderErroConsulta(w, r, err)
-			return
-		}
-	}
 	responderJSON(w, http.StatusOK, consultas)
 }
 
-// filtrarConsultasVisiveis descarta as consultas de projetos/grupos que a ACL
-// esconde do usuário, memoizando a decisão por alvo (as consultas se repetem em
-// poucos projetos/grupos).
-func (s *Servidor) filtrarConsultasVisiveis(ctx context.Context, userID int64, consultas []db.Consulta) ([]db.Consulta, error) {
-	memoProj := map[int64]bool{}
-	memoGrupo := map[int64]bool{}
-	visiveis := []db.Consulta{}
-	for _, c := range consultas {
-		ve := true
-		switch {
-		case c.ProjectID != nil:
-			v, ok := memoProj[*c.ProjectID]
-			if !ok {
-				var err error
-				if v, err = s.banco.UsuarioVeProjeto(ctx, userID, *c.ProjectID); err != nil {
-					return nil, err
-				}
-				memoProj[*c.ProjectID] = v
-			}
-			ve = v
-		case c.GroupID != nil:
-			v, ok := memoGrupo[*c.GroupID]
-			if !ok {
-				var err error
-				if v, err = s.banco.UsuarioVeGrupoProjetos(ctx, userID, *c.GroupID); err != nil {
-					return nil, err
-				}
-				memoGrupo[*c.GroupID] = v
-			}
-			ve = v
-		}
-		if ve {
-			visiveis = append(visiveis, c)
-		}
+// handleDefinirVisibilidadeConsulta muda quem enxerga a consulta (privada |
+// grupo | publica). Só o criador ou um admin; consulta sem criador, só o admin.
+func (s *Servidor) handleDefinirVisibilidadeConsulta(w http.ResponseWriter, r *http.Request) {
+	cons, ok := s.obterConsultaOu404(w, r)
+	if !ok {
+		return
 	}
-	return visiveis, nil
+	if !podeAlterarVisibilidade(w, r, cons.CriadoPor) {
+		return
+	}
+	vis, ok := lerVisibilidadeDoPut(w, r)
+	if !ok {
+		return
+	}
+	if err := s.banco.DefinirVisibilidadeConsulta(r.Context(), cons.ID, vis); err != nil {
+		s.responderErroConsulta(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Servidor) handleObterConsulta(w http.ResponseWriter, r *http.Request) {

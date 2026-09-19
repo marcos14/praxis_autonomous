@@ -256,6 +256,16 @@ func TestConsultasRBAC(t *testing.T) {
 	}
 	suporte2 := loginToken(t, srv, "sup2@x.com", "senha-forte-123")
 	rota := "/api/v1/consultas/" + strconv.FormatInt(cons.ID, 10)
+	// Privada por default (M2): para o outro usuário a consulta nem existe.
+	rec = fazerReqToken(t, srv, http.MethodDelete, rota, suporte2, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("excluir consulta privada alheia: status %d, quero 404", rec.Code)
+	}
+	// Tornada pública pelo criador, o outro a vê — mas continua sem poder excluir.
+	rec = fazerReqToken(t, srv, http.MethodPut, rota+"/visibilidade", suporte, map[string]any{"visibilidade": "publica"})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("tornar pública: status %d (corpo=%q)", rec.Code, rec.Body.String())
+	}
 	rec = fazerReqToken(t, srv, http.MethodDelete, rota, suporte2, nil)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("excluir consulta alheia: status %d, quero 403", rec.Code)

@@ -120,6 +120,8 @@ type Servidor struct {
 	proxyConfiavel bool
 	// limiteLogin conta falhas de login por IP e por e-mail (força bruta).
 	limiteLogin *limitadorLogin
+	// semDono é o cache da config de itens sem dono (visibilidade, M2).
+	semDono cacheSemDono
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
