@@ -86,6 +86,10 @@ func (e *ExecutorDemanda) Executar(ctx context.Context, item Item, conta string)
 	switch sit {
 	case filaVazia, filaConcluida:
 		e.marcarDemanda(ctx, dem, db.StatusDemandaConcluida, "")
+		// Evento próprio da conclusão (M4): é o que avisa o dono que a demanda
+		// terminou e está pronta para integrar.
+		e.registrarEvento(ctx, dem, "demanda_concluida",
+			i18n.TI("evento.demanda_concluida"), i18n.TI("evento.demanda_concluida.detalhe", "titulo", dem.Titulo))
 		return Desfecho{Concluido: true}, nil
 	case filaFalhou:
 		e.marcarDemanda(ctx, dem, db.StatusDemandaFalhou, "uma fase falhou; a demanda não pode prosseguir")

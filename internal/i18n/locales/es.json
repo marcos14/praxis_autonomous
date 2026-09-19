@@ -265,6 +265,8 @@
   "evento.conflito_contexto_integrar": "conflicto al integrar en la {base}",
   "evento.conflito_contexto_atualizar": "conflicto al traer la {base} a la branch",
   "evento.demanda_integrada": "Praxis: demanda integrada",
+  "evento.demanda_concluida": "Praxis: demanda concluida",
+  "evento.demanda_concluida.detalhe": "\"{titulo}\" terminó todas las fases y está lista para integrar.",
   "evento.demanda_integrada_detalhe": "branch {branch} integrada en la {base} (merge --no-ff).",
   "evento.demanda_integrada_mr_detalhe": "merge de la branch {branch} detectado en la {base}; demanda integrada.",
   "evento.limpeza_pos_integracao": "Praxis: worktree/branch eliminados",

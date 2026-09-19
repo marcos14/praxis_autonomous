@@ -567,10 +567,11 @@ func (e *Estrategista) falhar(ctx context.Context, plan db.Planejamento, motivo 
 }
 
 // registrarEvento grava um evento do planejamento (best-effort). O evento
-// carrega o project_id quando o planejamento é de projeto (planejamentos de
-// grupo ficam sem vínculo — a tabela events só conhece projeto/demanda).
+// carrega o project_id quando o planejamento é de projeto e sempre o
+// planejamento_id — é por ele que o despachante acha o criador para notificar (M4).
 func (e *Estrategista) registrarEvento(plan db.Planejamento, tipo, titulo, detalhe string) {
-	ev := db.Evento{Tipo: tipo, Titulo: titulo, Detalhe: detalhe}
+	id := plan.ID
+	ev := db.Evento{Tipo: tipo, Titulo: titulo, Detalhe: detalhe, PlanejamentoID: &id}
 	if plan.ProjectID != nil {
 		ev.ProjectID = plan.ProjectID
 	}

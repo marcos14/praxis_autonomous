@@ -14,10 +14,15 @@ type Evento struct {
 	ID        int64  `json:"id"`
 	ProjectID *int64 `json:"project_id"`
 	DemandID  *int64 `json:"demand_id"`
-	Tipo      string `json:"tipo"`
-	Titulo    string `json:"titulo"`
-	Detalhe   string `json:"detalhe"`
-	CriadoEm  string `json:"criado_em"`
+	// ConsultaID/PlanejamentoID (M4) vinculam eventos de consulta e de
+	// planejamento ao item — é por eles que o despachante acha o destinatário
+	// (criado_por) e monta a rota da notificação.
+	ConsultaID     *int64 `json:"consulta_id"`
+	PlanejamentoID *int64 `json:"planejamento_id"`
+	Tipo           string `json:"tipo"`
+	Titulo         string `json:"titulo"`
+	Detalhe        string `json:"detalhe"`
+	CriadoEm       string `json:"criado_em"`
 }
 
 // FiltroEventos restringe ListarEventos. Campos nil não filtram; Limite <= 0
@@ -46,39 +51,47 @@ func anexarCondEventos(cond []string, args []any, v Visao) ([]string, []any) {
 		cond = append(cond, `(events.demand_id IS NULL OR EXISTS (
 			SELECT 1 FROM demands dm WHERE dm.id = events.demand_id AND `+condDono("dm")+`))`)
 		args = append(args, argsDono(v)...)
+		cond = append(cond, `(events.consulta_id IS NULL OR EXISTS (
+			SELECT 1 FROM consultas c WHERE c.id = events.consulta_id AND `+condDono("c")+`))`)
+		args = append(args, argsDono(v)...)
+		cond = append(cond, `(events.planejamento_id IS NULL OR EXISTS (
+			SELECT 1 FROM planejamentos pl WHERE pl.id = events.planejamento_id AND `+condDono("pl")+`))`)
+		args = append(args, argsDono(v)...)
 	}
 	return cond, args
 }
 
 // colunasEvento lista as colunas de events na ordem esperada por scanEvento.
-const colunasEvento = `id, project_id, demand_id, tipo, titulo, detalhe, criado_em`
+const colunasEvento = `id, project_id, demand_id, consulta_id, planejamento_id, tipo, titulo, detalhe, criado_em`
 
 // scanEvento lê uma linha de events (na ordem de colunasEvento) para Evento,
-// tratando project_id/demand_id (nullable).
+// tratando as FKs opcionais.
 func scanEvento(sc interface{ Scan(...any) error }) (Evento, error) {
 	var (
-		e         Evento
-		projectID sql.NullInt64
-		demandID  sql.NullInt64
+		e                                               Evento
+		projectID, demandID, consultaID, planejamentoID sql.NullInt64
 	)
-	if err := sc.Scan(&e.ID, &projectID, &demandID, &e.Tipo, &e.Titulo,
+	if err := sc.Scan(&e.ID, &projectID, &demandID, &consultaID, &planejamentoID, &e.Tipo, &e.Titulo,
 		&e.Detalhe, &e.CriadoEm); err != nil {
 		return Evento{}, err
 	}
 	e.ProjectID = ptrDeNull(projectID)
 	e.DemandID = ptrDeNull(demandID)
+	e.ConsultaID = ptrDeNull(consultaID)
+	e.PlanejamentoID = ptrDeNull(planejamentoID)
 	return e, nil
 }
 
 // RegistrarEvento insere um evento e devolve a linha persistida (com id e
-// criado_em preenchidos pelo banco). Projeto/demanda inexistente vira
-// ErrNaoEncontrado (violação de FK).
+// criado_em preenchidos pelo banco). Projeto/demanda/consulta/planejamento
+// inexistente vira ErrNaoEncontrado (violação de FK).
 func (d *DB) RegistrarEvento(ctx context.Context, e Evento) (Evento, error) {
 	row := d.Escritor.QueryRowContext(ctx, `
-		INSERT INTO events (project_id, demand_id, tipo, titulo, detalhe)
-		VALUES (?,?,?,?,?)
+		INSERT INTO events (project_id, demand_id, consulta_id, planejamento_id, tipo, titulo, detalhe)
+		VALUES (?,?,?,?,?,?,?)
 		RETURNING id, criado_em`,
-		nullInt(e.ProjectID), nullInt(e.DemandID), e.Tipo, e.Titulo, e.Detalhe,
+		nullInt(e.ProjectID), nullInt(e.DemandID), nullInt(e.ConsultaID), nullInt(e.PlanejamentoID),
+		e.Tipo, e.Titulo, e.Detalhe,
 	)
 	if err := row.Scan(&e.ID, &e.CriadoEm); err != nil {
 		return Evento{}, traduzirErroFK(err)

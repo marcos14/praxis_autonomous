@@ -356,10 +356,11 @@ func (c *Consultor) falhar(ctx context.Context, cons db.Consulta, motivo string)
 }
 
 // registrarEvento grava um evento da consulta (best-effort). O evento carrega o
-// project_id quando a consulta é de projeto (consultas de grupo ficam sem
-// vínculo — a tabela events só conhece projeto/demanda).
+// project_id quando a consulta é de projeto e sempre o consulta_id — é por ele
+// que o despachante acha o criador para notificar (M4).
 func (c *Consultor) registrarEvento(cons db.Consulta, tipo, titulo, detalhe string) {
-	ev := db.Evento{Tipo: tipo, Titulo: titulo, Detalhe: detalhe}
+	id := cons.ID
+	ev := db.Evento{Tipo: tipo, Titulo: titulo, Detalhe: detalhe, ConsultaID: &id}
 	if cons.ProjectID != nil {
 		ev.ProjectID = cons.ProjectID
 	}

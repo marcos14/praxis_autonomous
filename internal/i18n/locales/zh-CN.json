@@ -265,6 +265,8 @@
   "evento.conflito_contexto_integrar": "合并到 {base} 时发生冲突",
   "evento.conflito_contexto_atualizar": "将 {base} 合并到分支时发生冲突",
   "evento.demanda_integrada": "Praxis：需求已合并",
+  "evento.demanda_concluida": "Praxis：需求已完成",
+  "evento.demanda_concluida.detalhe": "“{titulo}”已完成所有阶段，可以集成了。",
   "evento.demanda_integrada_detalhe": "分支 {branch} 已合并到 {base}（merge --no-ff）。",
   "evento.demanda_integrada_mr_detalhe": "在 {base} 上检测到分支 {branch} 的合并；需求已合并。",
   "evento.limpeza_pos_integracao": "Praxis：工作树/分支已删除",

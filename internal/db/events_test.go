@@ -65,6 +65,23 @@ func TestListarEventosFiltraEOrdenaDesc(t *testing.T) {
 		t.Fatalf("RegistrarEvento projeto: %v", err)
 	}
 
+	// consulta_id / planejamento_id (M4) fazem ida e volta e a FK vale.
+	cons, _, err := d.CriarConsultaComChat(ctx, Consulta{ProjectID: &proj, Titulo: "c"}, MensagemConsulta{Conteudo: "?"})
+	if err != nil {
+		t.Fatalf("consulta: %v", err)
+	}
+	evC, err := d.RegistrarEvento(ctx, Evento{ConsultaID: &cons.ID, Tipo: "consulta_respondida", Titulo: "r"})
+	if err != nil || evC.ConsultaID == nil || *evC.ConsultaID != cons.ID {
+		t.Fatalf("evento de consulta: %+v %v", evC, err)
+	}
+	if lidos, _ := d.EventosApos(ctx, evC.ID-1, 1, Visao{}); len(lidos) != 1 || lidos[0].ConsultaID == nil || *lidos[0].ConsultaID != cons.ID || lidos[0].PlanejamentoID != nil {
+		t.Fatalf("consulta_id não voltou do banco: %+v", lidos)
+	}
+	invalido := int64(9999)
+	if _, err := d.RegistrarEvento(ctx, Evento{PlanejamentoID: &invalido, Tipo: "x", Titulo: "x"}); !errors.Is(err, ErrNaoEncontrado) {
+		t.Fatalf("planejamento inexistente: %v", err)
+	}
+
 	daDemanda, err := d.ListarEventos(ctx, FiltroEventos{DemandID: &dem.ID})
 	if err != nil {
 		t.Fatalf("ListarEventos demanda: %v", err)

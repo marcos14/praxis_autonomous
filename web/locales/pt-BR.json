@@ -861,6 +861,7 @@
   "notif.ev_demanda_retomada": "Demanda retomada",
   "notif.ev_demanda_cancelada": "Demanda cancelada",
   "notif.ev_demanda_integrada": "Demanda integrada (merge concluído)",
+  "notif.ev_demanda_concluida": "Demanda concluída (todas as fases feitas)",
   "notif.ev_aguardando_humano": "Aguardando intervenção humana",
   "notif.ev_fase_iniciada": "Fase iniciada",
   "notif.ev_fase_concluida": "Fase concluída",

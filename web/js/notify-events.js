@@ -20,8 +20,9 @@ export const GRUPOS_EVENTOS = [
       { tipo: "demanda_pausada", rotulo: t("notif.ev_demanda_pausada"), padrao: true },
       { tipo: "demanda_retomada", rotulo: t("notif.ev_demanda_retomada"), padrao: false },
       { tipo: "demanda_cancelada", rotulo: t("notif.ev_demanda_cancelada"), padrao: true },
-      { tipo: "demanda_integrada", rotulo: t("notif.ev_demanda_integrada"), padrao: true },
-      { tipo: "aguardando_humano", rotulo: t("notif.ev_aguardando_humano"), padrao: true },
+      { tipo: "demanda_concluida", rotulo: t("notif.ev_demanda_concluida"), padrao: true, padrao_usuario: true },
+      { tipo: "demanda_integrada", rotulo: t("notif.ev_demanda_integrada"), padrao: true, padrao_usuario: true },
+      { tipo: "aguardando_humano", rotulo: t("notif.ev_aguardando_humano"), padrao: true, padrao_usuario: true },
     ],
   },
   {

@@ -861,6 +861,7 @@
   "notif.ev_demanda_retomada": "需求已恢复",
   "notif.ev_demanda_cancelada": "需求已取消",
   "notif.ev_demanda_integrada": "需求已合并（merge 完成）",
+  "notif.ev_demanda_concluida": "需求已完成（所有阶段完成）",
   "notif.ev_aguardando_humano": "等待人工干预",
   "notif.ev_fase_iniciada": "阶段已开始",
   "notif.ev_fase_concluida": "阶段已完成",
