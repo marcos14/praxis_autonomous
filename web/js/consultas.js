@@ -7,6 +7,7 @@
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
 import { t } from "./i18n.js";
+import { fixarRota } from "./rota.js";
 import {
   seletorVisibilidade, campoVisibilidade, lembrarVisibilidade,
   pillVisibilidade, pillAutor, controleVisibilidade, filtroEscopo, paramEscopo,
@@ -45,9 +46,12 @@ function montarFiltroEscopo() {
   limpar(cont).append(f.no);
 }
 
-export async function montarConsultas() {
+// id (opcional) vem da rota "#consultas/7": abre essa consulta mesmo que a
+// lista filtrada não a mostre (o servidor decide se o usuário a enxerga).
+export async function montarConsultas(id) {
   document.getElementById("btn-nova-consulta").onclick = () => renderNova();
   montarFiltroEscopo();
+  if (id) { await abrirConsulta(Number(id)); return; }
   await recarregarLista();
   if (selecionadaID != null) {
     const c = consultas.find((x) => x.id === selecionadaID);
@@ -221,6 +225,7 @@ async function renderNova() {
 async function abrirConsulta(id) {
   pararAcompanhamento();
   selecionadaID = id;
+  fixarRota("consultas", id);
   await recarregarLista();
 
   let cons;

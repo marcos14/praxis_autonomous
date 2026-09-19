@@ -21,6 +21,7 @@ import { montarUsuarios, montarPapeis } from "./usuarios.js";
 import { montarGruposUsuarios } from "./gusuarios.js";
 import { montarConta } from "./conta.js";
 import { registrarServiceWorker, botaoInstalarApp } from "./pwa.js";
+import { separarRota } from "./rota.js";
 import { bannerErro, el, limpar } from "./ui.js";
 import * as auth from "./auth.js";
 import { t, aplicarTraducoes, seletorIdioma, adotarIdiomaDoUsuario } from "./i18n.js";
@@ -75,9 +76,11 @@ let viewAtual = "";
 
 // irPara ativa a view pedida: alterna as seções, destaca o item do menu, limpa o
 // banner de erro e (re)monta o conteúdo. Views desconhecidas — ou sem permissão —
-// caem em "home".
-async function irPara(nome) {
-  if (!nomesValidos.has(nome)) nome = "home";
+// caem em "home". Aceita "view/id" (M4): o id vai ao montar da view, que abre o
+// item ("#consultas/7", "#planejamentos/3", "#demandas/12").
+async function irPara(destino) {
+  let { view: nome, id } = separarRota(destino);
+  if (!nomesValidos.has(nome)) { nome = "home"; id = ""; }
   if (permView[nome] && !auth.temPermissao(permView[nome])) nome = "home";
   if (viewAtual && viewAtual !== nome && desmontar[viewAtual]) {
     try { desmontar[viewAtual](); } catch { /* ignora falha de limpeza */ }
@@ -92,7 +95,7 @@ async function irPara(nome) {
   bannerErro("");
   window.scrollTo(0, 0);
   try {
-    await views[nome]();
+    await views[nome](id);
   } catch (e) {
     bannerErro(t("shell.erro_montar", { erro: e && e.message ? e.message : e }));
   }
@@ -102,8 +105,9 @@ async function irPara(nome) {
 // na view atual), monta direto; senão troca o hash e deixa o listener de
 // hashchange chamar irPara — assim a montagem acontece UMA única vez por
 // navegação.
-function irParaHash(nome) {
-  const alvo = nomesValidos.has(nome) ? nome : "home";
+function irParaHash(destino) {
+  const { view } = separarRota(destino);
+  const alvo = nomesValidos.has(view) ? destino.replace(/^#/, "") : "home";
   if (location.hash.slice(1) === alvo) irPara(alvo);
   else location.hash = alvo;
 }

@@ -10,6 +10,7 @@ import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
 import { abrirCard, setProjetos, pillStatus } from "./demandas.js";
+import { fixarRota } from "./rota.js";
 import {
   seletorVisibilidade, campoVisibilidade, lembrarVisibilidade,
   pillVisibilidade, pillAutor, controleVisibilidade, filtroEscopo, paramEscopo,
@@ -44,9 +45,11 @@ function montarFiltroEscopo() {
   limpar(cont).append(f.no);
 }
 
-export async function montarPlanejamentos() {
+// id (opcional) vem da rota "#planejamentos/3".
+export async function montarPlanejamentos(id) {
   document.getElementById("btn-novo-planejamento").onclick = () => renderNovo();
   montarFiltroEscopo();
+  if (id) { await abrirPlanejamento(Number(id)); return; }
   await recarregarLista();
   if (selecionadoID != null) {
     const p = planejamentos.find((x) => x.id === selecionadoID);
@@ -265,6 +268,7 @@ async function renderNovo() {
 async function abrirPlanejamento(id, abaInicial) {
   pararAcompanhamento();
   selecionadoID = id;
+  fixarRota("planejamentos", id);
   await recarregarLista();
 
   let plan;

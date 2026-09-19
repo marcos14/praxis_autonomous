@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { el, limpar, bannerErro, toast, renderMarkdown, autoCrescer } from "./ui.js";
 import { t, tn, idiomaAtivo } from "./i18n.js";
 import { pillVisibilidade, pillAutor, controleVisibilidade, filtroEscopo, paramEscopo, escopoSalvo } from "./visibilidade.js";
+import { fixarRota, limparRotaID } from "./rota.js";
 
 let projetos = [];
 let filtro = { project: "", status: "", escopo: escopoSalvo("demandas") };
@@ -63,7 +64,8 @@ export function quando(iso) {
   return isNaN(d) ? iso : d.toLocaleString(idiomaAtivo());
 }
 
-export async function montarDemandas() {
+// id (opcional) vem da rota "#demandas/12": abre o card por cima da lista.
+export async function montarDemandas(id) {
   try {
     projetos = (await api.listarProjetos()) || [];
   } catch {
@@ -71,6 +73,7 @@ export async function montarDemandas() {
   }
   renderFiltros();
   await recarregarLista();
+  if (id) await abrirCard(Number(id));
 }
 
 function renderFiltros() {
@@ -140,6 +143,7 @@ function fecharCard(overlay) {
   if (sseCardEventos) { sseCardEventos.close(); sseCardEventos = null; }
   if (cardAberto && cardAberto.overlay === overlay) cardAberto = null;
   overlay.remove();
+  limparRotaID("demandas");
 }
 
 // chaveAba normaliza o rótulo de uma aba para uma chave estável (sem a contagem
@@ -171,6 +175,9 @@ export async function abrirCard(id) {
   overlay.addEventListener("click", (ev) => { if (ev.target === overlay) fecharCard(overlay); });
   document.body.append(overlay);
   cardAberto = { id, overlay, assinatura: "" };
+  // Só a tela Demandas ganha rota com id: aberto do kanban/Home/planejamento,
+  // o card é um modal por cima daquela tela e o hash dela fica como está.
+  if (location.hash.replace(/^#/, "").split("/")[0] === "demandas") fixarRota("demandas", id);
   await renderConteudoCard(overlay, id, dados, null, null);
   assinarEventosCard(id, overlay);
 }
