@@ -40,11 +40,32 @@ type claims struct {
 	Exp int64 `json:"exp"`
 }
 
+// Claims é o conteúdo público de um token emitido/validado: o usuário (Sub) e
+// o instante em que ele vence (Exp, precisão de segundos — a do próprio token).
+// A API carimba Exp no principal para os streams SSE encerrarem quando a
+// credencial expira e para informar ao cliente quando renovar.
+type Claims struct {
+	Sub int64
+	Exp time.Time
+}
+
 // Assinar gera um JWT HS256 para o usuário sub, válido por ttl a partir de agora,
 // assinado com secret. Devolve o token compacto (header.payload.assinatura).
 func Assinar(sub int64, ttl time.Duration, secret []byte) (string, error) {
+	tok, _, err := AssinarClaims(sub, ttl, secret)
+	return tok, err
+}
+
+// AssinarClaims é Assinar devolvendo também os claims gravados no token (o exp
+// exato, já truncado a segundos como o JWT o carrega).
+func AssinarClaims(sub int64, ttl time.Duration, secret []byte) (string, Claims, error) {
 	agora := time.Now()
-	return assinarEm(sub, agora, agora.Add(ttl), secret)
+	exp := agora.Add(ttl)
+	tok, err := assinarEm(sub, agora, exp, secret)
+	if err != nil {
+		return "", Claims{}, err
+	}
+	return tok, Claims{Sub: sub, Exp: time.Unix(exp.Unix(), 0)}, nil
 }
 
 // assinarEm é o núcleo de Assinar com os instantes explícitos (facilita testar
@@ -65,46 +86,52 @@ func assinarEm(sub int64, iat, exp time.Time, secret []byte) (string, error) {
 // Validar verifica a assinatura e a expiração do token e devolve o sub (id do
 // usuário). Qualquer problema resulta em ErrTokenInvalido.
 func Validar(token string, secret []byte) (int64, error) {
+	c, err := ValidarClaims(token, secret)
+	return c.Sub, err
+}
+
+// ValidarClaims é Validar devolvendo também o instante de expiração do token.
+func ValidarClaims(token string, secret []byte) (Claims, error) {
 	return validarEm(token, secret, time.Now())
 }
 
 // validarEm é o núcleo de Validar com o instante "agora" explícito (para testes
 // determinísticos de expiração).
-func validarEm(token string, secret []byte, agora time.Time) (int64, error) {
+func validarEm(token string, secret []byte, agora time.Time) (Claims, error) {
 	partes := strings.Split(token, ".")
 	if len(partes) != 3 {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
 	corpo := partes[0] + "." + partes[1]
 	sigRecebida, err := decodificar(partes[2])
 	if err != nil {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
 	// Comparação em tempo constante — não vaza informação de timing sobre a
 	// assinatura correta.
 	if !hmac.Equal(sigRecebida, assinatura(corpo, secret)) {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
 	hJSON, err := decodificar(partes[0])
 	if err != nil {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
 	var h cabecalho
 	if err := json.Unmarshal(hJSON, &h); err != nil || h.Alg != alg {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
 	cJSON, err := decodificar(partes[1])
 	if err != nil {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
 	var c claims
 	if err := json.Unmarshal(cJSON, &c); err != nil {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
 	if c.Sub <= 0 || c.Exp <= 0 || agora.Unix() >= c.Exp {
-		return 0, ErrTokenInvalido
+		return Claims{}, ErrTokenInvalido
 	}
-	return c.Sub, nil
+	return Claims{Sub: c.Sub, Exp: time.Unix(c.Exp, 0)}, nil
 }
 
 // assinatura computa o HMAC-SHA256 de corpo com secret.

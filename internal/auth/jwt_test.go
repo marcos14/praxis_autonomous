@@ -22,6 +22,38 @@ func TestAssinarValidarIdaEVolta(t *testing.T) {
 	}
 }
 
+func TestAssinarClaimsExpBateComOToken(t *testing.T) {
+	antes := time.Now()
+	tok, emitidos, err := AssinarClaims(9, 90*time.Second, segredo)
+	if err != nil {
+		t.Fatalf("assinar: %v", err)
+	}
+	lidos, err := ValidarClaims(tok, segredo)
+	if err != nil {
+		t.Fatalf("validar: %v", err)
+	}
+	if lidos.Sub != 9 || emitidos.Sub != 9 {
+		t.Fatalf("sub = %d/%d, quero 9", emitidos.Sub, lidos.Sub)
+	}
+	// O exp devolvido na emissão é exatamente o gravado no token (segundos).
+	if !lidos.Exp.Equal(emitidos.Exp) {
+		t.Fatalf("exp emitido %v ≠ exp lido %v", emitidos.Exp, lidos.Exp)
+	}
+	if lidos.Exp.Before(antes.Add(89*time.Second)) || lidos.Exp.After(antes.Add(92*time.Second)) {
+		t.Fatalf("exp = %v, quero ~90s após %v", lidos.Exp, antes)
+	}
+}
+
+func TestValidarClaimsTokenInvalidoDevolveZero(t *testing.T) {
+	c, err := ValidarClaims("a.b.c", segredo)
+	if err != ErrTokenInvalido {
+		t.Fatalf("erro = %v, quero ErrTokenInvalido", err)
+	}
+	if c.Sub != 0 || !c.Exp.IsZero() {
+		t.Fatalf("claims de token inválido = %+v, quero zerados", c)
+	}
+}
+
 func TestValidarTokenExpirado(t *testing.T) {
 	// Emitido no passado, já expirado.
 	passado := time.Now().Add(-2 * time.Hour)

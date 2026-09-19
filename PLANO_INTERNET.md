@@ -1,18 +1,18 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — execução iniciada (M1.F1.E1 concluída).
+Atualizado em: 2026-09-19 — execução em andamento (M1.F1.E1 e E2 concluídas).
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M1.F1.E2`
+**Próxima etapa:** `M1.F1.E3`
 
 Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma etapa `[~]`, escreva "Retomada:" com o que já foi feito, o que falta e decisões tomadas no caminho.
 
 ### M1 — Sessões duráveis
 - [x] M1.F1.E1 Migração 16 + store de sessões — `internal/db/sessoes.go` (`CriarSessao`, `AutenticarSessao` com deslize gravado só após 5 min, `RevogarSessao`, `RevogarSessaoPorToken`, `RevogarSessoesDoUsuario`, `ListarSessoesDoUsuario`, `RemoverSessoesExpiradas`), `ErrSessaoInvalida`, `PrazosSessao`, helper `formatoISO`/`agoraISO`
-- [ ] M1.F1.E2 Config de sessão, TTL do JWT, `exp` no principal, segredo sem memoizar erro
+- [x] M1.F1.E2 Config de sessão, TTL do JWT, `exp` no principal, segredo sem memoizar erro — `internal/api/auth_prazos.go` (`ChaveSessao*`, `prazosAuth`, `configInteiro`), `auth.Claims`/`AssinarClaims`/`ValidarClaims`, `principal.expiraEm`, `respAuth.expira_em` (RFC 3339, o frontend usa para agendar a renovação), `segredoJWT` com mutex
 - [ ] M1.F1.E3 Rotas refresh/logout, cookie, login cria sessão, revogações, fix `case "auth"`
 - [ ] M1.F1.E4 Sessões do usuário (listar/encerrar), rate limit de login, limpeza na manutenção
 - [ ] M1.F1.E5 SSE encerra no `exp` do token
@@ -168,7 +168,7 @@ Cada etapa traz: **Objetivo**, **Arquivos**, **Pronto quando** (critério verifi
 #### F2 — Frontend
 
 **M1.F2.E1 — `auth.js`/`api.js`: token em memória, boot por refresh, renovação, retry em 401**
-- Objetivo: 4.1 "Frontend", primeiros dois itens. Token só em memória; boot = `POST /auth/refresh`; 401 → portão, rede/5xx → estado "indisponível" (a tela vem na E3); `renovar()` single-flight; renovação proativa em ~80 % do `exp`; `req()` repete uma vez após renovar.
+- Objetivo: 4.1 "Frontend", primeiros dois itens. Token só em memória; boot = `POST /auth/refresh`; 401 → portão, rede/5xx → estado "indisponível" (a tela vem na E3); `renovar()` single-flight; renovação proativa em ~80 % da validade, calculada a partir do `expira_em` que login/setup/refresh devolvem (não precisa decodificar o JWT); `req()` repete uma vez após renovar.
 - Arquivos: `web/js/auth.js`, `web/js/api.js`.
 - Pronto quando: com `sessao_jwt_min=1`, navegar por 3 min sem cair; Network mostra um único `/auth/refresh` por renovação mesmo com várias chamadas concorrentes.
 

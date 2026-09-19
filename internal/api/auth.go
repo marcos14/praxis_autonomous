@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/auth"
 	"github.com/marcos14/praxis-autonomous/internal/db"
@@ -35,6 +36,10 @@ type principal struct {
 	email      string
 	permissoes map[string]bool
 	viaToken   bool
+	// expiraEm é o instante em que a credencial vence (o exp do JWT). Zero para
+	// tokens de API e modo bootstrap, que não expiram. Os streams SSE encerram
+	// neste instante para o cliente reabrir com um token renovado.
+	expiraEm time.Time
 }
 
 // tem informa se o principal possui a permissão perm — diretamente ou via curinga
@@ -195,11 +200,11 @@ func (s *Servidor) principalDeJWT(ctx context.Context, token string) (*principal
 	if err != nil {
 		return nil, err
 	}
-	sub, err := auth.Validar(token, secret)
+	claims, err := auth.ValidarClaims(token, secret)
 	if err != nil {
 		return nil, errNaoAutorizado
 	}
-	u, err := s.banco.ObterUsuario(ctx, sub)
+	u, err := s.banco.ObterUsuario(ctx, claims.Sub)
 	if err != nil {
 		if errors.Is(err, db.ErrNaoEncontrado) {
 			return nil, errNaoAutorizado // usuário do token não existe mais
@@ -213,7 +218,7 @@ func (s *Servidor) principalDeJWT(ctx context.Context, token string) (*principal
 	if err != nil {
 		return nil, err
 	}
-	return &principal{userID: u.ID, nome: u.Nome, email: u.Email, permissoes: perms}, nil
+	return &principal{userID: u.ID, nome: u.Nome, email: u.Email, permissoes: perms, expiraEm: claims.Exp}, nil
 }
 
 // principalDeToken resolve um token de API para seu principal, mapeando o papel

@@ -13,10 +13,6 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/i18n"
 )
 
-// ttlToken é a validade do JWT emitido no login/setup. Expirado, o cliente
-// precisa logar de novo (não há refresh token nesta versão).
-const ttlToken = 12 * time.Hour
-
 // registrarRotasAuth registra as rotas de autenticação de usuários. status/login/
 // setup são públicas (o middleware as libera); me/senha exigem estar autenticado.
 func (s *Servidor) registrarRotasAuth(mux *http.ServeMux) {
@@ -40,10 +36,12 @@ type respUsuario struct {
 	Papeis     []db.Papel `json:"papeis"`
 }
 
-// respAuth é o corpo de setup/login: o token recém-emitido e o usuário.
+// respAuth é o corpo de setup/login: o token recém-emitido, quando ele vence
+// (RFC 3339 UTC — o cliente agenda a renovação antes disso) e o usuário.
 type respAuth struct {
-	Token   string      `json:"token"`
-	Usuario respUsuario `json:"usuario"`
+	Token    string      `json:"token"`
+	ExpiraEm string      `json:"expira_em"`
+	Usuario  respUsuario `json:"usuario"`
 }
 
 // permsOrdenadas converte o conjunto de permissões num slice ordenado e estável
@@ -57,19 +55,24 @@ func permsOrdenadas(perms map[string]bool) []string {
 	return out
 }
 
-// emitirToken assina um JWT para userID com a validade padrão.
-func (s *Servidor) emitirToken(ctx context.Context, userID int64) (string, error) {
+// emitirToken assina um JWT para userID com a validade da config global
+// (sessao_jwt_min, relida a cada emissão) e devolve o token e quando ele vence.
+func (s *Servidor) emitirToken(ctx context.Context, userID int64) (string, time.Time, error) {
 	secret, err := s.segredoJWT(ctx)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
-	return auth.Assinar(userID, ttlToken, secret)
+	token, claims, err := auth.AssinarClaims(userID, s.prazosAuth(ctx).JWT, secret)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, claims.Exp, nil
 }
 
 // respostaAutenticado monta respAuth (token + usuário com permissões) para um
 // usuário recém-autenticado/criado.
 func (s *Servidor) respostaAutenticado(ctx context.Context, u db.Usuario) (respAuth, error) {
-	token, err := s.emitirToken(ctx, u.ID)
+	token, expira, err := s.emitirToken(ctx, u.ID)
 	if err != nil {
 		return respAuth{}, err
 	}
@@ -78,7 +81,8 @@ func (s *Servidor) respostaAutenticado(ctx context.Context, u db.Usuario) (respA
 		return respAuth{}, err
 	}
 	return respAuth{
-		Token: token,
+		Token:    token,
+		ExpiraEm: expira.UTC().Format(time.RFC3339),
 		Usuario: respUsuario{
 			ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo, Idioma: u.Idioma,
 			Permissoes: permsOrdenadas(perms), Papeis: u.Papeis,
