@@ -134,7 +134,7 @@ function aplicarPermissoes() {
     limpar(box);
     box.append(
       el("div", { class: "quem" }, el("b", { text: u.nome || u.email }), el("span", { text: u.email })),
-      el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => auth.logout() }),
+      el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => sair() }),
       seletorIdioma(() => auth.tokenAtual()),
     );
     box.hidden = false;
@@ -143,26 +143,34 @@ function aplicarPermissoes() {
 
 // ---------- Portão de autenticação ----------
 
-// mostrarPortao exibe o overlay de login (ou de criação do primeiro admin) e
-// esconde a app até haver sessão. O card é montado ANTES de tornar o overlay
-// visível — assim, mesmo que auth.status() demore, nunca se vê o overlay vazio
-// (o "card em branco" que aparecia enquanto se aguardava a resposta).
-async function mostrarPortao() {
-  document.querySelector(".app").style.display = "none";
+// mostrarPortao exibe o overlay de login (ou de criação do primeiro admin). O
+// card é montado ANTES de tornar o overlay visível — assim, mesmo que
+// auth.status() demore, nunca se vê o overlay vazio.
+//
+// No boot (reauth == null) esconde a app até haver sessão. Ao REAUTENTICAR
+// (a sessão caiu com a app aberta: revogada, expirada no servidor) a app fica
+// como está por baixo do overlay — DOM, texto digitado e rolagem sobrevivem —
+// e, se quem volta é o mesmo usuário, tudo continua de onde parou.
+async function mostrarPortao(reauth = null) {
+  if (!reauth) document.querySelector(".app").style.display = "none";
   const overlay = document.getElementById("auth-overlay");
 
   let setupNecessario = false;
-  try {
-    const st = await auth.status();
-    setupNecessario = !!(st && st.setup_necessario);
-  } catch { /* sem backend: mostra login mesmo assim */ }
+  if (!reauth) {
+    try {
+      const st = await auth.status();
+      setupNecessario = !!(st && st.setup_necessario);
+    } catch { /* sem backend: mostra login mesmo assim */ }
+  }
 
-  renderAuthCard(setupNecessario ? "setup" : "login", setupNecessario);
+  renderAuthCard(setupNecessario ? "setup" : "login", setupNecessario, reauth);
   overlay.hidden = false;
 }
 
 // renderAuthCard desenha o formulário de login ou de setup dentro do card.
-function renderAuthCard(modo, setupNecessario) {
+// reauth ({ anterior: usuário que estava logado } ou null) muda a mensagem,
+// pré-preenche o e-mail e decide o que fazer depois de logar.
+function renderAuthCard(modo, setupNecessario, reauth = null) {
   const card = document.getElementById("auth-card");
   limpar(card);
   const erro = el("div", { class: "banner banner-erro", hidden: true });
@@ -170,6 +178,8 @@ function renderAuthCard(modo, setupNecessario) {
   const inpNome = el("input", { type: "text", placeholder: t("auth.ph_nome"), autocomplete: "name" });
   const inpEmail = el("input", { type: "email", placeholder: t("auth.ph_email"), autocomplete: "username" });
   const inpSenha = el("input", { type: "password", placeholder: t("auth.ph_senha"), autocomplete: modo === "setup" ? "new-password" : "current-password" });
+  const anterior = reauth && reauth.anterior;
+  if (anterior && anterior.email) inpEmail.value = anterior.email;
 
   const mostrarErro = (msg) => { erro.textContent = msg; erro.hidden = !msg; };
 
@@ -183,7 +193,13 @@ function renderAuthCard(modo, setupNecessario) {
       } else {
         await auth.login(inpEmail.value.trim(), inpSenha.value);
       }
-      entrarNaApp();
+      if (!reauth) {
+        entrarNaApp();
+      } else if (anterior && auth.usuarioAtual() && auth.usuarioAtual().id === anterior.id) {
+        retomarApp();
+      } else {
+        location.reload(); // outra pessoa entrou: começa do zero, sem estado alheio
+      }
     } catch (e) {
       // Se o setup falhou porque a instalação já tem admin (outra aba/instância
       // criou), troca para a tela de login em vez de deixar o usuário preso no
@@ -204,9 +220,12 @@ function renderAuthCard(modo, setupNecessario) {
   if (modo === "setup") form.append(rotulado(t("auth.nome"), inpNome));
   form.append(rotulado(t("auth.email"), inpEmail), rotulado(t("auth.senha"), inpSenha), btn);
 
+  let sub = t("auth.sub_login");
+  if (modo === "setup") sub = t("auth.sub_setup");
+  else if (reauth) sub = t("auth.sub_reautenticar");
   card.append(
     el("h2", { text: modo === "setup" ? t("auth.titulo_setup") : "Praxis Autonomous" }),
-    el("p", { class: "sub", text: modo === "setup" ? t("auth.sub_setup") : t("auth.sub_login") }),
+    el("p", { class: "sub", text: sub }),
     erro,
     form,
     el("div", { class: "auth-idioma" }, seletorIdioma(() => "")),
@@ -214,7 +233,31 @@ function renderAuthCard(modo, setupNecessario) {
 
   // Alternância login/setup só faz sentido quando o setup NÃO é obrigatório
   // (já há admin) — aí o link não aparece. Mantido simples: sem alternância.
-  (modo === "setup" ? inpNome : inpEmail).focus();
+  if (modo === "setup") inpNome.focus();
+  else if (inpEmail.value) inpSenha.focus();
+  else inpEmail.focus();
+}
+
+// retomarApp fecha o portão após reautenticar com o MESMO usuário: a view atual
+// continua como estava (nada é remontado); só as permissões do menu são
+// reaplicadas. Os streams reabrem sozinhos ao ver o token novo (api.abrirStream)
+// e os polls de fundo voltam a funcionar na próxima chamada.
+function retomarApp() {
+  document.getElementById("auth-overlay").hidden = true;
+  document.querySelector(".app").style.display = "";
+  aplicarPermissoes();
+}
+
+// sair revoga a sessão no servidor (apaga o cookie) e recarrega a página para
+// começar do zero — fecha streams, limpa o estado das views e cai no portão.
+let saindo = false;
+async function sair() {
+  saindo = true;
+  try {
+    await auth.logout();
+  } finally {
+    location.reload();
+  }
 }
 
 // rotulado embrulha um input com seu label (padrão .form).
@@ -302,9 +345,14 @@ async function iniciar() {
   // Traduz os textos estáticos do index.html (data-i18n) para o idioma ativo.
   aplicarTraducoes(document);
 
-  // Sair derruba a sessão: recarrega para reinicializar tudo (fecha SSEs, limpa
-  // estado das views) e cair de novo no portão.
-  auth.aoDeslogar(() => location.reload());
+  // A sessão caiu com a app aberta (401 definitivo: sessão revogada ou expirada
+  // no servidor) → portão POR CIMA da app, sem recarregar — o que estava na
+  // tela, inclusive texto digitado, continua lá. "Sair" (botão) é diferente:
+  // revoga no servidor e recarrega; o callback não deve se sobrepor a isso.
+  auth.aoDeslogar((anterior) => {
+    if (saindo) return;
+    mostrarPortao({ anterior });
+  });
 
   document.querySelectorAll(".nav-item").forEach((btn) =>
     btn.addEventListener("click", () => irParaHash(btn.dataset.view)));

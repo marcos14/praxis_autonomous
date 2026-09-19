@@ -191,12 +191,15 @@ export async function trocarSenha(atual, nova) {
 
 // sessaoCaiu derruba a sessão local e dispara o callback registrado UMA única
 // vez: várias requisições autenticadas podem receber 401 em paralelo (ex.: a
-// Home dispara metrics/activity/pendencias juntas) e cada uma chega aqui.
+// Home dispara metrics/activity/pendencias juntas) e cada uma chega aqui. O
+// callback recebe o usuário que estava logado (a shell pré-preenche o e-mail e
+// sabe se quem voltou é a mesma pessoa).
 export function sessaoCaiu() {
+  const anterior = _usuario;
   limparSessao();
   if (_deslogando) return;
   _deslogando = true;
-  if (_aoDeslogar) _aoDeslogar();
+  if (_aoDeslogar) _aoDeslogar(anterior);
 }
 
 // logout é o "Sair": revoga a sessão no servidor (que apaga o cookie) e derruba

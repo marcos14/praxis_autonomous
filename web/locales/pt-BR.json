@@ -30,6 +30,7 @@
   "auth.titulo_setup": "Bem-vindo ao Praxis",
   "auth.sub_setup": "Nenhum usuário ainda. Crie o administrador inicial desta instalação.",
   "auth.sub_login": "Entre com seu e-mail e senha.",
+  "auth.sub_reautenticar": "Sua sessão expirou. Entre de novo para continuar de onde parou.",
   "auth.nome": "Nome",
   "auth.email": "E-mail",
   "auth.senha": "Senha",

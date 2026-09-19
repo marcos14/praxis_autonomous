@@ -156,13 +156,25 @@ export function abrirStream(caminho, handlers = {}) {
         try {
           await renovar();
         } catch (e) {
-          if (sessaoInvalida(e)) { sessaoCaiu(); return; }
+          if (sessaoInvalida(e)) { sessaoCaiu(); aguardarLogin(); return; }
           reabrir(false); // transitório: tenta de novo mais tarde
           return;
         }
       }
       abrir();
     }, espera);
+  };
+
+  // aguardarLogin: a sessão caiu e o portão de login está na tela, por cima da
+  // view. Fica de olho no token; quando o usuário loga de novo (token em
+  // memória de volta), reabre o stream — a view continua viva e volta a receber
+  // eventos sem remontar nada.
+  const aguardarLogin = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (fechado) return;
+      if (tokenAtual()) { tentativa = 0; abrir(); } else aguardarLogin();
+    }, 2000);
   };
 
   abrir();

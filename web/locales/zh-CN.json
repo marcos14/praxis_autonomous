@@ -30,6 +30,7 @@
   "auth.titulo_setup": "欢迎使用 Praxis",
   "auth.sub_setup": "尚无用户。请创建此安装的初始管理员。",
   "auth.sub_login": "使用您的邮箱和密码登录。",
+  "auth.sub_reautenticar": "您的会话已过期。请重新登录以继续。",
   "auth.nome": "姓名",
   "auth.email": "邮箱",
   "auth.senha": "密码",
