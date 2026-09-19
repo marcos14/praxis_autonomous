@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Store da ACL de visibilidade de projetos (tabela project_access, migração 9).
@@ -293,4 +294,67 @@ func anexarCondAcesso(cond []string, args []any, col string, visiveisPara *int64
 	cond = append(cond, condAcessoProjeto(col))
 	args = append(args, argsAcessoProjeto(*visiveisPara)...)
 	return cond, args
+}
+
+// condAcessoAlvo é a ACL para itens ligados a UM projeto (alias.project_id) OU a
+// UM grupo de projetos (alias.group_id) — consultas e planejamentos: o projeto
+// segue a ACL; o grupo só é visível quando TODOS os projetos-membros são
+// (fail-closed, como UsuarioVeGrupoProjetos). Consome argsAcessoAlvo (4 args).
+func condAcessoAlvo(alias string) string {
+	return `((` + alias + `.project_id IS NULL OR ` + condAcessoProjeto(alias+".project_id") + `)
+		AND (` + alias + `.group_id IS NULL OR NOT EXISTS (
+			SELECT 1 FROM project_group_members pgm
+			WHERE pgm.group_id = ` + alias + `.group_id
+			  AND NOT ` + condAcessoProjeto("pgm.project_id") + `)))`
+}
+
+// argsAcessoAlvo são os argumentos consumidos por condAcessoAlvo.
+func argsAcessoAlvo(userID int64) []any {
+	return append(argsAcessoProjeto(userID), argsAcessoProjeto(userID)...)
+}
+
+// anexarCondAcessoAlvo junta condAcessoAlvo ao WHERE quando a visão aplica a
+// ACL (v.ACL não-nil).
+func anexarCondAcessoAlvo(cond []string, args []any, alias string, v Visao) ([]string, []any) {
+	if v.ACL == nil {
+		return cond, args
+	}
+	return append(cond, condAcessoAlvo(alias)), append(args, argsAcessoAlvo(*v.ACL)...)
+}
+
+// alvoVisivel decide, pela Visao, se o item id da tabela (consultas ou
+// planejamentos) pode ser visto: ACL de projeto/grupo E regra de dono. Item
+// inexistente devolve TRUE — o handler é quem responde 404 sem revelar se
+// existe. Visão sem restrições devolve true sem consultar o banco.
+func (d *DB) alvoVisivel(ctx context.Context, tabela, alias string, id int64, v Visao) (bool, error) {
+	cond, args := []string{}, []any{}
+	cond, args = anexarCondAcessoAlvo(cond, args, alias, v)
+	cond, args = anexarCondDono(cond, args, alias, v)
+	if len(cond) == 0 {
+		return true, nil
+	}
+	args = append(args, id)
+	var ve bool
+	err := d.Leitor.QueryRowContext(ctx,
+		`SELECT (`+strings.Join(cond, " AND ")+`) FROM `+tabela+` `+alias+` WHERE `+alias+`.id = ?`,
+		args...).Scan(&ve)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("visibilidade de %s %d: %w", tabela, id, err)
+	}
+	return ve, nil
+}
+
+// ConsultaVisivel informa se a consulta id é visível pela Visao (ACL + dono).
+// Inexistente → true (o handler responde 404).
+func (d *DB) ConsultaVisivel(ctx context.Context, id int64, v Visao) (bool, error) {
+	return d.alvoVisivel(ctx, "consultas", "c", id, v)
+}
+
+// PlanejamentoVisivel informa se o planejamento id é visível pela Visao (ACL +
+// dono). Inexistente → true (o handler responde 404).
+func (d *DB) PlanejamentoVisivel(ctx context.Context, id int64, v Visao) (bool, error) {
+	return d.alvoVisivel(ctx, "planejamentos", "pl", id, v)
 }

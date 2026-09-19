@@ -56,6 +56,9 @@ type Consulta struct {
 	Visibilidade string `json:"visibilidade"`
 	ProjetoNome  string `json:"projeto_nome,omitempty"`
 	GrupoNome    string `json:"grupo_nome,omitempty"`
+	// CriadoPorNome é o nome do criador, resolvido por join nas listagens (vazio
+	// fora delas e para itens sem dono).
+	CriadoPorNome string `json:"criado_por_nome,omitempty"`
 }
 
 // MensagemConsulta é uma linha de consulta_messages. Meta é JSON livre (objeto
@@ -159,8 +162,10 @@ func (d *DB) ListarConsultas(ctx context.Context, f FiltroConsultas) ([]Consulta
 	case f.GroupID > 0:
 		cond, args = append(cond, "c.group_id = ?"), append(args, f.GroupID)
 	}
-	// Regra de dono e escopo (M2): quem não ignora a regra só vê o que criou,
-	// o que é do grupo dele, o público e os sem dono conforme a config.
+	// Visão (M2): ACL de projeto/grupo, regra de dono (quem não a ignora só vê
+	// o que criou, o do grupo dele, o público e os sem dono conforme a config)
+	// e escopo — tudo no SQL.
+	cond, args = anexarCondAcessoAlvo(cond, args, "c", f.Visao)
 	cond, args = anexarCondDono(cond, args, "c", f.Visao)
 	cond, args = anexarCondEscopo(cond, args, "c", f.Visao)
 	where := ""
@@ -170,10 +175,11 @@ func (d *DB) ListarConsultas(ctx context.Context, f FiltroConsultas) ([]Consulta
 	rows, err := d.Leitor.QueryContext(ctx, `
 		SELECT c.id, c.project_id, c.group_id, c.titulo, c.status, c.custo_usd,
 		       c.criado_por, c.erro, c.criado_em, c.atualizado_em, c.visibilidade,
-		       COALESCE(p.nome, ''), COALESCE(g.nome, '')
+		       COALESCE(p.nome, ''), COALESCE(g.nome, ''), COALESCE(u.nome, '')
 		FROM consultas c
 		LEFT JOIN projects p       ON p.id = c.project_id
 		LEFT JOIN project_groups g ON g.id = c.group_id
+		LEFT JOIN users u          ON u.id = c.criado_por
 		`+where+`
 		ORDER BY c.atualizado_em DESC, c.id DESC`, args...)
 	if err != nil {
@@ -188,7 +194,8 @@ func (d *DB) ListarConsultas(ctx context.Context, f FiltroConsultas) ([]Consulta
 			projID, grpID, por sql.NullInt64
 		)
 		if err := rows.Scan(&c.ID, &projID, &grpID, &c.Titulo, &c.Status, &c.CustoUSD,
-			&por, &c.Erro, &c.CriadoEm, &c.AtualizadoEm, &c.Visibilidade, &c.ProjetoNome, &c.GrupoNome); err != nil {
+			&por, &c.Erro, &c.CriadoEm, &c.AtualizadoEm, &c.Visibilidade,
+			&c.ProjetoNome, &c.GrupoNome, &c.CriadoPorNome); err != nil {
 			return nil, err
 		}
 		c.ProjectID = ptrDeNull(projID)

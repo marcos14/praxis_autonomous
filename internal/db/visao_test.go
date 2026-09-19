@@ -148,6 +148,159 @@ func TestVisaoCombinaComFiltroDeProjetoEVisibilidadeDefault(t *testing.T) {
 	}
 }
 
+// planejamentoVis cria um planejamento no projeto com criador e visibilidade dados.
+func planejamentoVis(t *testing.T, d *DB, proj int64, criador *int64, vis, titulo string) Planejamento {
+	t.Helper()
+	p, _, err := d.CriarPlanejamentoComChat(context.Background(),
+		Planejamento{ProjectID: &proj, Titulo: titulo, CriadoPor: criador, Visibilidade: vis},
+		MensagemPlanejamento{Conteudo: "necessidade"})
+	if err != nil {
+		t.Fatalf("criar planejamento %s: %v", titulo, err)
+	}
+	return p
+}
+
+func titulosPlan(ps []Planejamento) string {
+	ts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		ts = append(ts, p.Titulo)
+	}
+	sort.Strings(ts)
+	return strings.Join(ts, " ")
+}
+
+func TestVisaoRegraDeDonoEmPlanejamentos(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	proj := criarProjetoTeste(t, d, "pl")
+	ana := criarUsuarioTeste(t, d, "ana")
+	bia := criarUsuarioTeste(t, d, "bia")
+	caio := criarUsuarioTeste(t, d, "caio")
+	grupoDeUsuariosTeste(t, d, "G1", ana, bia)
+	planejamentoVis(t, d, proj, ptr(ana), VisibilidadePrivada, "ana-privada")
+	planejamentoVis(t, d, proj, ptr(ana), VisibilidadeGrupo, "ana-grupo")
+	planejamentoVis(t, d, proj, ptr(ana), VisibilidadePublica, "ana-publica")
+	semVis := planejamentoVis(t, d, proj, nil, "", "sem-dono")
+	if semVis.Visibilidade != VisibilidadePrivada {
+		t.Fatalf("default = %q, quero privada", semVis.Visibilidade)
+	}
+
+	listar := func(v Visao) string {
+		t.Helper()
+		ps, err := d.ListarPlanejamentos(ctx, FiltroPlanejamentos{Visao: v})
+		if err != nil {
+			t.Fatalf("ListarPlanejamentos: %v", err)
+		}
+		return titulosPlan(ps)
+	}
+	if got := listar(Visao{}); got != "ana-grupo ana-privada ana-publica sem-dono" {
+		t.Errorf("visão total: %q", got)
+	}
+	if got := listar(Visao{Usuario: bia, Dono: &bia, SemDono: SemDonoAdmins}); got != "ana-grupo ana-publica" {
+		t.Errorf("bia: %q", got)
+	}
+	if got := listar(Visao{Usuario: caio, Dono: &caio, SemDono: SemDonoPublica}); got != "ana-publica sem-dono" {
+		t.Errorf("caio com sem-dono público: %q", got)
+	}
+	if got := listar(Visao{Usuario: ana, Dono: &ana, Escopo: EscopoMeus}); got != "ana-grupo ana-privada ana-publica" {
+		t.Errorf("escopo meus: %q", got)
+	}
+
+	// visibilidade persistida e alterável.
+	obtido, err := d.ObterPlanejamento(ctx, semVis.ID)
+	if err != nil || obtido.Visibilidade != VisibilidadePrivada {
+		t.Fatalf("ObterPlanejamento: %+v %v", obtido, err)
+	}
+	if err := d.DefinirVisibilidadePlanejamento(ctx, semVis.ID, VisibilidadePublica); err != nil {
+		t.Fatalf("DefinirVisibilidadePlanejamento: %v", err)
+	}
+	if got := listar(Visao{Usuario: bia, Dono: &bia}); got != "ana-grupo ana-publica sem-dono" {
+		t.Errorf("sem-dono tornado público: %q", got)
+	}
+	if err := d.DefinirVisibilidadePlanejamento(ctx, 9999, VisibilidadePublica); !errors.Is(err, ErrNaoEncontrado) {
+		t.Fatalf("inexistente: %v", err)
+	}
+	if _, _, err := d.CriarPlanejamentoComChat(ctx, Planejamento{ProjectID: &proj, Titulo: "x", Visibilidade: "oculta"},
+		MensagemPlanejamento{Conteudo: "?"}); !errors.Is(err, ErrValorInvalido) {
+		t.Fatalf("visibilidade inválida: %v", err)
+	}
+}
+
+func TestVisaoACLNoSQLEChecagemPorID(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	aberto := criarProjetoTeste(t, d, "aberto")
+	restrito := criarProjetoTeste(t, d, "restrito")
+	ana := criarUsuarioTeste(t, d, "ana")
+	bia := criarUsuarioTeste(t, d, "bia")
+	// só ana enxerga o projeto restrito.
+	if err := d.DefinirAcessoProjeto(ctx, restrito, []int64{ana}, nil); err != nil {
+		t.Fatalf("ACL: %v", err)
+	}
+	grupo := criarGrupoTeste(t, d, "misto", aberto, restrito)
+
+	cAberta := consultaVis(t, d, aberto, ptr(ana), VisibilidadePublica, "c-aberta")
+	cRestrita := consultaVis(t, d, restrito, ptr(ana), VisibilidadePublica, "c-restrita")
+	cPrivada := consultaVis(t, d, aberto, ptr(ana), VisibilidadePrivada, "c-privada")
+	cGrupo, _, err := d.CriarConsultaComChat(ctx, Consulta{GroupID: &grupo.ID, Titulo: "c-grupo", CriadoPor: ptr(ana), Visibilidade: VisibilidadePublica},
+		MensagemConsulta{Conteudo: "?"})
+	if err != nil {
+		t.Fatalf("consulta de grupo: %v", err)
+	}
+	pRestrito := planejamentoVis(t, d, restrito, ptr(ana), VisibilidadePublica, "p-restrito")
+	pAberto := planejamentoVis(t, d, aberto, ptr(ana), VisibilidadePublica, "p-aberto")
+
+	visBia := Visao{Usuario: bia, ACL: &bia, Dono: &bia}
+	visAna := Visao{Usuario: ana, ACL: &ana, Dono: &ana}
+
+	// bia: só o projeto aberto; o grupo esconde (um membro restrito); a privada não.
+	cs, err := d.ListarConsultas(ctx, FiltroConsultas{Visao: visBia})
+	if err != nil || titulos(cs) != "c-aberta" {
+		t.Fatalf("consultas de bia: %q (%v)", titulos(cs), err)
+	}
+	if cs[0].CriadoPorNome != "ana" {
+		t.Fatalf("criado_por_nome = %q, quero ana", cs[0].CriadoPorNome)
+	}
+	// ana: tudo dela, inclusive o grupo (vê os dois projetos).
+	cs, _ = d.ListarConsultas(ctx, FiltroConsultas{Visao: visAna})
+	if titulos(cs) != "c-aberta c-grupo c-privada c-restrita" {
+		t.Fatalf("consultas de ana: %q", titulos(cs))
+	}
+	ps, _ := d.ListarPlanejamentos(ctx, FiltroPlanejamentos{Visao: visBia})
+	if titulosPlan(ps) != "p-aberto" || ps[0].CriadoPorNome != "ana" {
+		t.Fatalf("planejamentos de bia: %+v", ps)
+	}
+	// ACL sozinha (projetos.gerir não tem: ACL sim, dono não): admin de projetos
+	// sem `*` continua não vendo o restrito.
+	cs, _ = d.ListarConsultas(ctx, FiltroConsultas{Visao: Visao{Usuario: bia, Dono: &bia}})
+	if titulos(cs) != "c-aberta c-grupo c-restrita" {
+		t.Fatalf("bia ignorando ACL (só dono): %q", titulos(cs))
+	}
+
+	// checagem por id segue a mesma regra; inexistente devolve true.
+	casos := []struct {
+		nome  string
+		fn    func() (bool, error)
+		quero bool
+	}{
+		{"bia vê c-aberta", func() (bool, error) { return d.ConsultaVisivel(ctx, cAberta.ID, visBia) }, true},
+		{"bia não vê c-restrita (ACL)", func() (bool, error) { return d.ConsultaVisivel(ctx, cRestrita.ID, visBia) }, false},
+		{"bia não vê c-privada (dono)", func() (bool, error) { return d.ConsultaVisivel(ctx, cPrivada.ID, visBia) }, false},
+		{"bia não vê c-grupo (grupo com projeto restrito)", func() (bool, error) { return d.ConsultaVisivel(ctx, cGrupo.ID, visBia) }, false},
+		{"ana vê c-grupo", func() (bool, error) { return d.ConsultaVisivel(ctx, cGrupo.ID, visAna) }, true},
+		{"admin vê c-privada", func() (bool, error) { return d.ConsultaVisivel(ctx, cPrivada.ID, Visao{}) }, true},
+		{"inexistente → true", func() (bool, error) { return d.ConsultaVisivel(ctx, 9999, visBia) }, true},
+		{"bia não vê p-restrito", func() (bool, error) { return d.PlanejamentoVisivel(ctx, pRestrito.ID, visBia) }, false},
+		{"bia vê p-aberto", func() (bool, error) { return d.PlanejamentoVisivel(ctx, pAberto.ID, visBia) }, true},
+	}
+	for _, tc := range casos {
+		got, err := tc.fn()
+		if err != nil || got != tc.quero {
+			t.Errorf("%s: %v (%v), quero %v", tc.nome, got, err, tc.quero)
+		}
+	}
+}
+
 func TestDefinirVisibilidadeConsulta(t *testing.T) {
 	d := abrirTemp(t)
 	ctx := context.Background()

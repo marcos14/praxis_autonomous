@@ -70,15 +70,15 @@ func TestListarPlanejamentosComNomesEFiltros(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	todos, err := d.ListarPlanejamentos(ctx, 0, 0)
+	todos, err := d.ListarPlanejamentos(ctx, FiltroPlanejamentos{})
 	if err != nil || len(todos) != 2 {
 		t.Fatalf("listar todos = %v (%v), quero 2", todos, err)
 	}
-	doProjeto, err := d.ListarPlanejamentos(ctx, projID, 0)
+	doProjeto, err := d.ListarPlanejamentos(ctx, FiltroPlanejamentos{ProjectID: projID})
 	if err != nil || len(doProjeto) != 1 || doProjeto[0].ProjetoNome == "" {
 		t.Fatalf("filtro por projeto = %+v (%v), quero 1 com nome resolvido", doProjeto, err)
 	}
-	doGrupo, err := d.ListarPlanejamentos(ctx, 0, grupo.ID)
+	doGrupo, err := d.ListarPlanejamentos(ctx, FiltroPlanejamentos{GroupID: grupo.ID})
 	if err != nil || len(doGrupo) != 1 || doGrupo[0].GrupoNome == "" {
 		t.Fatalf("filtro por grupo = %+v (%v), quero 1 com nome resolvido", doGrupo, err)
 	}
@@ -167,7 +167,7 @@ func TestVinculosPlanejamentoDemanda(t *testing.T) {
 	if err != nil || got.DemandasCriadas != 2 {
 		t.Fatalf("demandas_criadas no Obter = %d (%v), quero 2", got.DemandasCriadas, err)
 	}
-	lista, err := d.ListarPlanejamentos(ctx, projID, 0)
+	lista, err := d.ListarPlanejamentos(ctx, FiltroPlanejamentos{ProjectID: projID})
 	if err != nil || len(lista) != 1 || lista[0].DemandasCriadas != 2 {
 		t.Fatalf("demandas_criadas no Listar = %+v (%v)", lista, err)
 	}

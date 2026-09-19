@@ -231,7 +231,7 @@ func (s *Servidor) handleDispararTurnoPlanejamento(w http.ResponseWriter, r *htt
 func (s *Servidor) handleListarPlanejamentos(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := strconv.ParseInt(r.URL.Query().Get("project"), 10, 64)
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group"), 10, 64)
-	planejamentos, err := s.banco.ListarPlanejamentos(r.Context(), projectID, groupID)
+	planejamentos, err := s.banco.ListarPlanejamentos(r.Context(), db.FiltroPlanejamentos{ProjectID: projectID, GroupID: groupID})
 	if err != nil {
 		s.responderErroPlanejamento(w, r, err)
 		return

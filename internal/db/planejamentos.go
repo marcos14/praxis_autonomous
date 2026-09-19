@@ -95,8 +95,13 @@ type Planejamento struct {
 	Erro            string  `json:"erro"`
 	CriadoEm        string  `json:"criado_em"`
 	AtualizadoEm    string  `json:"atualizado_em"`
-	ProjetoNome     string  `json:"projeto_nome,omitempty"`
-	GrupoNome       string  `json:"grupo_nome,omitempty"`
+	// Visibilidade: privada (só o criador), grupo ou publica — ver visao.go.
+	Visibilidade string `json:"visibilidade"`
+	ProjetoNome  string `json:"projeto_nome,omitempty"`
+	GrupoNome    string `json:"grupo_nome,omitempty"`
+	// CriadoPorNome é o nome do criador, resolvido por join nas listagens (vazio
+	// fora delas e para itens sem dono).
+	CriadoPorNome string `json:"criado_por_nome,omitempty"`
 }
 
 // MensagemPlanejamento é uma linha de planejamento_messages. Meta é JSON livre
@@ -144,7 +149,7 @@ type ArtefatoPlanejamento struct {
 // legado da migração 13 e não é mais lido — a verdade está em
 // planejamento_demandas).
 const colunasPlanejamento = `id, project_id, group_id, titulo, foco, nivel_visual, status,
-	custo_usd, criado_por, erro, criado_em, atualizado_em,
+	custo_usd, criado_por, erro, criado_em, atualizado_em, visibilidade,
 	(SELECT COUNT(*) FROM planejamento_demandas pd WHERE pd.planejamento_id = planejamentos.id)`
 
 // scanPlanejamento lê uma linha de planejamentos (na ordem de
@@ -156,7 +161,7 @@ func scanPlanejamento(sc interface{ Scan(...any) error }) (Planejamento, error) 
 	)
 	if err := sc.Scan(&p.ID, &projID, &grpID, &p.Titulo, &p.Foco, &p.NivelVisual,
 		&p.Status, &p.CustoUSD, &por, &p.Erro, &p.CriadoEm, &p.AtualizadoEm,
-		&p.DemandasCriadas); err != nil {
+		&p.Visibilidade, &p.DemandasCriadas); err != nil {
 		return Planejamento{}, err
 	}
 	p.ProjectID = ptrDeNull(projID)
@@ -189,6 +194,12 @@ func (d *DB) CriarPlanejamentoComChat(ctx context.Context, p Planejamento, prime
 	if !PapelPlanejamentoValido(primeira.Papel) {
 		return Planejamento{}, MensagemPlanejamento{}, ErrPapelInvalido
 	}
+	if strings.TrimSpace(p.Visibilidade) == "" {
+		p.Visibilidade = VisibilidadePrivada
+	}
+	if !VisibilidadeValida(p.Visibilidade) {
+		return Planejamento{}, MensagemPlanejamento{}, ErrValorInvalido
+	}
 
 	tx, err := d.Escritor.BeginTx(ctx, nil)
 	if err != nil {
@@ -197,11 +208,11 @@ func (d *DB) CriarPlanejamentoComChat(ctx context.Context, p Planejamento, prime
 	defer tx.Rollback()
 
 	row := tx.QueryRowContext(ctx, `
-		INSERT INTO planejamentos (project_id, group_id, titulo, foco, nivel_visual, status, custo_usd, criado_por, erro)
-		VALUES (?,?,?,?,?,?,?,?,?)
+		INSERT INTO planejamentos (project_id, group_id, titulo, foco, nivel_visual, status, custo_usd, criado_por, erro, visibilidade)
+		VALUES (?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em, atualizado_em`,
 		nullInt(p.ProjectID), nullInt(p.GroupID), p.Titulo, p.Foco, p.NivelVisual,
-		p.Status, p.CustoUSD, nullInt(p.CriadoPor), p.Erro,
+		p.Status, p.CustoUSD, nullInt(p.CriadoPor), p.Erro, p.Visibilidade,
 	)
 	if err := row.Scan(&p.ID, &p.CriadoEm, &p.AtualizadoEm); err != nil {
 		return Planejamento{}, MensagemPlanejamento{}, traduzirErroFK(err)
@@ -226,26 +237,66 @@ func (d *DB) CriarPlanejamentoComChat(ctx context.Context, p Planejamento, prime
 	return p, primeira, nil
 }
 
+// FiltroPlanejamentos restringe ListarPlanejamentos. ProjectID/GroupID zerados
+// não filtram (o primeiro não-zero vence); Visao aplica a ACL de projeto, a
+// regra de dono e o escopo (valor zero = sem restrição).
+type FiltroPlanejamentos struct {
+	ProjectID int64
+	GroupID   int64
+	Visao     Visao
+}
+
+// DefinirVisibilidadePlanejamento muda quem enxerga o planejamento (dono ou
+// admin — checado na API). Valor desconhecido vira ErrValorInvalido;
+// planejamento inexistente, ErrNaoEncontrado.
+func (d *DB) DefinirVisibilidadePlanejamento(ctx context.Context, id int64, visibilidade string) error {
+	if !VisibilidadeValida(visibilidade) {
+		return ErrValorInvalido
+	}
+	res, err := d.Escritor.ExecContext(ctx,
+		`UPDATE planejamentos SET visibilidade = ? WHERE id = ?`, visibilidade, id)
+	if err != nil {
+		return fmt.Errorf("definir visibilidade do planejamento %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("definir visibilidade do planejamento %d: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNaoEncontrado
+	}
+	return nil
+}
+
 // ListarPlanejamentos devolve os planejamentos em ordem de atividade
 // (atualizado_em decrescente, id decrescente no empate), com nome do
-// projeto/grupo resolvido por join. projectID/groupID > 0 filtram. Slice não-nil.
-func (d *DB) ListarPlanejamentos(ctx context.Context, projectID, groupID int64) ([]Planejamento, error) {
-	where, args := "", []any{}
+// projeto/grupo e do criador resolvidos por join, já filtrados pela Visao
+// (ACL de projeto, regra de dono e escopo). Slice não-nil.
+func (d *DB) ListarPlanejamentos(ctx context.Context, f FiltroPlanejamentos) ([]Planejamento, error) {
+	cond, args := []string{}, []any{}
 	switch {
-	case projectID > 0:
-		where, args = "WHERE pl.project_id = ?", []any{projectID}
-	case groupID > 0:
-		where, args = "WHERE pl.group_id = ?", []any{groupID}
+	case f.ProjectID > 0:
+		cond, args = append(cond, "pl.project_id = ?"), append(args, f.ProjectID)
+	case f.GroupID > 0:
+		cond, args = append(cond, "pl.group_id = ?"), append(args, f.GroupID)
+	}
+	cond, args = anexarCondAcessoAlvo(cond, args, "pl", f.Visao)
+	cond, args = anexarCondDono(cond, args, "pl", f.Visao)
+	cond, args = anexarCondEscopo(cond, args, "pl", f.Visao)
+	where := ""
+	if len(cond) > 0 {
+		where = "WHERE " + strings.Join(cond, " AND ")
 	}
 	rows, err := d.Leitor.QueryContext(ctx, `
 		SELECT pl.id, pl.project_id, pl.group_id, pl.titulo, pl.foco, pl.nivel_visual,
 		       pl.status, pl.custo_usd, pl.criado_por, pl.erro,
-		       pl.criado_em, pl.atualizado_em,
+		       pl.criado_em, pl.atualizado_em, pl.visibilidade,
 		       (SELECT COUNT(*) FROM planejamento_demandas pd WHERE pd.planejamento_id = pl.id),
-		       COALESCE(p.nome, ''), COALESCE(g.nome, '')
+		       COALESCE(p.nome, ''), COALESCE(g.nome, ''), COALESCE(u.nome, '')
 		FROM planejamentos pl
 		LEFT JOIN projects p       ON p.id = pl.project_id
 		LEFT JOIN project_groups g ON g.id = pl.group_id
+		LEFT JOIN users u          ON u.id = pl.criado_por
 		`+where+`
 		ORDER BY pl.atualizado_em DESC, pl.id DESC`, args...)
 	if err != nil {
@@ -260,8 +311,8 @@ func (d *DB) ListarPlanejamentos(ctx context.Context, projectID, groupID int64) 
 			projID, grpID, por sql.NullInt64
 		)
 		if err := rows.Scan(&p.ID, &projID, &grpID, &p.Titulo, &p.Foco, &p.NivelVisual,
-			&p.Status, &p.CustoUSD, &por, &p.Erro, &p.CriadoEm, &p.AtualizadoEm,
-			&p.DemandasCriadas, &p.ProjetoNome, &p.GrupoNome); err != nil {
+			&p.Status, &p.CustoUSD, &por, &p.Erro, &p.CriadoEm, &p.AtualizadoEm, &p.Visibilidade,
+			&p.DemandasCriadas, &p.ProjetoNome, &p.GrupoNome, &p.CriadoPorNome); err != nil {
 			return nil, err
 		}
 		p.ProjectID = ptrDeNull(projID)
