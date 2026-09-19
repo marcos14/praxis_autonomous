@@ -20,6 +20,7 @@ import { montarManual } from "./manual.js";
 import { montarUsuarios, montarPapeis } from "./usuarios.js";
 import { montarGruposUsuarios } from "./gusuarios.js";
 import { montarConta } from "./conta.js";
+import { registrarServiceWorker, botaoInstalarApp } from "./pwa.js";
 import { bannerErro, el, limpar } from "./ui.js";
 import * as auth from "./auth.js";
 import { t, aplicarTraducoes, seletorIdioma, adotarIdiomaDoUsuario } from "./i18n.js";
@@ -139,6 +140,7 @@ function aplicarPermissoes() {
         el("b", { text: u.nome || u.email }), el("span", { text: u.email })),
       el("div", { class: "nav-user-acoes" },
         el("button", { class: "btn ghost sm", text: t("nav.conta"), onclick: () => irParaHash("conta") }),
+        botaoInstalarApp(),
         el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => sair() }),
       ),
       seletorIdioma(() => auth.tokenAtual()),
@@ -350,6 +352,9 @@ async function iniciar() {
 
   // Traduz os textos estáticos do index.html (data-i18n) para o idioma ativo.
   aplicarTraducoes(document);
+
+  // PWA: service worker (shell offline, base das notificações do M4).
+  registrarServiceWorker();
 
   // A sessão caiu com a app aberta (401 definitivo: sessão revogada ou expirada
   // no servidor) → portão POR CIMA da app, sem recarregar — o que estava na

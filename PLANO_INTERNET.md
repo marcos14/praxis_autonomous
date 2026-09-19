@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1 e M2 concluídos** (código, testes e docs); 
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M3.F1.E2`
+**Próxima etapa:** `M3.F2.E1`
 
 **Pendência do M2 para o usuário (não automatizável):** roteiro manual no navegador com três usuários — um comum sem grupo, um comum com grupo e um admin — mais um token de API: criar consulta/planejamento/demanda em cada visibilidade, conferir listas, filtro Todos · Meus · Do grupo, kanban, Home, o select de "quem enxerga" no painel/card e a tela Configurações → Visibilidade (itens sem dono nos três modos). A lógica está coberta por testes de banco e de API; o que falta validar é a experiência na tela.
 
@@ -39,7 +39,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 
 ### M3 — PWA + layout móvel
 - [x] M3.F1.E1 Manifest, ícones, metas no index, handler `/sw.js`, service worker — `web/manifest.webmanifest`, `web/icons/` (4 PNGs gerados por um programa Go de uma vez, "P" geométrico na paleta; maskable com zona segura), metas no `index.html` (`viewport-fit=cover`, theme-color, apple-touch-icon), `web/sw.js` (rede primeiro nas navegações, cache primeiro com revalidação nos estáticos, nunca intercepta `/api/`, `/ide/`, `/healthz`, `/cert`), handler `GET /sw.js` injetando `VERSAO` e `SHELL` (lista por `fs.WalkDir`) com `no-cache`, handler do manifest com `application/manifest+json`; teste `TestServiceWorkerEManifest`
-- [ ] M3.F1.E2 Registro do SW, aviso de versão nova, botão Instalar, dica iOS
+- [x] M3.F1.E2 Registro do SW, aviso de versão nova, botão Instalar, dica iOS — `web/js/pwa.js` (`registrarServiceWorker` só em contexto seguro, toast em `updatefound`/`installed`, `beforeinstallprompt` guardado para o botão "Instalar app" no `nav-user`, oculto quando já instalado; no iOS o botão mostra a dica Compartilhar → Adicionar à Tela de Início); chaves `pwa.*` e `nav.menu`/`nav.voltar` (para a F2)
 - [ ] M3.F2.E1 Shell móvel: gaveta, barra superior, áreas seguras, toast
 - [ ] M3.F2.E2 Kanban e card da demanda no celular
 - [ ] M3.F2.E3 Telas de duas colunas em páginas; chat e editores
