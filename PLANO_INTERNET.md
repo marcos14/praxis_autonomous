@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — execução em andamento (M1.F1 concluída; próxim
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M1.F2.E1`
+**Próxima etapa:** `M1.F2.E2`
 
 Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma etapa `[~]`, escreva "Retomada:" com o que já foi feito, o que falta e decisões tomadas no caminho.
 
@@ -16,7 +16,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M1.F1.E3 Rotas refresh/logout, cookie, login cria sessão, revogações, fix `case "auth"` — `internal/api/auth_sessoes.go` (cookie `praxis_sessao`, `handleAuthRefresh`, `handleAuthLogout`, `conexaoSegura`, `ipDaRequisicao`, `abrirSessao`, `sessaoAtualID`, `revogarSessoesDoUsuario`); `responderLogin` em setup/login; troca de senha revoga as outras, reset pelo admin e desativação revogam todas; `Opcoes.ProxyConfiavel` + flag `-proxy-confiavel`/`PRAXIS_PROXY_CONFIAVEL` (`cmd/praxis/env.go`); i18n `erro.sessao_invalida` nos 4 catálogos
 - [x] M1.F1.E4 Sessões do usuário (listar/encerrar), rate limit de login, limpeza na manutenção — `GET/DELETE /auth/sessoes` e `DELETE /auth/sessoes/{id}` em `auth_sessoes.go` (lista marca `atual` pelo cookie; "encerrar as outras" devolve `{revogadas}`); `internal/api/ratelimit.go` (`limitadorLogin`: 10 falhas / 15 min por IP e por e-mail, 429 + `Retry-After`, sucesso zera só o e-mail); `manutencao.Store` ganhou `RemoverSessoesExpiradas` (roda no ciclo diário); i18n `erro.sessao_nao_encontrada`, `erro.credencial_sem_sessao`, `erro.muitas_tentativas`
 - [x] M1.F1.E5 SSE encerra no `exp` do token — `internal/api/sse.go` (`contextoDoStream` com deadline no `expiraEm` do principal; `avisarTokenExpirado` emite `event: token_expirado` antes de fechar, só quando foi o prazo e não o cliente); aplicado em `/events`, `/demands/{id}/logs`, `/consultas/{id}/progresso`, `/planejamentos/{id}/progresso`
-- [ ] M1.F2.E1 `auth.js`/`api.js`: token em memória, boot por refresh, renovação, retry em 401
+- [x] M1.F2.E1 `auth.js`/`api.js`: token em memória, boot por refresh, renovação, retry em 401 — `auth.js` reescrito (JWT só em memória, `renovar()` single-flight, renovação proativa em 80 % do `expira_em`, renova ao voltar ao primeiro plano, `carregarSessao` só descarta em 401, `sessaoCaiu`/`logout` separados, `ErroAuth`/`sessaoInvalida`); `api.js` com `executar()` que renova e repete uma vez em 401; `app.js` ganhou `resolverSessao()` e a tela "servidor indisponível" com contagem (5→10→20→30 s) e "Tentar agora" — antecipada da E3; chaves `auth.indisponivel*`/`auth.tentar_agora` nos 4 catálogos web. Roteiro manual (navegar 3 min com `sessao_jwt_min=1`) pendente de execução no navegador
 - [ ] M1.F2.E2 Helper `abrirStream` e troca dos 7 `EventSource`
 - [ ] M1.F2.E3 `app.js`: portão sem reload, tela "servidor indisponível", Sair com logout
 - [ ] M1.F2.E4 Tela "Minha conta" v1 (senha, idioma, sessões) + i18n
@@ -176,8 +176,8 @@ Cada etapa traz: **Objetivo**, **Arquivos**, **Pronto quando** (critério verifi
 - Objetivo: `abrirStream(url, {onmessage, onevento})` em `api.js` com reabertura após renovar (backoff 1/2/5…30 s) e `close()`; substituir em `kanban.js`, `home.js`, `demandas.js` (2), `consultas.js`, `planejamentos.js`. O servidor emite `event: token_expirado` e fecha o stream quando o JWT vence (M1.F1.E5): ao receber esse evento o helper fecha o `EventSource` (senão ele reconecta sozinho com o token velho e leva 401), renova e reabre na hora; a reabertura por `onerror` + `readyState === CLOSED` fica como caminho de fallback.
 - Pronto quando: com o stream fechando no `exp` (E5), o kanban continua recebendo eventos após a renovação sem reload.
 
-**M1.F2.E3 — `app.js`: portão sem reload, tela "servidor indisponível", Sair com logout**
-- Objetivo: `aoDeslogar` mostra o portão sobre a app mantendo o DOM (aviso "sua sessão expirou"); ao logar de novo → `aplicarPermissoes()` + `irPara(viewAtual)`; boot com servidor fora → tela com retry automático e contagem; botão Sair → `POST /auth/logout` → reload.
+**M1.F2.E3 — `app.js`: portão sem reload, Sair com logout**
+- Objetivo: `aoDeslogar` mostra o portão sobre a app mantendo o DOM (aviso "sua sessão expirou"); ao logar de novo → `aplicarPermissoes()` + `irPara(viewAtual)`; botão Sair → `POST /auth/logout` → reload. (A tela "servidor indisponível" com retry e contagem foi entregue na E1.)
 - Arquivos: `web/js/app.js`, `web/app.css` (estado do portão), `web/locales/*.json` (4 idiomas).
 - Pronto quando: revogar a sessão pelo banco com texto digitado no chat → portão aparece, login, o texto continua lá; parar o servidor → tela de indisponível; subir → volta sozinho.
 

@@ -2,7 +2,7 @@
 // decodificado ou lança um ErroAPI com o código/mensagem padronizados do
 // backend (envelope {erro:{codigo,mensagem}}).
 
-import { tokenAtual, logout } from "./auth.js";
+import { tokenAtual, renovar, sessaoCaiu, sessaoInvalida } from "./auth.js";
 import { t, idiomaAtivo } from "./i18n.js";
 
 // ErroAPI carrega o status HTTP e o código estável do backend, além da
@@ -17,29 +17,42 @@ export class ErroAPI extends Error {
   }
 }
 
-// req executa uma requisição JSON e trata o envelope de erro padronizado.
-// Devolve o corpo decodificado (ou null em 204). Lança ErroAPI em status >= 400.
-// Anexa o JWT da sessão (Authorization: Bearer) quando há token; em 401 (sessão
-// expirada/inválida) derruba a sessão para a shell exibir o login.
-async function req(metodo, caminho, corpo) {
-  const opts = { method: metodo, headers: { "X-Praxis-Idioma": idiomaAtivo() } };
+// executar faz o fetch anexando o JWT da sessão (Authorization: Bearer). Em 401
+// — JWT vencido ou inválido — renova pela sessão do cookie (auth.renovar, que é
+// single-flight) e repete a requisição UMA vez com o token novo. Se a renovação
+// diz que a sessão acabou (401), derruba a sessão para a shell exibir o login;
+// falha transitória na renovação vira erro de rede (a tela mostra e o usuário
+// tenta de novo — a sessão continua de pé).
+async function executar(caminho, opts, repetir = true) {
   const tok = tokenAtual();
   if (tok) opts.headers["Authorization"] = "Bearer " + tok;
-  if (corpo !== undefined) {
-    opts.headers["Content-Type"] = "application/json";
-    opts.body = JSON.stringify(corpo);
-  }
   let resp;
   try {
     resp = await fetch(caminho, opts);
   } catch (e) {
     throw new ErroAPI(0, "rede", t("api.falha_rede", { erro: e.message }));
   }
-  if (resp.status === 401) {
-    logout();
-    throw new ErroAPI(401, "nao_autenticado", t("api.sessao_expirada"));
+  if (resp.status !== 401) return resp;
+  if (repetir) {
+    try {
+      await renovar();
+    } catch (e) {
+      if (sessaoInvalida(e)) {
+        sessaoCaiu();
+        throw new ErroAPI(401, "nao_autenticado", t("api.sessao_expirada"));
+      }
+      throw new ErroAPI(0, "rede", t("api.falha_rede", { erro: e.message }));
+    }
+    return executar(caminho, opts, false);
   }
-  if (resp.status === 204) return null;
+  // 401 mesmo com o token recém-renovado: não é caso de insistir.
+  sessaoCaiu();
+  throw new ErroAPI(401, "nao_autenticado", t("api.sessao_expirada"));
+}
+
+// decodificar lê o corpo JSON e traduz o envelope de erro em ErroAPI (status >=
+// 400). Corpo vazio devolve null.
+async function decodificar(resp) {
   const texto = await resp.text();
   let dados = null;
   if (texto) {
@@ -56,38 +69,27 @@ async function req(metodo, caminho, corpo) {
   return dados;
 }
 
+// req executa uma requisição JSON e trata o envelope de erro padronizado.
+// Devolve o corpo decodificado (ou null em 204). Lança ErroAPI em status >= 400.
+async function req(metodo, caminho, corpo) {
+  const opts = { method: metodo, headers: { "X-Praxis-Idioma": idiomaAtivo() } };
+  if (corpo !== undefined) {
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(corpo);
+  }
+  const resp = await executar(caminho, opts);
+  if (resp.status === 204) return null;
+  return decodificar(resp);
+}
+
 // reqUpload envia um arquivo via multipart/form-data (o req é só JSON). Mesmo
-// tratamento de token, 401 e envelope de erro do req.
+// tratamento de token, 401 e envelope de erro do req (o FormData pode ser
+// reenviado na repetição após renovar).
 async function reqUpload(caminho, campo, arquivo) {
   const fd = new FormData();
   fd.append(campo, arquivo, arquivo.name);
-  const opts = { method: "POST", headers: { "X-Praxis-Idioma": idiomaAtivo() }, body: fd };
-  const tok = tokenAtual();
-  if (tok) opts.headers["Authorization"] = "Bearer " + tok;
-  let resp;
-  try {
-    resp = await fetch(caminho, opts);
-  } catch (e) {
-    throw new ErroAPI(0, "rede", t("api.falha_rede", { erro: e.message }));
-  }
-  if (resp.status === 401) {
-    logout();
-    throw new ErroAPI(401, "nao_autenticado", t("api.sessao_expirada"));
-  }
-  const texto = await resp.text();
-  let dados = null;
-  if (texto) {
-    try {
-      dados = JSON.parse(texto);
-    } catch {
-      if (!resp.ok) throw new ErroAPI(resp.status, "invalido", texto.slice(0, 200));
-    }
-  }
-  if (!resp.ok) {
-    const e = dados && dados.erro;
-    throw new ErroAPI(resp.status, e && e.codigo, (e && e.mensagem) || `erro ${resp.status}`);
-  }
-  return dados;
+  const resp = await executar(caminho, { method: "POST", headers: { "X-Praxis-Idioma": idiomaAtivo() }, body: fd });
+  return decodificar(resp);
 }
 
 // comToken anexa o JWT da sessão como query param a uma URL de stream (SSE). O

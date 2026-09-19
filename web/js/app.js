@@ -231,6 +231,67 @@ function entrarNaApp() {
   irParaHash(location.hash.slice(1) || "home");
 }
 
+// ---------- Servidor indisponível ----------
+
+let tentativasIndisponivel = 0;
+let timerIndisponivel = null;
+
+// mostrarIndisponivel cobre a app com um aviso quando o servidor não responde
+// no boot (rede, reinício, 5xx). A sessão (cookie) NÃO é descartada: tenta de
+// novo sozinho — 5, 10, 20 e depois a cada 30 s — ou quando o usuário pedir.
+function mostrarIndisponivel() {
+  document.querySelector(".app").style.display = "none";
+  const overlay = document.getElementById("auth-overlay");
+  const card = limpar(document.getElementById("auth-card"));
+  let segundos = Math.min(30, 5 * 2 ** tentativasIndisponivel);
+  tentativasIndisponivel++;
+
+  const contagem = el("p", { class: "sub" });
+  const atualizar = () => { contagem.textContent = t("auth.indisponivel_retentando", { segundos }); };
+  const tentar = () => {
+    clearInterval(timerIndisponivel);
+    timerIndisponivel = null;
+    resolverSessao();
+  };
+  atualizar();
+  card.append(
+    el("h2", { text: "Praxis Autonomous" }),
+    el("p", { class: "sub", text: t("auth.indisponivel") }),
+    contagem,
+    el("div", { class: "form" }, el("button", { class: "btn", text: t("auth.tentar_agora"), onclick: tentar })),
+  );
+  overlay.hidden = false;
+
+  clearInterval(timerIndisponivel);
+  timerIndisponivel = setInterval(() => {
+    segundos--;
+    if (segundos <= 0) tentar();
+    else atualizar();
+  }, 1000);
+}
+
+// resolverSessao reidrata a sessão pelo cookie (POST /auth/refresh) e entra na
+// app. Sem sessão → portão de login/setup. Servidor fora do ar → aviso com nova
+// tentativa automática (a sessão sobrevive a um reinício do servidor).
+async function resolverSessao() {
+  let u;
+  try {
+    u = await auth.carregarSessao();
+  } catch {
+    mostrarIndisponivel();
+    return;
+  }
+  tentativasIndisponivel = 0;
+  if (!u) {
+    await mostrarPortao();
+    return;
+  }
+  // Preferência de idioma do usuário (servidor) difere do ativo → recarrega uma
+  // vez para reavaliar os módulos no idioma certo.
+  if (u.idioma && adotarIdiomaDoUsuario(u.idioma)) return;
+  entrarNaApp();
+}
+
 // ---------- Boot ----------
 
 async function iniciar() {
@@ -249,15 +310,7 @@ async function iniciar() {
     btn.addEventListener("click", () => irParaHash(btn.dataset.view)));
   window.addEventListener("hashchange", () => irPara(location.hash.slice(1)));
 
-  const u = await auth.carregarSessao();
-  if (!u) {
-    await mostrarPortao();
-    return;
-  }
-  // Preferência de idioma do usuário (servidor) difere do ativo → recarrega uma
-  // vez para reavaliar os módulos no idioma certo.
-  if (u.idioma && adotarIdiomaDoUsuario(u.idioma)) return;
-  entrarNaApp();
+  await resolverSessao();
 }
 
 if (document.readyState === "loading") {
