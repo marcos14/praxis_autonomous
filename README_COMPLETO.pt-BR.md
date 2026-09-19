@@ -255,6 +255,23 @@ IA responde.
 
 ---
 
+### 5.4 Instalar como app (PWA) e usar no celular
+
+A interface web é um Progressive Web App: servida por **HTTPS com certificado válido**
+(ou em `localhost`), o navegador oferece a instalação — Chrome/Edge mostram
+**Instalar app** no rodapé do menu; no iPhone/iPad use Compartilhar → *Adicionar à
+Tela de Início* (o botão mostra essa dica). Instalado, o Praxis abre em janela própria
+com o ícone do app, e o mesmo cookie de sessão mantém você logado. O service worker
+(`/sw.js`) pré-cacheia o shell da interface: o app abre offline (os dados continuam
+precisando do servidor) e avisa "nova versão disponível" depois de atualizar o binário;
+ele nunca intercepta `/api/`, `/ide/` nem `/healthz`. Certificado autoassinado não
+permite instalar no Android; use um reverse proxy com certificado válido (§3).
+
+Abaixo de 768 px o layout muda: o menu lateral vira uma gaveta atrás do botão ☰ da barra
+superior, as telas de duas colunas viram páginas (lista → painel, com ← para voltar), o
+kanban mostra uma coluna por tela, o card da demanda ocupa a tela toda, tabelas rolam
+dentro do próprio contêiner e o IDE web e o navegador de pastas do servidor ficam ocultos.
+
 ## 6. API REST (`/api/v1`)
 
 Base: `http://127.0.0.1:7799/api/v1`. Respostas e erros em JSON

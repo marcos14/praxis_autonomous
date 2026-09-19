@@ -4,3 +4,4 @@
 - **Onde ficam os dados?** Tudo no banco do Praxis (fora dos projetos): PRD, chat, perguntas, planos, fases, custos e logs. Nos projetos, só os commits nas branches.
 - **E o custo?** Cada demanda tem teto de budget. Estourou → pausa e avisa. A Home mostra o gasto por dia e por projeto.
 - **Um run estourou o budget e a demanda falhou. Perdi tudo?** Não. Aumente o budget do motor (tela Motores) e clique em **Tentar novamente** no card — a demanda retoma do estágio que falhou (análise, planejamento ou a fase interrompida).
+- **Dá para usar no celular / instalar como app?** Sim. Com o Praxis em HTTPS válido, o navegador oferece **Instalar app** (rodapé do menu; no iPhone, Compartilhar → Adicionar à Tela de Início). No celular o menu fica atrás do ☰, as listas abrem o item em página própria (← volta) e o kanban mostra uma coluna por vez. O IDE web só no desktop.

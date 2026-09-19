@@ -267,6 +267,23 @@ language the AI answers in.
 
 ---
 
+### 5.4 Installing as an app (PWA) and using it on a phone
+
+The web UI is a Progressive Web App: served over **HTTPS with a valid certificate**
+(or from `localhost`), the browser offers to install it — Chrome/Edge show
+**Install app** in the menu footer; on iPhone/iPad use Share → *Add to Home Screen*
+(the button shows that hint). Installed, Praxis opens in its own window with the
+app icon, and the same session cookie keeps you signed in. The service worker
+(`/sw.js`) pre-caches the interface shell, so the app opens offline (the data still
+needs the server) and shows "new version available" after a binary upgrade; it never
+intercepts `/api/`, `/ide/` or `/healthz`. A self-signed certificate does not allow
+installation on Android; use a reverse proxy with a real certificate (§3).
+
+Below 768 px the layout changes: the side menu becomes a drawer behind the ☰ button
+of the top bar, two-column screens turn into pages (list → panel, with ← to go back),
+the kanban shows one column per screen, the demand card fills the screen, tables
+scroll inside their container and the web IDE and server-folder browser are hidden.
+
 ## 6. REST API (`/api/v1`)
 
 Base: `http://127.0.0.1:7799/api/v1`. Responses and errors in JSON

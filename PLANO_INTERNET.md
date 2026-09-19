@@ -1,12 +1,14 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — **M1 e M2 concluídos** (código, testes e docs); próxima etapa é a primeira do M3.
+Atualizado em: 2026-09-19 — **M1, M2 e M3 concluídos** (código, testes e docs); próxima etapa é a primeira do M4.
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M3.F2.E1`
+**Próxima etapa:** `M4.F1.E1`
+
+**Pendência do M3 para o usuário (não automatizável):** auditoria Lighthouse "PWA" sem erros; instalar em Windows (Chrome/Edge), Android (Chrome) e iOS (Safari) com HTTPS válido; passar por todas as views a 400 px conferindo que nada rola na horizontal, que o ← volta da lista, que o kanban desliza coluna a coluna e que o card da demanda abre em tela cheia. Os handlers do SW e do manifest têm teste Go; o comportamento no navegador não.
 
 **Pendência do M2 para o usuário (não automatizável):** roteiro manual no navegador com três usuários — um comum sem grupo, um comum com grupo e um admin — mais um token de API: criar consulta/planejamento/demanda em cada visibilidade, conferir listas, filtro Todos · Meus · Do grupo, kanban, Home, o select de "quem enxerga" no painel/card e a tela Configurações → Visibilidade (itens sem dono nos três modos). A lógica está coberta por testes de banco e de API; o que falta validar é a experiência na tela.
 
@@ -40,11 +42,11 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 ### M3 — PWA + layout móvel
 - [x] M3.F1.E1 Manifest, ícones, metas no index, handler `/sw.js`, service worker — `web/manifest.webmanifest`, `web/icons/` (4 PNGs gerados por um programa Go de uma vez, "P" geométrico na paleta; maskable com zona segura), metas no `index.html` (`viewport-fit=cover`, theme-color, apple-touch-icon), `web/sw.js` (rede primeiro nas navegações, cache primeiro com revalidação nos estáticos, nunca intercepta `/api/`, `/ide/`, `/healthz`, `/cert`), handler `GET /sw.js` injetando `VERSAO` e `SHELL` (lista por `fs.WalkDir`) com `no-cache`, handler do manifest com `application/manifest+json`; teste `TestServiceWorkerEManifest`
 - [x] M3.F1.E2 Registro do SW, aviso de versão nova, botão Instalar, dica iOS — `web/js/pwa.js` (`registrarServiceWorker` só em contexto seguro, toast em `updatefound`/`installed`, `beforeinstallprompt` guardado para o botão "Instalar app" no `nav-user`, oculto quando já instalado; no iOS o botão mostra a dica Compartilhar → Adicionar à Tela de Início); chaves `pwa.*` e `nav.menu`/`nav.voltar` (para a F2)
-- [ ] M3.F2.E1 Shell móvel: gaveta, barra superior, áreas seguras, toast
-- [ ] M3.F2.E2 Kanban e card da demanda no celular
-- [ ] M3.F2.E3 Telas de duas colunas em páginas; chat e editores
-- [ ] M3.F2.E4 Tabelas, alvos de toque, esconder IDE/pastas, passada final a 400 px
-- [ ] M3.F3.E1 Fechamento: Lighthouse, instalar em 3 plataformas, docs
+- [x] M3.F2.E1 Shell móvel: gaveta, barra superior, áreas seguras, toast — `header.topbar` (hambúrguer, título da view, "←"), `.sidebar` vira gaveta com backdrop abaixo de 768 px, `env(safe-area-inset-*)`, `.main` sem largura máxima, formulários `.row` empilhados, toast em largura total; `abrirMenu`/`atualizarTopbar` em `app.js`
+- [x] M3.F2.E2 Kanban e card da demanda no celular — colunas de 86vw com scroll-snap (colunas vazias já não eram renderizadas), `.modal` em tela cheia, abas roláveis, `.fase-edit-row` empilhada
+- [x] M3.F2.E3 Telas de duas colunas em páginas; chat e editores — `.two-col.painel-aberto` mostra só o painel; clique delegado na coluna da lista (item ou "+ Novo") abre, "←" da barra volta, trocar de view fecha; inputs com 16 px, chat a 92 %, toolbar do editor quebrando
+- [x] M3.F2.E4 Tabelas, alvos de toque, esconder IDE/pastas, passada final a 400 px — `table.plain` e `.md pre/table` rolam no contêiner, botões/abas/itens do menu/switch com 40–44 px, tiles em 2 colunas, classe `so-desktop` no botão do IDE web e no "procurar pasta", `overflow-x: hidden` no body; a checagem visual a 400 px fica para o roteiro do usuário
+- [x] M3.F3.E1 Fechamento: Lighthouse, instalar em 3 plataformas, docs — README (EN e pt-BR) §5.4 "Instalar como app e usar no celular"; FAQ do manual embutido nos 4 idiomas; Lighthouse e instalação nas 3 plataformas ficam com o usuário (ver pendência acima)
 
 ### M4 — Notificações ao usuário
 - [ ] M4.F1.E1 Migração 18 + stores de notificações, assinaturas push e preferências
