@@ -88,7 +88,7 @@ async function irPara(nome) {
   document.querySelectorAll(".nav-item").forEach((n) =>
     n.classList.toggle("active", n.dataset.view === nome));
   abrirMenu(false);
-  atualizarTopbar();
+  fecharPaineis();
   bannerErro("");
   window.scrollTo(0, 0);
   try {
@@ -293,11 +293,33 @@ function abrirMenu(aberto) {
   document.getElementById("sidebar-backdrop").classList.toggle("aberta", aberto);
 }
 
-// atualizarTopbar mostra o título da view ativa na barra superior.
+// atualizarTopbar mostra o título da view ativa na barra superior e o botão
+// "voltar" quando uma tela de duas colunas está mostrando o painel.
 function atualizarTopbar() {
   const titulo = document.getElementById("topbar-titulo");
   const h1 = document.querySelector(".view.active h1.page");
   if (titulo) titulo.textContent = h1 ? h1.textContent : "Praxis";
+  const aberto = document.querySelector(".view.active .two-col.painel-aberto");
+  document.getElementById("btn-voltar").hidden = !aberto;
+}
+
+// ehCelular informa se o layout móvel está ativo (mesmo breakpoint do CSS).
+function ehCelular() {
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
+// Telas de duas colunas (consultas, planejamentos, projetos, usuários…) viram
+// páginas no celular: tocar num item da lista — ou no "+ Novo" — mostra o
+// painel; "←" na barra superior volta à lista. No desktop nada muda.
+function mostrarPainel(twoCol, aberto) {
+  twoCol.classList.toggle("painel-aberto", aberto);
+  atualizarTopbar();
+  if (aberto) window.scrollTo(0, 0);
+}
+
+function fecharPaineis() {
+  document.querySelectorAll(".two-col.painel-aberto").forEach((tc) => tc.classList.remove("painel-aberto"));
+  atualizarTopbar();
 }
 
 // ---------- Servidor indisponível ----------
@@ -387,9 +409,17 @@ async function iniciar() {
     btn.addEventListener("click", () => irParaHash(btn.dataset.view)));
   window.addEventListener("hashchange", () => irPara(location.hash.slice(1)));
 
-  // Celular: hambúrguer abre a gaveta; tocar fora fecha.
+  // Celular: hambúrguer abre a gaveta; tocar fora fecha; "←" volta do painel
+  // para a lista; tocar num item (ou "+ Novo") da coluna da lista abre o painel.
   document.getElementById("btn-menu").addEventListener("click", () => abrirMenu(true));
   document.getElementById("sidebar-backdrop").addEventListener("click", () => abrirMenu(false));
+  document.getElementById("btn-voltar").addEventListener("click", () => fecharPaineis());
+  document.addEventListener("click", (e) => {
+    if (!ehCelular()) return;
+    const coluna = e.target.closest(".two-col > :first-child");
+    if (!coluna || !e.target.closest(".list-item, .dem-item, .btn")) return;
+    mostrarPainel(coluna.parentElement, true);
+  });
 
   await resolverSessao();
 }

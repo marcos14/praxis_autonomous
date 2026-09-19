@@ -663,3 +663,15 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
   .fase-edit-row .f-tit { flex: 1 1 100%; }
   .fase-edit-row .f-dep { width: auto; flex: 1; }
 }
+
+/* Celular: as telas de duas colunas viram páginas (lista OU painel), inputs
+   com 16px (o iOS não dá zoom) e a barra do editor quebra linha. */
+@media (max-width: 768px) {
+  .two-col { gap: 0; }
+  .two-col.painel-aberto > :first-child { display: none; }
+  .two-col:not(.painel-aberto) > .panel { display: none; }
+  input, select, textarea { font-size: 16px !important; }
+  .chat-input textarea { max-height: 120px; }
+  .chat .msg { max-width: 92%; }
+  .md-editor-tools { flex-wrap: wrap; }
+}
