@@ -10,7 +10,8 @@ import { usuarioAtual, temPermissao } from "./auth.js";
 
 export const VISIBILIDADES = ["privada", "grupo", "publica"];
 const ICONES = { privada: "🔒", grupo: "👥", publica: "🌐" };
-// Chaves literais (o teste de paridade do i18n varre as chamadas t("…")).
+// Chaves literais: o teste de paridade do i18n varre as chamadas de tradução
+// e não entende chaves montadas por concatenação.
 const ROTULOS = { privada: t("vis.privada"), grupo: t("vis.grupo"), publica: t("vis.publica") };
 const DICAS = { privada: t("vis.hint_privada"), grupo: t("vis.hint_grupo"), publica: t("vis.hint_publica") };
 const ROTULOS_ESCOPO = { todos: t("escopo.todos"), meus: t("escopo.meus"), grupo: t("escopo.grupo") };
