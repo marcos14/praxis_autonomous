@@ -675,3 +675,31 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
   .chat .msg { max-width: 92%; }
   .md-editor-tools { flex-wrap: wrap; }
 }
+
+/* Celular: tabelas rolam dentro do próprio contêiner, alvos de toque de 44px,
+   e o que não faz sentido fora do desktop (IDE web, navegar pastas do
+   servidor) some. */
+@media (max-width: 768px) {
+  .so-desktop { display: none !important; }
+  table.plain { display: block; overflow-x: auto; white-space: nowrap; max-width: 100%; }
+  .md table { white-space: nowrap; }
+  .md pre { max-width: 100%; }
+  .btn, .btn.sm, .tab, .topbar-btn { min-height: 40px; }
+  .nav-item { padding: 12px; font-size: 15px; min-height: 44px; }
+  .switch { width: 44px; height: 24px; }
+  .switch::after { width: 20px; height: 20px; }
+  .switch.on::after { left: 22px; }
+  .list-item, .dem-item, .kb-card { padding: 12px 13px; }
+  .filtros { gap: 6px; }
+  .filtros select { max-width: 100%; min-height: 40px; }
+  .filtro-escopo .escopo { min-height: 40px; padding: 8px 12px; }
+  .sel-vis { min-height: 36px; }
+  .tiles { grid-template-columns: 1fr 1fr; }
+  .conta-linha { flex-direction: column; gap: 2px; }
+  .conta-sessao { flex-direction: column; }
+  .campo-pasta { flex-wrap: wrap; }
+  .chat-input { flex-wrap: wrap; }
+  .chat-input textarea { min-width: 60%; }
+  .auth-card { padding: 22px 18px; }
+  html, body { overflow-x: hidden; }
+}

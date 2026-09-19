@@ -89,7 +89,7 @@ function camposCore(p) {
   const pasta = el("input", { value: p ? p.pasta : "", placeholder: t("projetos.ph_pasta") });
   // Seletor de pasta: navega o disco DO SERVIDOR (a pasta do projeto vive lá,
   // não na máquina do navegador) e preenche o campo com o caminho escolhido.
-  const btnProcurar = el("button", { class: "btn ghost sm", type: "button", text: t("projetos.procurar_pasta") });
+  const btnProcurar = el("button", { class: "btn ghost sm so-desktop", type: "button", text: t("projetos.procurar_pasta") });
   btnProcurar.onclick = async () => {
     const escolhida = await escolherPasta(pasta.value.trim());
     if (escolhida) pasta.value = escolhida;

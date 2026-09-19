@@ -603,7 +603,8 @@ async function ativarIntegracao(cont, id, overlay) {
             try { await navigator.clipboard.writeText(mp.worktree_path); toast(t("demandas.caminho_copiado"), "ok"); }
             catch { toast(t("demandas.copiar_falhou"), "err"); }
           } }),
-        el("button", { class: "btn sm", text: t("demandas.editar_codigo"),
+        // IDE web (VS Code) não é usável no celular: só no desktop.
+        el("button", { class: "btn sm so-desktop", text: t("demandas.editar_codigo"),
           title: t("demandas.editar_codigo_title"),
           onclick: (ev) => abrirIDEWeb(id, mp.worktree_path, ev.currentTarget) }),
         linkVSCodeLocal(mp.worktree_path),
