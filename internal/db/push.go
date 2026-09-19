@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -216,4 +217,33 @@ func (d *DB) ObterOuGerarVAPID(ctx context.Context, gerar func() (publica, priva
 		return "", "", fmt.Errorf("reler chaves vapid: %w", err)
 	}
 	return pub, priv, nil
+}
+
+// ChavePushContato é a config global com o contato do operador enviado ao
+// serviço de push no VAPID (`sub`): um e-mail ou uma URL. Vazia → e-mail do
+// primeiro administrador.
+const ChavePushContato = "push_contato"
+
+// ContatoPush resolve o `sub` do VAPID: a config `push_contato` ou, vazia, o
+// e-mail do primeiro admin (EmailPrimeiroAdmin). E-mails ganham o prefixo
+// `mailto:`; URLs (http/https) passam como estão. Sem nada → ErrNaoEncontrado.
+func (d *DB) ContatoPush(ctx context.Context) (string, error) {
+	entradas, err := d.ObterConfigGlobal(ctx)
+	if err != nil {
+		return "", err
+	}
+	var contato string
+	if raw, ok := entradas[ChavePushContato]; ok {
+		_ = json.Unmarshal(raw, &contato)
+	}
+	contato = strings.TrimSpace(contato)
+	if contato == "" {
+		if contato, err = d.EmailPrimeiroAdmin(ctx); err != nil {
+			return "", err
+		}
+	}
+	if strings.HasPrefix(contato, "mailto:") || strings.HasPrefix(contato, "http://") || strings.HasPrefix(contato, "https://") {
+		return contato, nil
+	}
+	return "mailto:" + contato, nil
 }

@@ -473,3 +473,25 @@ func (d *DB) ObterOuGerarJWTSecret(ctx context.Context) ([]byte, error) {
 	}
 	return secret, nil
 }
+
+// EmailPrimeiroAdmin devolve o e-mail do administrador pleno ativo mais antigo
+// (menor id com a permissão curinga). É o contato padrão do VAPID (config
+// `push_contato` vazia). Sem admin ativo → ErrNaoEncontrado.
+func (d *DB) EmailPrimeiroAdmin(ctx context.Context) (string, error) {
+	var email string
+	err := d.Leitor.QueryRowContext(ctx, `
+		SELECT u.email
+		FROM users u
+		WHERE u.ativo = 1 AND EXISTS (
+			SELECT 1 FROM user_roles ur
+			JOIN role_permissions rp ON rp.role_id = ur.role_id
+			WHERE ur.user_id = u.id AND rp.permissao = ?)
+		ORDER BY u.id LIMIT 1`, PermCuringa).Scan(&email)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNaoEncontrado
+	}
+	if err != nil {
+		return "", fmt.Errorf("primeiro admin: %w", err)
+	}
+	return email, nil
+}

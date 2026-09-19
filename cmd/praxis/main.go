@@ -35,6 +35,7 @@ import (
 	"github.com/marcos14/praxis-autonomous/internal/procs"
 	"github.com/marcos14/praxis-autonomous/internal/scheduler"
 	"github.com/marcos14/praxis-autonomous/internal/uso"
+	"github.com/marcos14/praxis-autonomous/internal/webpush"
 )
 
 // versao é a versão do binário. Substituível em build via -ldflags.
@@ -154,6 +155,16 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	// preguiçosamente no middleware).
 	if _, err := banco.ObterOuGerarJWTSecret(ctx); err != nil {
 		logger.Warn("preparar segredo do jwt", "erro", err)
+	}
+
+	// Chaves VAPID do Web Push (M4 do PLANO_INTERNET): geradas e persistidas na
+	// primeira vez, como o segredo do JWT. A pública vai ao navegador ao assinar
+	// push; a privada assina o VAPID de cada envio. Best-effort pelo mesmo motivo.
+	if _, _, err := banco.ObterOuGerarVAPID(ctx, func() (string, string, error) {
+		ch, err := webpush.GerarChaves()
+		return ch.Publica, ch.Privada, err
+	}); err != nil {
+		logger.Warn("preparar chaves vapid", "erro", err)
 	}
 
 	// Dependências compartilhadas do ciclo de execução: operações git (mutex por

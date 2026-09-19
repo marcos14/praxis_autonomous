@@ -114,6 +114,11 @@ export const CAMPOS = [
   { chave: "sem_dono_grupo_id", rotulo: t("config.sem_dono_grupo_id"), tipo: "number", escopo: "global",
     grupo: t("config.grupo_visibilidade"), opcoesDe: "gruposUsuarios", padrao: "—",
     hint: t("config.sem_dono_grupo_id.hint") },
+
+  // --- Notificações por usuário e Web Push (M4 do PLANO_INTERNET).
+  { chave: "push_contato", rotulo: t("config.push_contato"), tipo: "text", escopo: "global",
+    grupo: t("config.grupo_notificacoes"), padrao: t("config.push_contato.padrao"),
+    hint: t("config.push_contato.hint") },
 ];
 
 // camposDoEscopo devolve os campos visíveis num escopo ("global" ou "project").

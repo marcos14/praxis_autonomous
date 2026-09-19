@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -192,5 +193,56 @@ func TestPreferenciasEVAPID(t *testing.T) {
 	pub2, _, _ := d.ObterOuGerarVAPID(ctx, func() (string, string, error) { chamadas++; return "OUTRA", "X", nil })
 	if pub2 != "PUB" || chamadas != 1 {
 		t.Fatalf("vapid deveria ser memorizado: %q (gerador chamado %d vezes)", pub2, chamadas)
+	}
+}
+
+func TestContatoPush(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+
+	// Sem admin e sem config: nada a informar.
+	if _, err := d.ContatoPush(ctx); !errors.Is(err, ErrNaoEncontrado) {
+		t.Fatalf("sem admin: %v", err)
+	}
+	if _, err := d.EmailPrimeiroAdmin(ctx); !errors.Is(err, ErrNaoEncontrado) {
+		t.Fatalf("sem admin: %v", err)
+	}
+	// Usuário comum não conta; o primeiro admin (menor id) é o contato padrão.
+	criarUsuarioTeste(t, d, "comum")
+	admin := idPapelAdmin(t, d)
+	a1, err := d.CriarUsuario(ctx, "Primeira", "primeira@x.com", "senha-123", []int64{admin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.CriarUsuario(ctx, "Segunda", "segunda@x.com", "senha-123", []int64{admin}); err != nil {
+		t.Fatal(err)
+	}
+	if e, err := d.EmailPrimeiroAdmin(ctx); err != nil || e != "primeira@x.com" {
+		t.Fatalf("primeiro admin: %q %v", e, err)
+	}
+	if c, err := d.ContatoPush(ctx); err != nil || c != "mailto:primeira@x.com" {
+		t.Fatalf("contato padrão: %q %v", c, err)
+	}
+	// Admin desativado deixa de contar.
+	if _, err := d.AtualizarUsuario(ctx, a1.ID, "Primeira", "primeira@x.com", false, []int64{admin}); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := d.ContatoPush(ctx); c != "mailto:segunda@x.com" {
+		t.Fatalf("admin inativo ainda conta: %q", c)
+	}
+	// Config push_contato prevalece; e-mail ganha mailto:, URL passa como está.
+	for entrada, quer := range map[string]string{
+		"  ops@empresa.com ":          "mailto:ops@empresa.com",
+		"mailto:x@y.com":              "mailto:x@y.com",
+		"https://empresa.com/contato": "https://empresa.com/contato",
+		"":                            "mailto:segunda@x.com",
+	} {
+		raw, _ := json.Marshal(entrada)
+		if err := d.DefinirConfigGlobal(ctx, map[string]json.RawMessage{ChavePushContato: raw}); err != nil {
+			t.Fatal(err)
+		}
+		if c, err := d.ContatoPush(ctx); err != nil || c != quer {
+			t.Fatalf("push_contato %q: %q %v (quer %q)", entrada, c, err, quer)
+		}
 	}
 }
