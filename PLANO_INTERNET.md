@@ -1,12 +1,12 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — execução em andamento (M1.F1.E1 a E4 concluídas).
+Atualizado em: 2026-09-19 — execução em andamento (M1.F1 concluída; próxima fase F2, frontend).
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M1.F1.E5`
+**Próxima etapa:** `M1.F2.E1`
 
 Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma etapa `[~]`, escreva "Retomada:" com o que já foi feito, o que falta e decisões tomadas no caminho.
 
@@ -15,7 +15,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M1.F1.E2 Config de sessão, TTL do JWT, `exp` no principal, segredo sem memoizar erro — `internal/api/auth_prazos.go` (`ChaveSessao*`, `prazosAuth`, `configInteiro`), `auth.Claims`/`AssinarClaims`/`ValidarClaims`, `principal.expiraEm`, `respAuth.expira_em` (RFC 3339, o frontend usa para agendar a renovação), `segredoJWT` com mutex
 - [x] M1.F1.E3 Rotas refresh/logout, cookie, login cria sessão, revogações, fix `case "auth"` — `internal/api/auth_sessoes.go` (cookie `praxis_sessao`, `handleAuthRefresh`, `handleAuthLogout`, `conexaoSegura`, `ipDaRequisicao`, `abrirSessao`, `sessaoAtualID`, `revogarSessoesDoUsuario`); `responderLogin` em setup/login; troca de senha revoga as outras, reset pelo admin e desativação revogam todas; `Opcoes.ProxyConfiavel` + flag `-proxy-confiavel`/`PRAXIS_PROXY_CONFIAVEL` (`cmd/praxis/env.go`); i18n `erro.sessao_invalida` nos 4 catálogos
 - [x] M1.F1.E4 Sessões do usuário (listar/encerrar), rate limit de login, limpeza na manutenção — `GET/DELETE /auth/sessoes` e `DELETE /auth/sessoes/{id}` em `auth_sessoes.go` (lista marca `atual` pelo cookie; "encerrar as outras" devolve `{revogadas}`); `internal/api/ratelimit.go` (`limitadorLogin`: 10 falhas / 15 min por IP e por e-mail, 429 + `Retry-After`, sucesso zera só o e-mail); `manutencao.Store` ganhou `RemoverSessoesExpiradas` (roda no ciclo diário); i18n `erro.sessao_nao_encontrada`, `erro.credencial_sem_sessao`, `erro.muitas_tentativas`
-- [ ] M1.F1.E5 SSE encerra no `exp` do token
+- [x] M1.F1.E5 SSE encerra no `exp` do token — `internal/api/sse.go` (`contextoDoStream` com deadline no `expiraEm` do principal; `avisarTokenExpirado` emite `event: token_expirado` antes de fechar, só quando foi o prazo e não o cliente); aplicado em `/events`, `/demands/{id}/logs`, `/consultas/{id}/progresso`, `/planejamentos/{id}/progresso`
 - [ ] M1.F2.E1 `auth.js`/`api.js`: token em memória, boot por refresh, renovação, retry em 401
 - [ ] M1.F2.E2 Helper `abrirStream` e troca dos 7 `EventSource`
 - [ ] M1.F2.E3 `app.js`: portão sem reload, tela "servidor indisponível", Sair com logout
@@ -173,7 +173,7 @@ Cada etapa traz: **Objetivo**, **Arquivos**, **Pronto quando** (critério verifi
 - Pronto quando: com `sessao_jwt_min=1`, navegar por 3 min sem cair; Network mostra um único `/auth/refresh` por renovação mesmo com várias chamadas concorrentes.
 
 **M1.F2.E2 — Helper `abrirStream` e troca dos 7 `EventSource`**
-- Objetivo: `abrirStream(url, {onmessage, onevento})` em `api.js` com reabertura após renovar (backoff 1/2/5…30 s) e `close()`; substituir em `kanban.js`, `home.js`, `demandas.js` (2), `consultas.js`, `planejamentos.js`.
+- Objetivo: `abrirStream(url, {onmessage, onevento})` em `api.js` com reabertura após renovar (backoff 1/2/5…30 s) e `close()`; substituir em `kanban.js`, `home.js`, `demandas.js` (2), `consultas.js`, `planejamentos.js`. O servidor emite `event: token_expirado` e fecha o stream quando o JWT vence (M1.F1.E5): ao receber esse evento o helper fecha o `EventSource` (senão ele reconecta sozinho com o token velho e leva 401), renova e reabre na hora; a reabertura por `onerror` + `readyState === CLOSED` fica como caminho de fallback.
 - Pronto quando: com o stream fechando no `exp` (E5), o kanban continua recebendo eventos após a renovação sem reload.
 
 **M1.F2.E3 — `app.js`: portão sem reload, tela "servidor indisponível", Sair com logout**

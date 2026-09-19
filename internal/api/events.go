@@ -65,7 +65,10 @@ func (s *Servidor) handleEventosGlobais(w http.ResponseWriter, r *http.Request) 
 	fmt.Fprint(w, ": conectado\n\n")
 	flusher.Flush()
 
-	s.transmitirEventos(r.Context(), w, flusher, cursor, visibilidadeDaRequisicao(r))
+	ctx, cancelar := contextoDoStream(r)
+	defer cancelar()
+	s.transmitirEventos(ctx, w, flusher, cursor, visibilidadeDaRequisicao(r))
+	avisarTokenExpirado(ctx, r, w, flusher)
 }
 
 // transmitirEventos é o laço do SSE global: a cada ciclo lê os eventos com id >

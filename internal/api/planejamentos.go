@@ -442,13 +442,17 @@ func (s *Servidor) handleProgressoPlanejamento(w http.ResponseWriter, r *http.Re
 	ticker := time.NewTicker(intervalo)
 	defer ticker.Stop()
 
+	// O stream vive no máximo até o JWT vencer (contextoDoStream).
+	ctx, cancelar := contextoDoStream(r)
+	defer cancelar()
+
 	var (
 		runAtual int64
 		caminho  string
 		offset   int64
 	)
 	for {
-		if run, temLog, err := s.banco.UltimaExecucaoPlanejamentoComLog(r.Context(), plan.ID); err == nil && temLog && run.ID != runAtual {
+		if run, temLog, err := s.banco.UltimaExecucaoPlanejamentoComLog(ctx, plan.ID); err == nil && temLog && run.ID != runAtual {
 			runAtual = run.ID
 			caminho = run.LogRef
 			offset = 0
@@ -471,7 +475,8 @@ func (s *Servidor) handleProgressoPlanejamento(w http.ResponseWriter, r *http.Re
 		}
 
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
+			avisarTokenExpirado(ctx, r, w, flusher)
 			return
 		case <-ticker.C:
 		}

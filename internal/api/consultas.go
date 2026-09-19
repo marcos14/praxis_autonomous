@@ -326,7 +326,10 @@ func (s *Servidor) handleProgressoConsulta(w http.ResponseWriter, r *http.Reques
 	fmt.Fprint(w, ": conectado\n\n")
 	flusher.Flush()
 
-	s.transmitirProgressoConsulta(r.Context(), w, flusher, cons.ID)
+	ctx, cancelar := contextoDoStream(r)
+	defer cancelar()
+	s.transmitirProgressoConsulta(ctx, w, flusher, cons.ID)
+	avisarTokenExpirado(ctx, r, w, flusher)
 }
 
 // transmitirProgressoConsulta é o laço do SSE sanitizado: mesmo tailing de

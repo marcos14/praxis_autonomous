@@ -48,7 +48,10 @@ func (s *Servidor) handleLogsDemanda(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ": conectado\n\n")
 	flusher.Flush()
 
-	s.transmitirLog(r.Context(), w, flusher, dem.ID)
+	ctx, cancelar := contextoDoStream(r)
+	defer cancelar()
+	s.transmitirLog(ctx, w, flusher, dem.ID)
+	avisarTokenExpirado(ctx, r, w, flusher)
 }
 
 // transmitirLog é o laço do SSE: a cada ciclo relê o .jsonl da execução-alvo e
