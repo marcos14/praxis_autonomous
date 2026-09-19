@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1, M2 e M3 concluídos** (código, testes e doc
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M4.F5.E2`
+**Próxima etapa:** `M4.F5.E3`
 
 **Pendência do M3 para o usuário (não automatizável):** auditoria Lighthouse "PWA" sem erros; instalar em Windows (Chrome/Edge), Android (Chrome) e iOS (Safari) com HTTPS válido; passar por todas as views a 400 px conferindo que nada rola na horizontal, que o ← volta da lista, que o kanban desliza coluna a coluna e que o card da demanda abre em tela cheia. Os handlers do SW e do manifest têm teste Go; o comportamento no navegador não.
 
@@ -58,7 +58,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M4.F4.E1 API: listar, lida(s), stream SSE por usuário — `internal/api/notificacoes.go`: `GET /notificacoes?nao_lidas=1&limite=50` (`{itens, nao_lidas}`), `POST /notificacoes/{id}/lida` (404 se alheia), `POST /notificacoes/lidas` (`{marcadas}`), `GET /notificacoes/stream?after=` (`event: notificacao`, polling, heartbeat, encerra no exp do JWT com `token_expirado`); `permissaoMutacao` `case "notificacoes"`; tokens de API → 400 (`erro.credencial_sem_notificacoes`); i18n `erro.notificacao_nao_encontrada`; testes de listagem/lidas por usuário e do stream (só as próprias, backlog com `after=0`)
 - [x] M4.F4.E2 API: push (chave, assinar, cancelar) e preferências — `internal/api/notificacoes_push.go`: `GET /notificacoes/push/chave` (VAPID pública), `POST/DELETE /notificacoes/push` (corpo = `PushSubscription.toJSON()`; só https; cancelar só a própria, idempotente), `GET/PUT /auth/preferencias` (efetivas + `assinaturas` + `padrao_tipos`; PUT valida tipos contra `notify.TiposConhecidos`, novo catálogo Go com teste de paridade contra `notify-events.js`); catálogo JS com `padrao_usuario` completo; i18n `erro.assinatura_push_invalida`/`erro.tipo_evento_desconhecido`; tokens de API → 400; testes
 - [x] M4.F5.E1 Rotas com id (`#view/id`) nas 3 telas — `web/js/rota.js` (`separarRota`, `fixarRota` via `pushState` sem disparar `hashchange`, `limparRotaID`); `irPara`/`irParaHash` separam view e id e passam o id ao `montar*`; `montarConsultas(id)`/`montarPlanejamentos(id)` abrem o item direto, `montarDemandas(id)` abre o card; `abrirConsulta`/`abrirPlanejamento` fixam o hash; o card de demanda só fixa `#demandas/ID` quando aberto da tela Demandas e limpa ao fechar; voltar/avançar remonta com o id
-- [ ] M4.F5.E2 Stream no boot, toast, sino com badge e painel
+- [x] M4.F5.E2 Stream no boot, toast, sino com badge e painel — `web/js/notificacoes.js`: `iniciarNotificacoes` em `entrarNaApp` (carrega lista+contador, abre `/notificacoes/stream?after=` com dedupe por id nas reconexões), toast clicável (aba visível) ou `registration.showNotification` com `tag` (aba escondida, permissão concedida), sino na sidebar (`botaoSino`) e na topbar (`#btn-sino-topbar`) com badge compartilhado e contador no `document.title`, painel lateral com lista, clique navega pela rota e marca lida, "marcar todas"; `api.js` ganha as chamadas de notificações/push/preferências; CSS `.sino-*`; i18n `sino.*`
 - [ ] M4.F5.E3 SW push/click, Minha conta: preferências e ativar push
 - [ ] M4.F6.E1 Fechamento: docs, manual, roteiro manual
 

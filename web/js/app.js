@@ -22,6 +22,7 @@ import { montarGruposUsuarios } from "./gusuarios.js";
 import { montarConta } from "./conta.js";
 import { registrarServiceWorker, botaoInstalarApp } from "./pwa.js";
 import { separarRota } from "./rota.js";
+import { iniciarNotificacoes, pararNotificacoes, botaoSino, ligarSinoTopbar } from "./notificacoes.js";
 import { bannerErro, el, limpar } from "./ui.js";
 import * as auth from "./auth.js";
 import { t, aplicarTraducoes, seletorIdioma, adotarIdiomaDoUsuario } from "./i18n.js";
@@ -146,6 +147,7 @@ function aplicarPermissoes() {
         el("b", { text: u.nome || u.email }), el("span", { text: u.email })),
       el("div", { class: "nav-user-acoes" },
         el("button", { class: "btn ghost sm", text: t("nav.conta"), onclick: () => irParaHash("conta") }),
+        botaoSino(),
         botaoInstalarApp(),
         el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => sair() }),
       ),
@@ -267,6 +269,7 @@ function retomarApp() {
 let saindo = false;
 async function sair() {
   saindo = true;
+  pararNotificacoes();
   try {
     await auth.logout();
   } finally {
@@ -285,6 +288,9 @@ function entrarNaApp() {
   document.querySelector(".app").style.display = "";
   aplicarPermissoes();
   atualizarRodape();
+  // Sino + stream de notificações do usuário (M4); best-effort, não bloqueia.
+  ligarSinoTopbar();
+  iniciarNotificacoes();
   irParaHash(location.hash.slice(1) || "home");
 }
 

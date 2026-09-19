@@ -404,6 +404,24 @@ export const api = {
   encerrarSessao: (id) => req("DELETE", `/api/v1/auth/sessoes/${id}`),
   encerrarOutrasSessoes: () => req("DELETE", "/api/v1/auth/sessoes"),
 
+  // notificações do PRÓPRIO usuário (M4): caixa de entrada, stream por usuário,
+  // assinatura Web Push deste dispositivo e preferências.
+  listarNotificacoes: (q = {}) => {
+    const p = new URLSearchParams();
+    if (q.nao_lidas) p.set("nao_lidas", "1");
+    if (q.limite) p.set("limite", String(q.limite));
+    const s = p.toString();
+    return req("GET", "/api/v1/notificacoes" + (s ? "?" + s : ""));
+  },
+  marcarNotificacaoLida: (id) => req("POST", `/api/v1/notificacoes/${id}/lida`),
+  marcarTodasLidas: () => req("POST", "/api/v1/notificacoes/lidas"),
+  streamNotificacoes: (after, handlers) => abrirStream(`/api/v1/notificacoes/stream?after=${after || 0}`, handlers),
+  chavePush: () => req("GET", "/api/v1/notificacoes/push/chave"),
+  assinarPush: (sub) => req("POST", "/api/v1/notificacoes/push", sub),
+  cancelarPush: (endpoint) => req("DELETE", "/api/v1/notificacoes/push", { endpoint }),
+  obterPreferencias: () => req("GET", "/api/v1/auth/preferencias"),
+  definirPreferencias: (p) => req("PUT", "/api/v1/auth/preferencias", p),
+
   // usuários, papéis e catálogo de permissões (RBAC). Exigem usuarios.gerir.
   listarPermissoes: () => req("GET", "/api/v1/permissions"),
   listarUsuarios: () => req("GET", "/api/v1/users"),

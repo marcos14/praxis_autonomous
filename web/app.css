@@ -196,6 +196,36 @@ table.plain tr:last-child td { border-bottom: none; }
 }
 .toast.ok { border-color: rgba(12,163,12,.5); }
 .toast.err { border-color: rgba(208,59,59,.5); }
+.toast.clicavel { cursor: pointer; }
+.toast.clicavel b { display: block; margin-bottom: 2px; }
+.toast.clicavel .sub { margin: 0; font-size: 12px; }
+
+/* ---------- notificações por usuário (M4): sino, badge e painel ---------- */
+.sino-btn { position: relative; }
+.sino-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 9px; background: var(--critical); color: #fff; font-size: 10px; font-weight: 700;
+  line-height: 17px; text-align: center;
+}
+.topbar .sino-badge { top: 4px; right: 2px; }
+.sino-painel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 400px; max-width: 100vw; z-index: 960;
+  background: var(--surface); border-left: 1px solid var(--border); box-shadow: -8px 0 32px rgba(0,0,0,.45);
+  display: flex; flex-direction: column; transform: translateX(100%); transition: transform .18s ease-out;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.sino-painel.aberto { transform: none; }
+.sino-cab { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.sino-cab h3 { flex: 1; font-size: 15px; }
+.sino-fechar { display: inline-block; width: 36px; height: 36px; font-size: 18px; background: none; border: none; color: var(--ink); cursor: pointer; border-radius: 8px; }
+.sino-fechar:hover { background: var(--surface-2); }
+.sino-lista { flex: 1; overflow-y: auto; }
+.sino-lista > .sub { padding: 16px 14px; }
+.sino-item { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.sino-item:hover { background: var(--surface-2); }
+.sino-item.nao-lida { background: rgba(57,135,229,.08); border-left: 3px solid var(--blue); }
+.sino-item b { display: block; font-size: 13px; }
+.sino-item .path { color: var(--muted); font-size: 12px; margin: 2px 0 4px; white-space: pre-wrap; }
 
 /* bloco "config efetiva" revelado sob demanda */
 .efetiva { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); }
