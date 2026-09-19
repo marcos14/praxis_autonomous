@@ -48,3 +48,12 @@ Además del acceso al proyecto, cada consulta, planificación y demanda tiene un
 - 🌐 **Pública** — todos los usuarios que ven el proyecto.
 
 Los elementos nuevos nacen privados; Praxis recuerda la última elección. En las listas, el kanban y la Home aparece solo lo que usted puede ver, con la etiqueta de visibilidad y el autor cuando no es usted. El filtro **Todos · Míos · Del grupo** acota la lista. Los administradores ven todo. Lo que existía antes de esta versión quedó público. Los elementos creados por integraciones (token de API) no tienen dueño: el administrador decide en `Configuración → Visibilidad` si los ven solo administradores, un grupo o todos.
+
+
+## Notificaciones
+
+Praxis te avisa sobre **tus** consultas, planificaciones y demandas (las que creaste): respuesta lista, análisis o planificación concluidos, demanda esperándote, fase fallida, demanda concluida o integrada.
+
+- **En la pestaña abierta**: la campana (en el menú, o arriba en el móvil) muestra cuántas hay sin leer; haz clic para ver la lista y abrir el elemento. Una notificación nueva aparece como aviso en la esquina; con la pestaña en segundo plano se convierte en notificación del sistema.
+- **Con Praxis cerrado**: en **Mi cuenta → Notificaciones**, pulsa *Activar notificaciones en este dispositivo* y acepta el permiso del navegador. Necesita HTTPS válido; en iPhone, solo con Praxis instalado como app. Repítelo en cada dispositivo donde quieras recibirlas.
+- **Qué recibir**: en la misma pantalla, elige los eventos y si quieres aviso en la pestaña y/o push. Vale en todos tus dispositivos.

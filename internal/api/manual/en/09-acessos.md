@@ -48,3 +48,12 @@ Besides project access, every query, planning and demand has a **visibility**, c
 - 🌐 **Public** — every user who can see the project.
 
 New items start private; Praxis remembers your last choice. Lists, the kanban and Home show only what you can see, with the visibility pill and the author when it is not you. The **All · Mine · My group** filter narrows the list. Administrators see everything. Items that existed before this version were made public. Items created by integrations (API tokens) have no owner: the administrator decides in `Settings → Visibility` whether only administrators, one group or everyone sees them.
+
+
+## Notifications
+
+Praxis notifies you about **your own** queries, plannings and demands (the ones you created): answer ready, analysis or planning done, demand waiting for you, phase failed, demand completed or integrated.
+
+- **In the open tab**: the bell (in the menu, or at the top on a phone) shows how many are unread; click to see the list and open the item. A new notification shows as a corner toast; with the tab in the background it becomes a system notification.
+- **With Praxis closed**: in **My account → Notifications**, click *Enable notifications on this device* and accept the browser permission. It needs valid HTTPS; on iPhone, only with Praxis installed as an app. Repeat on every device where you want to receive them.
+- **What to receive**: on the same screen, pick the events and whether you want the tab notice and/or push. Applies to all your devices.

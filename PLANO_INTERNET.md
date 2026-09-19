@@ -1,12 +1,14 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — **M1, M2 e M3 concluídos** (código, testes e docs); próxima etapa é a primeira do M4.
+Atualizado em: 2026-09-19 — **M1, M2, M3 e M4 concluídos** (código, testes e docs). Restam só os roteiros manuais no navegador, listados abaixo.
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M4.F6.E1`
+**Próxima etapa:** — (todas as etapas concluídas; ver as pendências manuais abaixo)
+
+**Pendência do M4 para o usuário (não automatizável):** roteiro no navegador com três usuários, cada um criando uma consulta, um planejamento e uma demanda: (1) cada um vê no sino só as próprias notificações (consulta respondida, planejamento respondido, demanda aguardando/concluída) e o clique abre o item certo; (2) com a aba em segundo plano e permissão concedida, a notificação sai pelo sistema; (3) em Minha conta → Notificações, ativar o push num celular com HTTPS válido, fechar o PWA e conferir que a consulta respondida chega e que o toque abre a consulta; desativar e conferir que para; (4) desligar um tipo nas preferências e conferir que ele deixa de chegar; (5) `push_contato` vazio e preenchido em Configurações. A lógica (despachante, cifra RFC 8291, API, retenção) está coberta por testes Go; o comportamento no navegador e nos serviços de push reais não.
 
 **Pendência do M3 para o usuário (não automatizável):** auditoria Lighthouse "PWA" sem erros; instalar em Windows (Chrome/Edge), Android (Chrome) e iOS (Safari) com HTTPS válido; passar por todas as views a 400 px conferindo que nada rola na horizontal, que o ← volta da lista, que o kanban desliza coluna a coluna e que o card da demanda abre em tela cheia. Os handlers do SW e do manifest têm teste Go; o comportamento no navegador não.
 
@@ -60,7 +62,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M4.F5.E1 Rotas com id (`#view/id`) nas 3 telas — `web/js/rota.js` (`separarRota`, `fixarRota` via `pushState` sem disparar `hashchange`, `limparRotaID`); `irPara`/`irParaHash` separam view e id e passam o id ao `montar*`; `montarConsultas(id)`/`montarPlanejamentos(id)` abrem o item direto, `montarDemandas(id)` abre o card; `abrirConsulta`/`abrirPlanejamento` fixam o hash; o card de demanda só fixa `#demandas/ID` quando aberto da tela Demandas e limpa ao fechar; voltar/avançar remonta com o id
 - [x] M4.F5.E2 Stream no boot, toast, sino com badge e painel — `web/js/notificacoes.js`: `iniciarNotificacoes` em `entrarNaApp` (carrega lista+contador, abre `/notificacoes/stream?after=` com dedupe por id nas reconexões), toast clicável (aba visível) ou `registration.showNotification` com `tag` (aba escondida, permissão concedida), sino na sidebar (`botaoSino`) e na topbar (`#btn-sino-topbar`) com badge compartilhado e contador no `document.title`, painel lateral com lista, clique navega pela rota e marca lida, "marcar todas"; `api.js` ganha as chamadas de notificações/push/preferências; CSS `.sino-*`; i18n `sino.*`
 - [x] M4.F5.E3 SW push/click, Minha conta: preferências e ativar push — `web/sw.js` ganha `push` (não mostra se há janela em foco; `tag`, `data.rota`) e `notificationclick` (foca janela + `postMessage({tipo:"rota"})`, ou `openWindow("/#rota")`); `app.js` escuta a mensagem e navega; `web/js/push.js` (`estado`, `ativar` = permissão → `pushManager.subscribe` com a chave VAPID → `POST /notificacoes/push`, `desativar`); `web/js/conta-notificacoes.js`: seção Notificações em Minha conta (navegador/push, catálogo de eventos por grupo, salvar, restaurar padrão, status e botão ativar/desativar push neste dispositivo); CSS `.conta-*`; i18n `conta.notif_*`/`conta.push_*`
-- [ ] M4.F6.E1 Fechamento: docs, manual, roteiro manual
+- [x] M4.F6.E1 Fechamento: docs, manual, roteiro manual — README_COMPLETO (EN e pt-BR) ganhou §7.1 "Notificações por usuário e Web Push" (quem recebe, aba aberta × push, preferências, VAPID automático, `push_contato`, falhas e retenção, rotas da API); manual embutido `09-acessos.md` nos 4 idiomas ganhou "Notificações" e o FAQ uma pergunta; roteiro no navegador fica com o usuário (ver pendência acima)
 
 ---
 

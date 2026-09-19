@@ -411,6 +411,56 @@ curl -s -X PUT http://127.0.0.1:7799/api/v1/config \
   -d '{"notificacoes": { ... the object above ... }}'
 ```
 
+### 7.1 Per-user notifications and Web Push
+
+Besides the system-wide channels above, every user has an **inbox of their own**:
+the events of the queries, plannings and demands **they created** (the item's
+`criado_por`) become notifications for that user only. Items with no owner
+(created by an API token or before the first sign-in) notify nobody, and API
+tokens have no inbox.
+
+How it reaches the user:
+
+- **Open tab**: the bell in the menu (and in the top bar on phones) shows the
+  unread count, opens the panel with the list and, on click, navigates to the
+  item (`#consultas/7`, `#planejamentos/3`, `#demandas/12`) and marks it read. A
+  new notification shows a clickable toast; if the tab is in the background and
+  the browser has permission, it becomes a system notification instead. The
+  stream is a per-user SSE (`GET /api/v1/notificacoes/stream`) that reopens by
+  itself, like the events stream.
+- **Web Push** (Praxis closed): in **My account → Notifications**, *Enable
+  notifications on this device* asks the browser's permission, subscribes the
+  device with the instance's VAPID key and registers it. Clicking the system
+  notification opens the item in an existing window or a new one. Push needs
+  HTTPS with a valid certificate (the service worker requirement) and a browser
+  with Push API support (Chrome, Edge, Firefox; Safari/iOS only when installed
+  as an app).
+
+What each user receives is set in **My account → Notifications**: notify in the
+open tab, send push, and the event catalogue (the same types as the channels
+above). The default set is "your activity finished / needs you": query and
+strategy answered or failed, analysis and planning done, waiting for a human,
+phase or gates failed, quota exhausted, demand completed or integrated, push or
+merge failed. Preferences apply to all of the user's devices; the push
+subscription is per device.
+
+Operator side:
+
+- The **VAPID key pair** is generated on the first `serve` and stored in the
+  database (`auth_config`); nothing to configure. `push_contato` (global
+  config, group *Notifications and push*) is the contact the push services see
+  (`mailto:` or URL); empty, the first administrator's e-mail is used.
+- Delivery is best-effort with no external dependency: 404/410 from the push
+  service drops the subscription; 429/5xx count as failures and the
+  subscription is dropped after five in a row (an accepted delivery resets the
+  count). Maintenance removes read notifications after 30 days, unread after
+  90, and subscriptions with no accepted delivery for 180 days.
+- API (all restricted to the calling user): `GET /api/v1/notificacoes?nao_lidas=1&limite=50`
+  (`{itens, nao_lidas}`), `POST /api/v1/notificacoes/{id}/lida`,
+  `POST /api/v1/notificacoes/lidas`, `GET /api/v1/notificacoes/stream?after=<id>`,
+  `GET /api/v1/notificacoes/push/chave`, `POST/DELETE /api/v1/notificacoes/push`
+  (body = `PushSubscription.toJSON()` / `{endpoint}`), `GET/PUT /api/v1/auth/preferencias`.
+
 ---
 
 ## 8. Other subcommands

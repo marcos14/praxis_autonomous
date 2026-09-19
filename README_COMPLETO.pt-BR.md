@@ -396,6 +396,55 @@ curl -s -X PUT http://127.0.0.1:7799/api/v1/config \
   -d '{"notificacoes": { ... o objeto acima ... }}'
 ```
 
+### 7.1 Notificações por usuário e Web Push
+
+Além dos canais do sistema acima, cada usuário tem uma **caixa de entrada
+própria**: os eventos das consultas, planejamentos e demandas **que ele criou**
+(o `criado_por` do item) viram notificações só para ele. Itens sem dono (criados
+por token de API ou antes do primeiro login) não notificam ninguém, e tokens de
+API não têm caixa de entrada.
+
+Como chega ao usuário:
+
+- **Aba aberta**: o sino no menu (e na barra superior no celular) mostra as não
+  lidas, abre o painel com a lista e, ao clicar, navega até o item
+  (`#consultas/7`, `#planejamentos/3`, `#demandas/12`) e marca como lida. Uma
+  notificação nova aparece como toast clicável; se a aba está em segundo plano
+  e o navegador tem permissão, vira notificação do sistema. O stream é um SSE
+  por usuário (`GET /api/v1/notificacoes/stream`) que reabre sozinho, como o
+  de eventos.
+- **Web Push** (Praxis fechado): em **Minha conta → Notificações**, *Ativar
+  notificações neste dispositivo* pede a permissão do navegador, assina o
+  dispositivo com a chave VAPID da instância e o registra. Clicar na
+  notificação do sistema abre o item numa janela existente ou numa nova. Push
+  exige HTTPS com certificado válido (exigência do service worker) e navegador
+  com Push API (Chrome, Edge, Firefox; Safari/iOS só instalado como app).
+
+O que cada usuário recebe se define em **Minha conta → Notificações**: avisar
+na aba aberta, enviar push e o catálogo de eventos (os mesmos tipos dos canais
+acima). O conjunto padrão é "sua atividade terminou / precisa de você":
+consulta e estratégia respondidas ou falhas, análise e planejamento
+concluídos, aguardando humano, fase ou gates falharam, franquia esgotada,
+demanda concluída ou integrada, push ou merge falhou. As preferências valem
+em todos os dispositivos do usuário; a assinatura push é por dispositivo.
+
+Lado do operador:
+
+- O **par de chaves VAPID** é gerado no primeiro `serve` e guardado no banco
+  (`auth_config`); nada a configurar. `push_contato` (config global, grupo
+  *Notificações e push*) é o contato que os serviços de push veem (`mailto:`
+  ou URL); vazio, vale o e-mail do primeiro administrador.
+- O envio é best-effort e sem dependência externa: 404/410 do serviço de push
+  apaga a assinatura; 429/5xx contam como falha e a assinatura é descartada na
+  quinta seguida (um envio aceito zera a conta). A manutenção remove
+  notificações lidas após 30 dias, não lidas após 90, e assinaturas sem envio
+  aceito há 180 dias.
+- API (todas restritas ao usuário da chamada): `GET /api/v1/notificacoes?nao_lidas=1&limite=50`
+  (`{itens, nao_lidas}`), `POST /api/v1/notificacoes/{id}/lida`,
+  `POST /api/v1/notificacoes/lidas`, `GET /api/v1/notificacoes/stream?after=<id>`,
+  `GET /api/v1/notificacoes/push/chave`, `POST/DELETE /api/v1/notificacoes/push`
+  (corpo = `PushSubscription.toJSON()` / `{endpoint}`), `GET/PUT /api/v1/auth/preferencias`.
+
 ---
 
 ## 8. Outros subcomandos
