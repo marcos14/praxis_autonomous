@@ -44,6 +44,8 @@
   "erro.sessao_invalida": "sessão inválida ou expirada: faça login de novo",
   "erro.sessao_nao_encontrada": "sessão não encontrada",
   "erro.credencial_sem_sessao": "credencial de integração não tem sessões",
+  "erro.credencial_sem_notificacoes": "credencial de integração não tem notificações",
+  "erro.notificacao_nao_encontrada": "notificação não encontrada",
   "erro.muitas_tentativas": "muitas tentativas de login: aguarde {segundos} s e tente de novo",
   "erro.visibilidade_invalida": "visibilidade inválida (use privada, grupo ou publica)",
   "erro.visibilidade_sem_permissao": "só o criador ou um administrador pode alterar a visibilidade",

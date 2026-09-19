@@ -44,6 +44,8 @@
   "erro.sessao_invalida": "会话无效或已过期：请重新登录",
   "erro.sessao_nao_encontrada": "未找到会话",
   "erro.credencial_sem_sessao": "集成凭证没有会话",
+  "erro.credencial_sem_notificacoes": "集成凭证没有通知",
+  "erro.notificacao_nao_encontrada": "未找到通知",
   "erro.muitas_tentativas": "登录尝试次数过多：请等待 {segundos} 秒后重试",
   "erro.visibilidade_invalida": "可见性无效（请使用 privada、grupo 或 publica）",
   "erro.visibilidade_sem_permissao": "只有创建者或管理员可以更改可见性",

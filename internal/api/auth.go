@@ -362,6 +362,10 @@ func permissaoMutacao(seg []string, resto string) string {
 		// Conta do próprio usuário (senha, idioma, sessões): basta estar
 		// autenticado — cada handler já opera só sobre o principal da requisição.
 		return ""
+	case "notificacoes":
+		// Caixa de entrada do próprio usuário (marcar lida(s)): basta estar
+		// autenticado — os handlers só tocam as notificações do principal.
+		return ""
 	case "projects":
 		// projects, projects/{id}, projects/{id}/config → gerir projetos;
 		// projects/{id}/demands → criar demanda.

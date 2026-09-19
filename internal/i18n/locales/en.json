@@ -44,6 +44,8 @@
   "erro.sessao_invalida": "session invalid or expired: please log in again",
   "erro.sessao_nao_encontrada": "session not found",
   "erro.credencial_sem_sessao": "integration credentials have no sessions",
+  "erro.credencial_sem_notificacoes": "integration credentials have no notifications",
+  "erro.notificacao_nao_encontrada": "notification not found",
   "erro.muitas_tentativas": "too many login attempts: wait {segundos} s and try again",
   "erro.visibilidade_invalida": "invalid visibility (use privada, grupo or publica)",
   "erro.visibilidade_sem_permissao": "only the creator or an administrator can change the visibility",

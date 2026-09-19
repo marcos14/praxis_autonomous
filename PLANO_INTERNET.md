@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1, M2 e M3 concluídos** (código, testes e doc
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M4.F4.E1`
+**Próxima etapa:** `M4.F4.E2`
 
 **Pendência do M3 para o usuário (não automatizável):** auditoria Lighthouse "PWA" sem erros; instalar em Windows (Chrome/Edge), Android (Chrome) e iOS (Safari) com HTTPS válido; passar por todas as views a 400 px conferindo que nada rola na horizontal, que o ← volta da lista, que o kanban desliza coluna a coluna e que o card da demanda abre em tela cheia. Os handlers do SW e do manifest têm teste Go; o comportamento no navegador não.
 
@@ -55,7 +55,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M4.F2.E2 Chaves VAPID no boot, config `push_contato` — `serve` chama `ObterOuGerarVAPID` com `webpush.GerarChaves` (best-effort, como o segredo do JWT); `db.EmailPrimeiroAdmin` e `db.ContatoPush` (config `push_contato` → senão e-mail do primeiro admin ativo; `mailto:` automático, URLs passam); campo `push_contato` no novo grupo "Notificações e push" do `config-fields.js` com i18n nos 4 idiomas; teste `TestContatoPush`
 - [x] M4.F3.E1 Despachante: destinatário, preferências, gravação em `notificacoes` — `internal/notify/destinatario.go`: `Preferencias` (`PreferenciasPadrao`, `DecodificarPreferencias`, `TiposPadraoUsuario` espelhando o catálogo), interface `FonteUsuarios` (`*db.DB` satisfaz), `RotaDoEvento`, `destinatario` com cache por ciclo, `notificarUsuario`; `processar` grava a notificação do dono a cada evento; `serve` passa `Usuarios: banco`; testes com fakes (dono, sem dono, item apagado, tipo desligado, preferências parciais, cache)
 - [x] M4.F3.E2 Despachante: envio push, falhas, retenção na manutenção — `internal/notify/push.go`: interface `FontePush` (`*db.DB` satisfaz), `enviarPush` em goroutine com timeout (payload `{id,titulo,detalhe,rota,tag}`, `Topic` = tipo, VAPID memorizado), aceito → `MarcarUsoAssinatura` + `push_em`; 404/410 apaga; 429/5xx/transporte → `RegistrarFalhaAssinatura` (descarte em `MaxFalhasPush` = 5); outros 4xx só log; `AguardarEnvios`; manutenção: `RemoverNotificacoesAntigas` (lidas 30 d, não lidas 90 d) e `RemoverAssinaturasSemUso` (180 d) no `Ciclo`; `serve` passa `Push: banco`; testes com serviço de push falso (httptest) e banco real
-- [ ] M4.F4.E1 API: listar, lida(s), stream SSE por usuário
+- [x] M4.F4.E1 API: listar, lida(s), stream SSE por usuário — `internal/api/notificacoes.go`: `GET /notificacoes?nao_lidas=1&limite=50` (`{itens, nao_lidas}`), `POST /notificacoes/{id}/lida` (404 se alheia), `POST /notificacoes/lidas` (`{marcadas}`), `GET /notificacoes/stream?after=` (`event: notificacao`, polling, heartbeat, encerra no exp do JWT com `token_expirado`); `permissaoMutacao` `case "notificacoes"`; tokens de API → 400 (`erro.credencial_sem_notificacoes`); i18n `erro.notificacao_nao_encontrada`; testes de listagem/lidas por usuário e do stream (só as próprias, backlog com `after=0`)
 - [ ] M4.F4.E2 API: push (chave, assinar, cancelar) e preferências
 - [ ] M4.F5.E1 Rotas com id (`#view/id`) nas 3 telas
 - [ ] M4.F5.E2 Stream no boot, toast, sino com badge e painel
