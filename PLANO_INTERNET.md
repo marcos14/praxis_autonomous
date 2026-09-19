@@ -1,17 +1,17 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — plano fechado (decisões confirmadas), **execução não iniciada**.
+Atualizado em: 2026-09-19 — execução iniciada (M1.F1.E1 concluída).
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M1.F1.E1`
+**Próxima etapa:** `M1.F1.E2`
 
 Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma etapa `[~]`, escreva "Retomada:" com o que já foi feito, o que falta e decisões tomadas no caminho.
 
 ### M1 — Sessões duráveis
-- [ ] M1.F1.E1 Migração 16 + store de sessões
+- [x] M1.F1.E1 Migração 16 + store de sessões — `internal/db/sessoes.go` (`CriarSessao`, `AutenticarSessao` com deslize gravado só após 5 min, `RevogarSessao`, `RevogarSessaoPorToken`, `RevogarSessoesDoUsuario`, `ListarSessoesDoUsuario`, `RemoverSessoesExpiradas`), `ErrSessaoInvalida`, `PrazosSessao`, helper `formatoISO`/`agoraISO`
 - [ ] M1.F1.E2 Config de sessão, TTL do JWT, `exp` no principal, segredo sem memoizar erro
 - [ ] M1.F1.E3 Rotas refresh/logout, cookie, login cria sessão, revogações, fix `case "auth"`
 - [ ] M1.F1.E4 Sessões do usuário (listar/encerrar), rate limit de login, limpeza na manutenção

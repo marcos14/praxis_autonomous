@@ -208,6 +208,43 @@ func TestSchemaPromptsCriaTabela(t *testing.T) {
 	}
 }
 
+// TestSchemaSessoesCriaTabelaEIndice cobre a migração 16 (sessões persistidas):
+// a tabela, o índice por usuário e o CASCADE ao remover o usuário.
+func TestSchemaSessoesCriaTabelaEIndice(t *testing.T) {
+	db := abrirBruto(t)
+	if _, _, err := Migrar(db); err != nil {
+		t.Fatalf("Migrar: %v", err)
+	}
+	if !existeNoSchema(t, db, "table", "sessoes") {
+		t.Fatal("tabela \"sessoes\" não foi criada")
+	}
+	if !existeNoSchema(t, db, "index", "ix_sessoes_user") {
+		t.Error("índice \"ix_sessoes_user\" não foi criado")
+	}
+	if _, err := db.Exec(`INSERT INTO users (nome, email, senha_hash) VALUES ('u','u@x.test','h')`); err != nil {
+		t.Fatalf("usuário: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessoes (user_id, token_hash, expira_em, limite_em)
+		VALUES (1, 'h1', '2999-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z')`); err != nil {
+		t.Fatalf("sessão: %v", err)
+	}
+	// sessão órfã (usuário inexistente) é barrada pela FK.
+	if _, err := db.Exec(`INSERT INTO sessoes (user_id, token_hash, expira_em, limite_em)
+		VALUES (999, 'h2', '2999-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z')`); err == nil {
+		t.Fatal("FK deveria rejeitar user_id inexistente")
+	}
+	if _, err := db.Exec(`DELETE FROM users WHERE id = 1`); err != nil {
+		t.Fatalf("remover usuário: %v", err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sessoes`).Scan(&n); err != nil {
+		t.Fatalf("contar sessões: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("sessões após remover o usuário = %d, quero 0 (CASCADE)", n)
+	}
+}
+
 func TestChatMessagesRejeitaPapelInvalido(t *testing.T) {
 	db := abrirBruto(t)
 	if _, _, err := Migrar(db); err != nil {

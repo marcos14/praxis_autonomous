@@ -94,6 +94,11 @@ var migracoes = []migracao{
 		nome:   "i18n: idioma preferido do usuário (users.idioma)",
 		sql:    schemaIdiomaUsuario,
 	},
+	{
+		versao: 16,
+		nome:   "sessões persistidas dos usuários (sessoes) — token de renovação em cookie",
+		sql:    schemaSessoes,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -721,4 +726,26 @@ SELECT id, demand_id, 'completa' FROM planejamentos WHERE demand_id IS NOT NULL;
 // global `idioma`). Valores normalizados pela app: pt-BR, en, es, zh-CN.
 const schemaIdiomaUsuario = `
 ALTER TABLE users ADD COLUMN idioma TEXT NOT NULL DEFAULT '';
+`
+
+// Migração 16 (M1 do PLANO_INTERNET) — a sessão persistida de cada login. O
+// navegador guarda um token opaco num cookie HttpOnly e o banco guarda só o
+// hash (SHA-256 hex, como api_tokens). expira_em desliza a cada uso
+// (inatividade) e limite_em é o teto absoluto desde a criação; revogada_em
+// não-nulo = sessão encerrada (logout, troca de senha, desativação). Remover o
+// usuário leva as sessões junto (CASCADE).
+const schemaSessoes = `
+CREATE TABLE sessoes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash  TEXT    NOT NULL UNIQUE,
+    criado_em   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    ultimo_uso  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    expira_em   TEXT    NOT NULL,
+    limite_em   TEXT    NOT NULL,
+    user_agent  TEXT    NOT NULL DEFAULT '',
+    ip          TEXT    NOT NULL DEFAULT '',
+    revogada_em TEXT
+);
+CREATE INDEX ix_sessoes_user ON sessoes (user_id);
 `
