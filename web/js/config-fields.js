@@ -101,6 +101,19 @@ export const CAMPOS = [
   { chave: "sessao_maxima_dias", rotulo: t("config.sessao_maxima_dias"), tipo: "number", escopo: "global",
     grupo: t("config.grupo_sessao"), opcoes: dias([7, 14, 30, 60, 90, 180, 365]),
     padrao: t("config.dias", { n: 90 }), hint: t("config.sessao_maxima_dias.hint") },
+
+  // --- Visibilidade (M2 do PLANO_INTERNET): itens sem dono (token de API/bootstrap).
+  { chave: "sem_dono_visibilidade", rotulo: t("config.sem_dono_visibilidade"), tipo: "text", escopo: "global",
+    grupo: t("config.grupo_visibilidade"), padrao: t("config.sem_dono_admins"),
+    opcoes: [
+      { valor: "admins", rotulo: t("config.sem_dono_admins") },
+      { valor: "grupo", rotulo: t("config.sem_dono_grupo") },
+      { valor: "publica", rotulo: t("config.sem_dono_publica") },
+    ],
+    hint: t("config.sem_dono_visibilidade.hint") },
+  { chave: "sem_dono_grupo_id", rotulo: t("config.sem_dono_grupo_id"), tipo: "number", escopo: "global",
+    grupo: t("config.grupo_visibilidade"), opcoesDe: "gruposUsuarios", padrao: "—",
+    hint: t("config.sem_dono_grupo_id.hint") },
 ];
 
 // camposDoEscopo devolve os campos visíveis num escopo ("global" ou "project").
@@ -123,12 +136,18 @@ const OBSOLETAS = new Set(["budget_demanda_usd", "max_fases_novas"]);
 // Falha ao listar não derruba o formulário: o campo cai numa lista vazia (o
 // valor já gravado continua selecionável, ver campoEntrada).
 export async function listasDinamicas() {
+  const listas = { motores: [], gruposUsuarios: [] };
   try {
     const motores = (await api.listarMotores()) || [];
-    return { motores: motores.filter((m) => m.ativo).map((m) => ({ valor: m.nome, rotulo: m.nome })) };
-  } catch {
-    return { motores: [] };
-  }
+    listas.motores = motores.filter((m) => m.ativo).map((m) => ({ valor: m.nome, rotulo: m.nome }));
+  } catch { /* lista vazia */ }
+  // Grupos de usuários (sem_dono_grupo_id) exigem usuarios.gerir: sem a
+  // permissão, o campo fica só com o valor já gravado.
+  try {
+    const grupos = (await api.listarGruposUsuarios()) || [];
+    listas.gruposUsuarios = grupos.map((g) => ({ valor: String(g.id), rotulo: g.nome }));
+  } catch { /* lista vazia */ }
+  return listas;
 }
 
 // opcoesDoCampo resolve a lista de opções do campo: as fixas (`opcoes`) ou as

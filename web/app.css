@@ -524,6 +524,23 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
 .auth-alt { text-align: center; font-size: 12px; color: var(--muted); margin-top: 14px; }
 .auth-alt a { color: var(--blue); cursor: pointer; }
 
+/* ======================= VISIBILIDADE (M2) ======================= */
+.filtro-escopo { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.filtro-escopo .escopo {
+  background: var(--surface-2); color: var(--ink-2); border: none; padding: 7px 12px;
+  font-size: 12.5px; font-family: inherit; cursor: pointer; border-right: 1px solid var(--border);
+}
+.filtro-escopo .escopo:last-child { border-right: none; }
+.filtro-escopo .escopo.active { background: var(--blue); color: #fff; }
+.filtro-escopo .escopo:disabled { opacity: .45; cursor: not-allowed; }
+.pill.vis-privada { color: var(--muted); }
+.pill.vis-grupo { color: var(--violet); }
+.pill.vis-publica { color: var(--good); }
+.sel-vis {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--ink); border-radius: 8px;
+  padding: 4px 8px; font-size: 12px; font-family: inherit;
+}
+
 /* ======================= MINHA CONTA ======================= */
 .nav-user .quem { cursor: pointer; }
 .nav-user-acoes { display: flex; gap: 6px; flex-wrap: wrap; }

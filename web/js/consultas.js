@@ -7,6 +7,10 @@
 import { api } from "./api.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
 import { t } from "./i18n.js";
+import {
+  seletorVisibilidade, campoVisibilidade, lembrarVisibilidade,
+  pillVisibilidade, pillAutor, controleVisibilidade, filtroEscopo, paramEscopo,
+} from "./visibilidade.js";
 
 let consultas = [];
 let selecionadaID = null;
@@ -141,6 +145,7 @@ async function renderNova() {
     listaAnexos.textContent = nomes.length ? nomes.join(" · ") : t("consultas.nenhum_arquivo");
   };
 
+  const selVis = seletorVisibilidade();
   const btn = el("button", { class: "btn", text: t("consultas.iniciar") });
   btn.onclick = async () => {
     const mensagem = ed.ta.value.trim();
@@ -150,12 +155,13 @@ async function renderNova() {
     const anexos = [...inputAnexos.files];
     try {
       const [tipo, id] = sel.value.split(":");
-      const corpo = { mensagem };
+      const corpo = { mensagem, visibilidade: selVis.value };
       if (tipo === "g") corpo.group_id = Number(id);
       else corpo.project_id = Number(id);
       if (anexos.length > 0) corpo.anexos_pendentes = true;
 
       const criada = await api.criarConsulta(corpo);
+      lembrarVisibilidade(selVis.value);
       if (anexos.length > 0) {
         for (const arq of anexos) {
           try {
@@ -185,6 +191,7 @@ async function renderNova() {
       el("span", { class: "opt", text: t("configx.opcional") })),
       el("div", { style: "display:flex;align-items:center;gap:10px" }, btnAnexos, inputAnexos, listaAnexos),
       el("div", { class: "hint", text: t("consultas.hint_anexos") })),
+    campoVisibilidade(selVis),
     el("div", { class: "acoes" }, btn),
   ));
   ed.ta.focus();

@@ -7,6 +7,7 @@ import { el, limpar, bannerErro, toast, mdEditor } from "./ui.js";
 import { abrirCard } from "./demandas.js";
 import * as auth from "./auth.js";
 import { t } from "./i18n.js";
+import { seletorVisibilidade, campoVisibilidade, lembrarVisibilidade } from "./visibilidade.js";
 
 export async function montarNovaDemanda() {
   const cont = limpar(document.getElementById("painel-nova"));
@@ -30,6 +31,7 @@ export async function montarNovaDemanda() {
   const inpTitulo = el("input", { type: "text", placeholder: t("nova.ph_titulo") });
   const inpBranch = el("input", { type: "text", placeholder: t("nova.ph_branch") });
   const edPRD = mdEditor({ placeholder: t("nova.ph_prd"), rows: 10 });
+  const selVis = seletorVisibilidade();
   const btn = el("button", { class: "btn", text: t("nova.criar") });
 
   const form = el("div", { class: "form" },
@@ -39,6 +41,7 @@ export async function montarNovaDemanda() {
       el("p", { class: "sub", style: "margin:4px 0 0",
         text: t("nova.hint_branch") })),
     el("div", {}, el("label", { text: t("nova.prd") }), edPRD.no),
+    campoVisibilidade(selVis),
     el("div", { class: "acoes" }, btn),
   );
   cont.append(form);
@@ -65,7 +68,9 @@ export async function montarNovaDemanda() {
         titulo: inpTitulo.value.trim(),
         branch: inpBranch.value.trim(),
         prd,
+        visibilidade: selVis.value,
       });
+      lembrarVisibilidade(selVis.value);
       bannerErro("");
       toast(t("nova.criada", { id: d.id }), "ok");
       // limpa o formulário e abre o card da demanda recém-criada.

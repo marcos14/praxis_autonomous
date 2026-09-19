@@ -216,6 +216,7 @@ export const api = {
   // consultas (chat de análise de código para produto/suporte).
   listarConsultas: (q = {}) => {
     const p = new URLSearchParams();
+    if (q.escopo) p.set("escopo", q.escopo);
     if (q.project) p.set("project", q.project);
     if (q.group) p.set("group", q.group);
     const qs = p.toString();
@@ -224,6 +225,8 @@ export const api = {
   obterConsulta: (id) => req("GET", `/api/v1/consultas/${id}`),
   criarConsulta: (c) => req("POST", "/api/v1/consultas", c),
   excluirConsulta: (id) => req("DELETE", `/api/v1/consultas/${id}`),
+  // quem enxerga a consulta (privada | grupo | publica) — dono ou admin.
+  definirVisibilidadeConsulta: (id, visibilidade) => req("PUT", `/api/v1/consultas/${id}/visibilidade`, { visibilidade }),
   listarChatConsulta: (id) => req("GET", `/api/v1/consultas/${id}/chat`),
   enviarChatConsulta: (id, conteudo) => req("POST", `/api/v1/consultas/${id}/chat`, { conteudo }),
   // Turno sem fala nova: disparo adiado (criação com anexos) e tentar novamente.
@@ -244,6 +247,7 @@ export const api = {
   // planejamentos (PRD/ADR iterativos com o estrategista).
   listarPlanejamentos: (q = {}) => {
     const p = new URLSearchParams();
+    if (q.escopo) p.set("escopo", q.escopo);
     if (q.project) p.set("project", q.project);
     if (q.group) p.set("group", q.group);
     const qs = p.toString();
@@ -253,6 +257,7 @@ export const api = {
   criarPlanejamento: (p) => req("POST", "/api/v1/planejamentos", p),
   atualizarPlanejamento: (id, p) => req("PUT", `/api/v1/planejamentos/${id}`, p),
   excluirPlanejamento: (id) => req("DELETE", `/api/v1/planejamentos/${id}`),
+  definirVisibilidadePlanejamento: (id, visibilidade) => req("PUT", `/api/v1/planejamentos/${id}/visibilidade`, { visibilidade }),
   listarChatPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/chat`),
   enviarChatPlanejamento: (id, conteudo) => req("POST", `/api/v1/planejamentos/${id}/chat`, { conteudo }),
   // Turno sem fala nova: disparo adiado (criação com anexos) e tentar novamente.
@@ -305,12 +310,14 @@ export const api = {
   // demandas (Fases 2g/2h)
   listarDemandas: (q = {}) => {
     const p = new URLSearchParams();
+    if (q.escopo) p.set("escopo", q.escopo);
     if (q.project) p.set("project", q.project);
     if (q.status) p.set("status", q.status);
     const qs = p.toString();
     return req("GET", "/api/v1/demands" + (qs ? "?" + qs : ""));
   },
   obterDemanda: (id) => req("GET", `/api/v1/demands/${id}`),
+  definirVisibilidadeDemanda: (id, visibilidade) => req("PUT", `/api/v1/demands/${id}/visibilidade`, { visibilidade }),
   eventosDemanda: (id) => req("GET", `/api/v1/demands/${id}/events`),
   // intake por chat (Fase 3a): cria a demanda a partir do PRD (sem fases).
   criarDemandaChat: (projectId, d) => req("POST", `/api/v1/projects/${projectId}/demands`, d),
@@ -354,6 +361,7 @@ export const api = {
   // reordenar prioridade (arraste); urlEventos = SSE global de eventos.
   board: (q = {}) => {
     const p = new URLSearchParams();
+    if (q.escopo) p.set("escopo", q.escopo);
     if (q.project) p.set("project", q.project);
     if (q.status) p.set("status", q.status);
     const qs = p.toString();

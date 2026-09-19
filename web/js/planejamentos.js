@@ -10,6 +10,10 @@ import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { el, limpar, toast, bannerErro, renderMarkdown, autoCrescer, mdEditor } from "./ui.js";
 import { abrirCard, setProjetos, pillStatus } from "./demandas.js";
+import {
+  seletorVisibilidade, campoVisibilidade, lembrarVisibilidade,
+  pillVisibilidade, pillAutor, controleVisibilidade, filtroEscopo, paramEscopo,
+} from "./visibilidade.js";
 
 let planejamentos = [];
 let selecionadoID = null;
@@ -183,6 +187,7 @@ async function renderNovo() {
     listaAnexos.textContent = nomes.length ? nomes.join(" · ") : t("planejamentos.nenhum_arquivo");
   };
 
+  const selVis = seletorVisibilidade();
   const btn = el("button", { class: "btn", text: t("planejamentos.iniciar") });
   btn.onclick = async () => {
     const mensagem = ed.ta.value.trim();
@@ -192,12 +197,13 @@ async function renderNovo() {
     const anexos = [...inputAnexos.files];
     try {
       const [tipo, id] = sel.value.split(":");
-      const corpo = { mensagem, foco: selFoco.value, nivel_visual: selNivel.value };
+      const corpo = { mensagem, foco: selFoco.value, nivel_visual: selNivel.value, visibilidade: selVis.value };
       if (tipo === "g") corpo.group_id = Number(id);
       else corpo.project_id = Number(id);
       if (anexos.length > 0) corpo.anexos_pendentes = true;
 
       const criado = await api.criarPlanejamento(corpo);
+      lembrarVisibilidade(selVis.value);
       if (anexos.length > 0) {
         for (const arq of anexos) {
           try {
@@ -230,6 +236,7 @@ async function renderNovo() {
     el("div", {}, el("label", {}, "Referências ", el("span", { class: "opt", text: t("configx.opcional") })),
       el("div", { style: "display:flex;align-items:center;gap:10px" }, btnAnexos, inputAnexos, listaAnexos),
       el("div", { class: "hint", text: t("planejamentos.hint_anexos") })),
+    campoVisibilidade(selVis),
     el("div", { class: "acoes" }, btn),
   ));
   ed.ta.focus();
