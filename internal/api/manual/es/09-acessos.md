@@ -29,3 +29,12 @@ Notas:
 - Un **grupo de repositorios** (pantalla `Grupos`, usada en las Consultas) solo aparece para quien ve **todos** sus proyectos — un único proyecto restringido esconde el grupo entero.
 - Si todos los usuarios/grupos de una restricción se eliminan del sistema, el proyecto vuelve a quedar abierto a todos.
 - La sección Acesso solo aparece/guarda para quien tiene el permiso **Projetos** (`projetos.gerir`).
+
+## Su cuenta y sesiones
+
+- Haga clic en su nombre (o en `Mi cuenta`) al pie del menú para cambiar la contraseña, elegir el idioma y ver **dónde ha iniciado sesión**.
+- Permanece conectado mientras use Praxis: la sesión del navegador se renueva sola y solo caduca tras un período sin uso (predeterminado 30 días) o al alcanzar la duración máxima (predeterminado 90 días) — el administrador ajusta ambos en `Configuración → Sesiones e inicio de sesión`.
+- Si la sesión caduca con una pantalla abierta, el inicio de sesión aparece encima: entre de nuevo y continúe donde estaba (lo que había escrito se conserva).
+- Cada inicio de sesión (navegador, móvil) es una **sesión**. En `Mi cuenta` puede cerrar una sesión que no reconozca o **todas las demás** a la vez; cambiar la contraseña también cierra las demás.
+- `Salir` cierra la sesión de este navegador en el servidor.
+- Tras 10 contraseñas incorrectas en 15 minutos, el inicio de sesión queda bloqueado unos minutos (el aviso indica cuánto).

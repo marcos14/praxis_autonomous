@@ -1,12 +1,14 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — execução em andamento (M1.F1 concluída; próxima fase F2, frontend).
+Atualizado em: 2026-09-19 — **M1 concluído** (código, testes e docs); próxima etapa é a primeira do M2.
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M1.F3.E1`
+**Próxima etapa:** `M2.F1.E1`
+
+**Pendência do M1 para o usuário (não automatizável):** roteiro manual no navegador — com `sessao_jwt_min` em 15 min (mínimo da UI) ou `1` gravado via API, navegar sem cair e ver um único `/auth/refresh` por renovação; reiniciar o servidor com a página aberta e vê-la voltar sozinha; revogar a sessão no banco com texto digitado no chat e confirmar o portão por cima com o texto preservado; instalar em celular e checar o retorno ao primeiro plano. O backend foi validado também num servidor real com `curl` (setup → refresh por cookie → sessões → logout → refresh 401).
 
 Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma etapa `[~]`, escreva "Retomada:" com o que já foi feito, o que falta e decisões tomadas no caminho.
 
@@ -20,7 +22,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M1.F2.E2 Helper `abrirStream` e troca dos 6 `EventSource` — `abrirStream(caminho, {onopen, onmessage, eventos, onerror})` em `api.js`: fecha e reabre na hora ao receber `token_expirado` (renova só se o token ainda é o mesmo da abertura), reabre com backoff 1/2/5/10/30 s quando cai em CLOSED, derruba a sessão se o refresh der 401; expostos como `api.streamEventos`, `streamLogsDemanda`, `streamProgressoConsulta`, `streamProgressoPlanejamento`; kanban recarrega o board no `onopen` (eventos perdidos na reconexão)
 - [x] M1.F2.E3 `app.js`: portão sem reload, Sair com logout — sessão caída abre o portão por cima da app sem esconder nem remontar nada (`mostrarPortao({anterior})`, e-mail pré-preenchido, texto `auth.sub_reautenticar`); mesmo usuário de volta → `retomarApp()` só reaplica permissões; outro usuário → reload; `sair()` chama `POST /auth/logout` e recarrega, com trava `saindo` para o callback não sobrepor; `sessaoCaiu` passa o usuário anterior; `abrirStream` espera o novo login (`aguardarLogin`, 2 s) e reabre sozinho
 - [x] M1.F2.E4 Tela "Minha conta" v1 (senha, idioma, sessões) + i18n — view `conta` (`web/js/conta.js`, seção em `index.html`, botão e nome clicável no `nav-user`): dados (nome, e-mail, papéis, grupo), troca de senha com confirmação, seletor de idioma, sessões ativas com navegador/SO resumidos, IP, criada/último uso, "esta sessão", encerrar por sessão e "encerrar as outras"; `api.listarSessoes/encerrarSessao/encerrarOutrasSessoes`; `respUsuario` ganhou `grupo_id`/`grupo_nome` (`projetarUsuario`); 31 chaves `conta.*`/`nav.conta`/`view.conta.*` nos 4 catálogos web
-- [ ] M1.F3.E1 Fechamento: campos de config na UI, roteiro manual, docs
+- [x] M1.F3.E1 Fechamento: campos de config na UI, roteiro manual, docs — grupo "Sessões e login" em `config-fields.js` (`sessao_jwt_min`, `sessao_inatividade_dias`, `sessao_maxima_dias` com `select` e hints nos 4 idiomas); README_COMPLETO (EN e pt-BR): nova subseção "Atrás de um reverse proxy", §6.1 reescrita (usuários × tokens × bootstrap, cookie, refresh, sessões, rate limit), §9 com a proteção do login; manual embutido `09-acessos.md` nos 4 idiomas ganhou "Sua conta e sessões"; smoke test no servidor real com curl ok; roteiro no navegador fica com o usuário (ver pendência acima)
 
 ### M2 — Visibilidade meus / grupo / público
 - [ ] M2.F1.E1 Migração 17, `Visao`, `condDono`, config sem dono, testes em consultas

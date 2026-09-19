@@ -95,6 +95,17 @@ browser requires a secure context (`https://` or `localhost`). Without TLS, only
 local use works. An SSH tunnel or a reverse proxy with its own TLS remain valid
 alternatives (see §9).
 
+### Behind a reverse proxy (internet)
+
+When Praxis sits behind a reverse proxy that terminates TLS (nginx, Caddy, Cloudflare
+Tunnel…), start it with `-proxy-confiavel` (or `PRAXIS_PROXY_CONFIAVEL=1`). Only then
+does it trust `X-Forwarded-Proto` and `X-Forwarded-For`: the session cookie gets the
+`Secure` flag even though the proxy talks plain HTTP to Praxis, sessions record the
+real client IP, and the sign-in rate limit counts per client instead of per proxy.
+Without the flag, ten failed sign-ins by anyone would lock every user behind that
+proxy for 15 minutes. Never enable it when clients can reach Praxis directly — the
+headers can be forged.
+
 ### What comes up with `serve`
 
 | Component | What it does |
@@ -288,14 +299,30 @@ POST/GET /tokens                      DELETE /tokens/{id}
 
 ### 6.1 Authentication and roles
 
-- **No token** (trusted loopback) → local **admin** access. This is the local UI's
-  mode.
-- **With a token** (`Authorization: Bearer <token>` or the `X-Praxis-Token` header)
-  → the token's role. A `leitor` (reader) token is **blocked from writes** (403).
-- **Invalid/revoked token** → 401.
+Two kinds of credentials:
 
-Roles: `leitor` (read-only) · `operador` (create/act on demands) · `admin` (manage
-tokens, projects, engines, config).
+- **Users** (the web UI): e-mail + password. Sign-in issues a short-lived JWT
+  (`sessao_jwt_min`, default 60 min) that the browser keeps **only in memory**, plus a
+  **session cookie** (`praxis_sessao`: HttpOnly, SameSite=Strict, scoped to
+  `/api/v1/auth`) that renews the JWT through `POST /api/v1/auth/refresh`. The session
+  slides on every use and expires after `sessao_inatividade_dias` without use (default
+  30) or `sessao_maxima_dias` after sign-in (default 90) — all three are global config
+  keys (**Settings → Sessions and sign-in**), applied without restart.
+  `POST /api/v1/auth/logout` revokes the session. Changing the password ends the
+  user's other sessions; a password reset by an admin or deactivating the user ends
+  them all. Users list and end their own sessions in **My account**
+  (`GET/DELETE /api/v1/auth/sessoes`). Sign-in is rate-limited: 10 failures in 15
+  minutes per IP or per e-mail answer `429` with `Retry-After`.
+- **API tokens** (integrations): `Authorization: Bearer <token>` or the
+  `X-Praxis-Token` header → the token's role. A `leitor` (reader) token is **blocked
+  from writes** (403). Invalid/revoked token → 401.
+- **Bootstrap:** while no user exists, anyone reaching the service has admin access
+  so the first admin can be created — do it right after the first start.
+
+Permissions are resolved from the database on every request: changing a role or
+deactivating a user takes effect immediately. Token roles: `leitor` (read-only) ·
+`operador` (create/act on demands) · `admin` (manage tokens, projects, engines,
+config).
 
 Create tokens in **Configurações → Tokens de API** (the value is shown **only
 once**) or via the API. Example — automated intake from a ticketing system:
@@ -385,6 +412,9 @@ sc.exe start praxis
   (bootstrap mode) — create the first user right after starting the service.
 - **Tokens** for programmatic callers (ticketing systems, integrations): grant the
   smallest role needed (`operador` to create demands; `leitor` for dashboards).
+- **Sign-in protection:** 10 failed attempts in 15 minutes per IP or per e-mail block
+  new attempts (429). Behind a proxy, enable `-proxy-confiavel` so the limit counts
+  per real client and the session cookie is marked `Secure` (§3).
 - **Protected push:** Praxis only pushes `praxis/*` branches; main is never pushed;
   the harness is forbidden from committing/pushing (commit and push are always done
   by the orchestrator).

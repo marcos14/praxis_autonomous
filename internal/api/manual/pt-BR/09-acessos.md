@@ -29,3 +29,12 @@ Notas:
 - Um **grupo de repositórios** (tela `Grupos`, usada nas Consultas) só aparece para quem enxerga **todos** os projetos dele — um único projeto restrito esconde o grupo inteiro.
 - Se todos os usuários/grupos de uma restrição forem excluídos do sistema, o projeto volta a ficar aberto a todos.
 - A seção Acesso só aparece/salva para quem tem a permissão **Projetos** (`projetos.gerir`).
+
+## Sua conta e sessões
+
+- Clique no seu nome (ou em `Minha conta`) no rodapé do menu para trocar a senha, escolher o idioma e ver **onde você está conectado**.
+- Você fica logado enquanto usar o Praxis: a sessão do navegador é renovada sozinha e só cai depois de um período sem uso (padrão 30 dias) ou ao atingir a duração máxima (padrão 90 dias) — o administrador ajusta os dois em `Configurações → Sessões e login`.
+- Se a sessão cair com uma tela aberta, o login aparece por cima dela: entre de novo e continue de onde parou (o que estava digitado permanece).
+- Cada login (navegador, celular) é uma **sessão**. Em `Minha conta` você encerra uma sessão que não reconhece ou **todas as outras** de uma vez; trocar a senha também encerra as outras.
+- `Sair` encerra a sessão deste navegador no servidor.
+- Depois de 10 senhas erradas em 15 minutos, o login fica bloqueado por alguns minutos (o aviso diz quanto).

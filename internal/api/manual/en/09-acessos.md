@@ -29,3 +29,12 @@ Notes:
 - A **repository group** (`Grupos` screen, used in the queries) only appears to those who see **all** of its projects — a single restricted project hides the whole group.
 - If every user/group in a restriction is deleted from the system, the project becomes open to everyone again.
 - The Acesso section only appears/saves for those holding the **Projetos** permission (`projetos.gerir`).
+
+## Your account and sessions
+
+- Click your name (or `My account`) at the bottom of the menu to change your password, pick the language and see **where you are signed in**.
+- You stay signed in while you use Praxis: the browser session renews itself and only ends after a period without use (default 30 days) or when it reaches the maximum length (default 90 days) — the administrator sets both in `Settings → Sessions and sign-in`.
+- If the session ends while a screen is open, the sign-in form appears on top of it: sign in again and carry on where you were (what you had typed stays).
+- Each sign-in (browser, phone) is a **session**. In `My account` you can end a session you do not recognize, or **all the others** at once; changing the password also ends the others.
+- `Sign out` ends this browser's session on the server.
+- After 10 wrong passwords in 15 minutes, sign-in is blocked for a few minutes (the message says how long).

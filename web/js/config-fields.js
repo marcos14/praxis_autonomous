@@ -33,6 +33,11 @@ function minutos(valores) {
   return valores.map((n) => ({ valor: String(n), rotulo: t("config.minutos", { n }) }));
 }
 
+// dias devolve opções de prazo em dias, rotuladas ("30 dias").
+function dias(valores) {
+  return valores.map((n) => ({ valor: String(n), rotulo: t("config.dias", { n }) }));
+}
+
 // SIM_NAO são as opções dos campos "bool" (o <select> guarda o texto; a
 // conversão para o JSON true/false é de textoParaJSON).
 const SIM_NAO = [{ valor: "true", rotulo: t("config.sim") }, { valor: "false", rotulo: t("config.nao") }];
@@ -84,6 +89,18 @@ export const CAMPOS = [
     grupo: t("config.grupo_instancia"), padrao: "pt-BR",
     opcoes: IDIOMAS.map(([tag, nome]) => ({ valor: tag, rotulo: nome + " (" + tag + ")" })),
     hint: t("config.idioma.hint") },
+
+  // --- Sessões e login (M1 do PLANO_INTERNET) --- lidas a cada emissão/renovação
+  // de token (internal/api/auth_prazos.go): valem sem reiniciar.
+  { chave: "sessao_jwt_min", rotulo: t("config.sessao_jwt_min"), tipo: "number", escopo: "global",
+    grupo: t("config.grupo_sessao"), opcoes: minutos([15, 30, 60, 120, 240, 480]),
+    padrao: t("config.minutos", { n: 60 }), hint: t("config.sessao_jwt_min.hint") },
+  { chave: "sessao_inatividade_dias", rotulo: t("config.sessao_inatividade_dias"), tipo: "number", escopo: "global",
+    grupo: t("config.grupo_sessao"), opcoes: dias([1, 3, 7, 14, 30, 60, 90]),
+    padrao: t("config.dias", { n: 30 }), hint: t("config.sessao_inatividade_dias.hint") },
+  { chave: "sessao_maxima_dias", rotulo: t("config.sessao_maxima_dias"), tipo: "number", escopo: "global",
+    grupo: t("config.grupo_sessao"), opcoes: dias([7, 14, 30, 60, 90, 180, 365]),
+    padrao: t("config.dias", { n: 90 }), hint: t("config.sessao_maxima_dias.hint") },
 ];
 
 // camposDoEscopo devolve os campos visíveis num escopo ("global" ou "project").
