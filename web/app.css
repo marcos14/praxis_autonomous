@@ -645,3 +645,21 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
   .form .row { grid-template-columns: 1fr; }
   .toast { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); max-width: none; }
 }
+
+/* Celular: kanban com uma coluna por tela e card da demanda em tela cheia. */
+@media (max-width: 768px) {
+  .kanban { scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; gap: 10px; }
+  .kb-col { flex: 0 0 86vw; scroll-snap-align: start; }
+  .overlay { padding: 0; align-items: stretch; }
+  .modal { max-width: none; min-height: 100%; border-radius: 0; border: none; }
+  .modal-head { padding: calc(14px + env(safe-area-inset-top, 0px)) 14px 0; }
+  .modal-head h2 { font-size: 16px; }
+  .modal-close { width: 44px; height: 44px; font-size: 24px; }
+  .tabs { padding: 0 8px; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; padding: 12px; }
+  .tab-body { padding: 14px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .fase-edit-row { flex-wrap: wrap; }
+  .fase-edit-row .f-tit { flex: 1 1 100%; }
+  .fase-edit-row .f-dep { width: auto; flex: 1; }
+}
