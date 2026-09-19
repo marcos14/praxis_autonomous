@@ -390,6 +390,12 @@ export const api = {
   definirConfigProjeto: (id, entradas) => req("PUT", `/api/v1/projects/${id}/config`, entradas),
   configEfetiva: (id) => req("GET", `/api/v1/projects/${id}/config/efetiva`),
 
+  // sessões do PRÓPRIO usuário (tela Minha conta): a atual vem marcada
+  // (atual: true); encerrar a atual derruba esta sessão no próximo refresh.
+  listarSessoes: () => req("GET", "/api/v1/auth/sessoes"),
+  encerrarSessao: (id) => req("DELETE", `/api/v1/auth/sessoes/${id}`),
+  encerrarOutrasSessoes: () => req("DELETE", "/api/v1/auth/sessoes"),
+
   // usuários, papéis e catálogo de permissões (RBAC). Exigem usuarios.gerir.
   listarPermissoes: () => req("GET", "/api/v1/permissions"),
   listarUsuarios: () => req("GET", "/api/v1/users"),

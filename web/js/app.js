@@ -19,6 +19,7 @@ import { montarHome, desmontarHome } from "./home.js";
 import { montarManual } from "./manual.js";
 import { montarUsuarios, montarPapeis } from "./usuarios.js";
 import { montarGruposUsuarios } from "./gusuarios.js";
+import { montarConta } from "./conta.js";
 import { bannerErro, el, limpar } from "./ui.js";
 import * as auth from "./auth.js";
 import { t, aplicarTraducoes, seletorIdioma, adotarIdiomaDoUsuario } from "./i18n.js";
@@ -39,6 +40,7 @@ const views = {
   usuarios: montarUsuarios,
   papeis: montarPapeis,
   gusuarios: montarGruposUsuarios,
+  conta: montarConta,
   manual: montarManual,
 };
 
@@ -133,8 +135,12 @@ function aplicarPermissoes() {
   if (box && u) {
     limpar(box);
     box.append(
-      el("div", { class: "quem" }, el("b", { text: u.nome || u.email }), el("span", { text: u.email })),
-      el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => sair() }),
+      el("div", { class: "quem", title: t("nav.conta"), onclick: () => irParaHash("conta") },
+        el("b", { text: u.nome || u.email }), el("span", { text: u.email })),
+      el("div", { class: "nav-user-acoes" },
+        el("button", { class: "btn ghost sm", text: t("nav.conta"), onclick: () => irParaHash("conta") }),
+        el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => sair() }),
+      ),
       seletorIdioma(() => auth.tokenAtual()),
     );
     box.hidden = false;

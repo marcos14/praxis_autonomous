@@ -40,6 +40,19 @@ type respUsuario struct {
 	Idioma     string     `json:"idioma"`
 	Permissoes []string   `json:"permissoes"`
 	Papeis     []db.Papel `json:"papeis"`
+	// Grupo de usuários (nulo = sem grupo). A UI usa na tela "Minha conta" e,
+	// na visibilidade por grupo (M2), para saber se a opção "grupo" faz sentido.
+	GrupoID   *int64 `json:"grupo_id"`
+	GrupoNome string `json:"grupo_nome,omitempty"`
+}
+
+// projetarUsuario monta a projeção de u com as permissões efetivas perms.
+func projetarUsuario(u db.Usuario, perms map[string]bool) respUsuario {
+	return respUsuario{
+		ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo, Idioma: u.Idioma,
+		Permissoes: permsOrdenadas(perms), Papeis: u.Papeis,
+		GrupoID: u.GrupoID, GrupoNome: u.GrupoNome,
+	}
 }
 
 // respAuth é o corpo de setup/login: o token recém-emitido, quando ele vence
@@ -90,10 +103,7 @@ func (s *Servidor) respostaAutenticado(ctx context.Context, u db.Usuario, ttl ti
 	return respAuth{
 		Token:    token,
 		ExpiraEm: expira.UTC().Format(time.RFC3339),
-		Usuario: respUsuario{
-			ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo, Idioma: u.Idioma,
-			Permissoes: permsOrdenadas(perms), Papeis: u.Papeis,
-		},
+		Usuario:  projetarUsuario(u, perms),
 	}, nil
 }
 
@@ -217,10 +227,7 @@ func (s *Servidor) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 			s.responderErroUsuario(w, r, err)
 			return
 		}
-		responderJSON(w, http.StatusOK, respUsuario{
-			ID: u.ID, Nome: u.Nome, Email: u.Email, Ativo: u.Ativo, Idioma: u.Idioma,
-			Permissoes: permsOrdenadas(pr.permissoes), Papeis: u.Papeis,
-		})
+		responderJSON(w, http.StatusOK, projetarUsuario(u, pr.permissoes))
 		return
 	}
 	responderJSON(w, http.StatusOK, respUsuario{

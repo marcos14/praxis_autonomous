@@ -524,6 +524,19 @@ pre.diff .d-del { color: #ff9c9c; background: rgba(208,59,59,0.14); }
 .auth-alt { text-align: center; font-size: 12px; color: var(--muted); margin-top: 14px; }
 .auth-alt a { color: var(--blue); cursor: pointer; }
 
+/* ======================= MINHA CONTA ======================= */
+.nav-user .quem { cursor: pointer; }
+.nav-user-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+.conta-secao { max-width: 680px; margin-bottom: 18px; }
+.conta-secao h3 { font-size: 15px; margin-bottom: 6px; }
+.conta-secao > .sub { margin-bottom: 14px; }
+.conta-linha { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
+.conta-linha:last-child { border-bottom: none; }
+.conta-linha .rotulo { color: var(--muted); min-width: 140px; }
+.conta-sessoes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.conta-sessao { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; cursor: default; }
+.conta-sessao-info { min-width: 0; }
+
 /* Rodapé do menu com o usuário logado e o botão Sair. */
 .nav-user {
   margin-top: auto; padding: 10px 12px; border-top: 1px solid var(--border);
