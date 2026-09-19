@@ -19,6 +19,8 @@ func (s *Servidor) registrarRotasAuth(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/auth/status", s.handleAuthStatus)
 	mux.HandleFunc("POST /api/v1/auth/setup", s.handleAuthSetup)
 	mux.HandleFunc("POST /api/v1/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("POST /api/v1/auth/refresh", s.handleAuthRefresh)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
 	mux.HandleFunc("PUT /api/v1/auth/senha", s.handleTrocarSenha)
 	mux.HandleFunc("PUT /api/v1/auth/idioma", s.handleDefinirIdioma)
@@ -55,14 +57,15 @@ func permsOrdenadas(perms map[string]bool) []string {
 	return out
 }
 
-// emitirToken assina um JWT para userID com a validade da config global
-// (sessao_jwt_min, relida a cada emissão) e devolve o token e quando ele vence.
-func (s *Servidor) emitirToken(ctx context.Context, userID int64) (string, time.Time, error) {
+// emitirToken assina um JWT para userID válido por ttl (a validade vem da
+// config global, sessao_jwt_min — ver prazosAuth) e devolve o token e quando
+// ele vence.
+func (s *Servidor) emitirToken(ctx context.Context, userID int64, ttl time.Duration) (string, time.Time, error) {
 	secret, err := s.segredoJWT(ctx)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	token, claims, err := auth.AssinarClaims(userID, s.prazosAuth(ctx).JWT, secret)
+	token, claims, err := auth.AssinarClaims(userID, ttl, secret)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -70,9 +73,9 @@ func (s *Servidor) emitirToken(ctx context.Context, userID int64) (string, time.
 }
 
 // respostaAutenticado monta respAuth (token + usuário com permissões) para um
-// usuário recém-autenticado/criado.
-func (s *Servidor) respostaAutenticado(ctx context.Context, u db.Usuario) (respAuth, error) {
-	token, expira, err := s.emitirToken(ctx, u.ID)
+// usuário recém-autenticado/criado ou com a sessão renovada.
+func (s *Servidor) respostaAutenticado(ctx context.Context, u db.Usuario, ttl time.Duration) (respAuth, error) {
+	token, expira, err := s.emitirToken(ctx, u.ID, ttl)
 	if err != nil {
 		return respAuth{}, err
 	}
@@ -142,13 +145,25 @@ func (s *Servidor) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
 		s.responderErroUsuario(w, r, err)
 		return
 	}
-	resp, err := s.respostaAutenticado(r.Context(), u)
+	s.responderLogin(w, r, u, http.StatusCreated)
+}
+
+// responderLogin conclui setup/login: emite o JWT, abre a sessão persistida
+// (cookie) e responde status com respAuth. Falha em qualquer passo → 500.
+func (s *Servidor) responderLogin(w http.ResponseWriter, r *http.Request, u db.Usuario, status int) {
+	prazos := s.prazosAuth(r.Context())
+	resp, err := s.respostaAutenticado(r.Context(), u, prazos.JWT)
 	if err != nil {
-		s.log.Error("emitir token no setup", "erro", err)
+		s.log.Error("emitir token no login", "erro", err)
 		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
-	responderJSON(w, http.StatusCreated, resp)
+	if err := s.abrirSessao(w, r, u.ID, prazos); err != nil {
+		s.log.Error("abrir sessão no login", "erro", err)
+		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
+		return
+	}
+	responderJSON(w, status, resp)
 }
 
 // handleAuthLogin valida e-mail + senha e devolve token + usuário. Falha → 401.
@@ -167,13 +182,7 @@ func (s *Servidor) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
 		return
 	}
-	resp, err := s.respostaAutenticado(r.Context(), u)
-	if err != nil {
-		s.log.Error("emitir token no login", "erro", err)
-		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")
-		return
-	}
-	responderJSON(w, http.StatusOK, resp)
+	s.responderLogin(w, r, u, http.StatusOK)
 }
 
 // handleAuthMe devolve o usuário atual (do JWT) com suas permissões. Para
@@ -264,5 +273,8 @@ func (s *Servidor) handleTrocarSenha(w http.ResponseWriter, r *http.Request) {
 		s.responderErroUsuario(w, r, err)
 		return
 	}
+	// Senha nova derruba as OUTRAS sessões (um dispositivo comprometido perde o
+	// acesso); a sessão que fez a troca continua.
+	s.revogarSessoesDoUsuario(r, pr.userID, s.sessaoAtualID(r, s.prazosAuth(r.Context()).Sessao.Inatividade))
 	w.WriteHeader(http.StatusNoContent)
 }

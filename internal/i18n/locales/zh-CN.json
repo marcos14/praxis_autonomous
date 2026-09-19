@@ -41,6 +41,7 @@
   "evento.demanda_criada": "Praxis: 需求已创建",
   "evento.demanda_criada_detalhe": "需求已根据聊天中粘贴的 PRD 创建。",
   "erro.autenticacao_necessaria": "需要身份验证：请登录",
+  "erro.sessao_invalida": "会话无效或已过期：请重新登录",
   "erro.sem_permissao": "您没有执行此操作的权限（需要 '{permissao}'）",
   "erro.recurso_nao_encontrado": "未找到资源",
   "erro.chat_conteudo_obrigatorio": "conteudo 为必填项",

@@ -98,6 +98,11 @@ func (s *Servidor) handleAtualizarUsuario(w http.ResponseWriter, r *http.Request
 		s.responderErroUsuario(w, r, err)
 		return
 	}
+	// Desativar derruba as sessões: o próximo refresh do usuário cai no login
+	// (o JWT em memória já é recusado pelo middleware, que checa `ativo`).
+	if !req.Ativo {
+		s.revogarSessoesDoUsuario(r, id, 0)
+	}
 	if u, err = s.aplicarGrupoDoUsuario(r, u.ID, req.GrupoID); err != nil {
 		s.responderErroUsuario(w, r, err)
 		return
@@ -122,6 +127,9 @@ func (s *Servidor) handleResetarSenha(w http.ResponseWriter, r *http.Request) {
 		s.responderErroUsuario(w, r, err)
 		return
 	}
+	// Reset pelo admin derruba TODAS as sessões do usuário (ele vai logar de
+	// novo com a senha nova).
+	s.revogarSessoesDoUsuario(r, id, 0)
 	w.WriteHeader(http.StatusNoContent)
 }
 

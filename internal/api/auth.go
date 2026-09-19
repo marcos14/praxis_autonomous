@@ -294,8 +294,12 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 		return true, "" // assets da web, /healthz e afins
 	}
 	switch caminho {
-	case "/api/v1/auth/status", "/api/v1/auth/login", "/api/v1/auth/setup":
-		return true, "" // autenticação: públicas (checar status, logar, criar 1º admin)
+	case "/api/v1/auth/status", "/api/v1/auth/login", "/api/v1/auth/setup",
+		"/api/v1/auth/refresh", "/api/v1/auth/logout":
+		// Autenticação: públicas (checar status, logar, criar 1º admin). Refresh
+		// e logout autenticam pelo COOKIE da sessão, não pelo JWT — precisam
+		// funcionar justamente quando o JWT já venceu.
+		return true, ""
 	}
 
 	resto := strings.TrimPrefix(caminho, "/api/v1/")
@@ -342,6 +346,10 @@ func requisitoRota(metodo, caminho string) (publica bool, permissao string) {
 // segurança — uma rota nova fica trancada até ser mapeada aqui explicitamente.
 func permissaoMutacao(seg []string, resto string) string {
 	switch seg[0] {
+	case "auth":
+		// Conta do próprio usuário (senha, idioma, sessões): basta estar
+		// autenticado — cada handler já opera só sobre o principal da requisição.
+		return ""
 	case "projects":
 		// projects, projects/{id}, projects/{id}/config → gerir projetos;
 		// projects/{id}/demands → criar demanda.

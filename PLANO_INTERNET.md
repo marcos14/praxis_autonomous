@@ -1,19 +1,19 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — execução em andamento (M1.F1.E1 e E2 concluídas).
+Atualizado em: 2026-09-19 — execução em andamento (M1.F1.E1 a E3 concluídas).
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M1.F1.E3`
+**Próxima etapa:** `M1.F1.E4`
 
 Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma etapa `[~]`, escreva "Retomada:" com o que já foi feito, o que falta e decisões tomadas no caminho.
 
 ### M1 — Sessões duráveis
 - [x] M1.F1.E1 Migração 16 + store de sessões — `internal/db/sessoes.go` (`CriarSessao`, `AutenticarSessao` com deslize gravado só após 5 min, `RevogarSessao`, `RevogarSessaoPorToken`, `RevogarSessoesDoUsuario`, `ListarSessoesDoUsuario`, `RemoverSessoesExpiradas`), `ErrSessaoInvalida`, `PrazosSessao`, helper `formatoISO`/`agoraISO`
 - [x] M1.F1.E2 Config de sessão, TTL do JWT, `exp` no principal, segredo sem memoizar erro — `internal/api/auth_prazos.go` (`ChaveSessao*`, `prazosAuth`, `configInteiro`), `auth.Claims`/`AssinarClaims`/`ValidarClaims`, `principal.expiraEm`, `respAuth.expira_em` (RFC 3339, o frontend usa para agendar a renovação), `segredoJWT` com mutex
-- [ ] M1.F1.E3 Rotas refresh/logout, cookie, login cria sessão, revogações, fix `case "auth"`
+- [x] M1.F1.E3 Rotas refresh/logout, cookie, login cria sessão, revogações, fix `case "auth"` — `internal/api/auth_sessoes.go` (cookie `praxis_sessao`, `handleAuthRefresh`, `handleAuthLogout`, `conexaoSegura`, `ipDaRequisicao`, `abrirSessao`, `sessaoAtualID`, `revogarSessoesDoUsuario`); `responderLogin` em setup/login; troca de senha revoga as outras, reset pelo admin e desativação revogam todas; `Opcoes.ProxyConfiavel` + flag `-proxy-confiavel`/`PRAXIS_PROXY_CONFIAVEL` (`cmd/praxis/env.go`); i18n `erro.sessao_invalida` nos 4 catálogos
 - [ ] M1.F1.E4 Sessões do usuário (listar/encerrar), rate limit de login, limpeza na manutenção
 - [ ] M1.F1.E5 SSE encerra no `exp` do token
 - [ ] M1.F2.E1 `auth.js`/`api.js`: token em memória, boot por refresh, renovação, retry em 401

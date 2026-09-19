@@ -41,6 +41,7 @@
   "evento.demanda_criada": "Praxis: demand created",
   "evento.demanda_criada_detalhe": "Demand created from the PRD pasted into the chat.",
   "erro.autenticacao_necessaria": "authentication required: please log in",
+  "erro.sessao_invalida": "session invalid or expired: please log in again",
   "erro.sem_permissao": "you do not have permission for this operation (requires '{permissao}')",
   "erro.recurso_nao_encontrado": "resource not found",
   "erro.chat_conteudo_obrigatorio": "conteudo is required",

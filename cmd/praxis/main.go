@@ -114,6 +114,9 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	autoTLS := fs.Bool("tls", false, "habilita HTTPS com certificado autoassinado gerado/reutilizado em PRAXIS_HOME/tls")
 	tlsCert := fs.String("tls-cert", "", "certificado TLS (PEM) próprio; habilita HTTPS (exige -tls-key)")
 	tlsKey := fs.String("tls-key", "", "chave privada TLS (PEM) do -tls-cert")
+	proxyConfiavel := fs.Bool("proxy-confiavel", envBool("PRAXIS_PROXY_CONFIAVEL"),
+		"confia nos cabeçalhos X-Forwarded-Proto/X-Forwarded-For de um proxy reverso à frente do Praxis "+
+			"(cookie de sessão Secure com TLS terminado no proxy; IP real nas sessões). Também via PRAXIS_PROXY_CONFIAVEL=1")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -203,7 +206,10 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 
 	opts := api.Opcoes{Banco: banco, Log: logger, Git: git, Intake: intakeSvc,
 		Planejamento: intakeSvc, Consultas: consultorSvc, Planejamentos: estrategistaSvc,
-		Uso: monitorUso}
+		Uso: monitorUso, ProxyConfiavel: *proxyConfiavel}
+	if *proxyConfiavel {
+		logger.Info("proxy confiável ligado: X-Forwarded-Proto/X-Forwarded-For serão respeitados")
+	}
 	if sched != nil {
 		opts.Exec = sched
 	}

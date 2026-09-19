@@ -61,6 +61,11 @@ type Opcoes struct {
 	// Uso é o monitor periódico de franquia dos perfis. Opcional: nil = o
 	// endpoint de uso devolve só o consumo do Praxis, sem franquia do vendor.
 	Uso *uso.Monitor
+	// ProxyConfiavel declara que há um proxy reverso confiável na frente do
+	// Praxis: os cabeçalhos X-Forwarded-Proto e X-Forwarded-For passam a valer
+	// (cookie de sessão Secure com TLS terminado no proxy; IP real nas sessões).
+	// Sem isto os cabeçalhos são ignorados — qualquer cliente pode forjá-los.
+	ProxyConfiavel bool
 }
 
 // ConsultorSvc dispara turnos de consulta e gerações de overview em background
@@ -111,6 +116,8 @@ type Servidor struct {
 	ideWeb       IDEWeb
 	loginMotores *motor.GerenteLogin
 	uso          *uso.Monitor
+	// proxyConfiavel espelha Opcoes.ProxyConfiavel.
+	proxyConfiavel bool
 
 	// intervaloPollLog é a cadência de releitura do .jsonl no SSE de log ao vivo.
 	// Definido no Novo (intervaloPollLogPadrao); os testes ajustam para acelerar.
@@ -168,6 +175,7 @@ func Novo(opts Opcoes) *Servidor {
 		planejamento: opts.Planejamento, consultor: opts.Consultas, estrategista: opts.Planejamentos,
 		git: gitOps, ideWeb: opts.IDE, loginMotores: loginMotores,
 		uso:                  opts.Uso,
+		proxyConfiavel:       opts.ProxyConfiavel,
 		intervaloPollLog:     intervaloPollLogPadrao,
 		intervaloPollEventos: intervaloPollEventosPadrao}
 

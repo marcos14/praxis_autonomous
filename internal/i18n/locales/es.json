@@ -41,6 +41,7 @@
   "evento.demanda_criada": "Praxis: demanda creada",
   "evento.demanda_criada_detalhe": "Demanda creada a partir del PRD pegado en el chat.",
   "erro.autenticacao_necessaria": "autenticación necesaria: inicie sesión",
+  "erro.sessao_invalida": "sesión inválida o expirada: inicie sesión de nuevo",
   "erro.sem_permissao": "usted no tiene permiso para esta operación (requiere '{permissao}')",
   "erro.recurso_nao_encontrado": "recurso no encontrado",
   "erro.chat_conteudo_obrigatorio": "conteudo es obligatorio",
