@@ -38,3 +38,13 @@ Notas:
 - Cada login (navegador, celular) é uma **sessão**. Em `Minha conta` você encerra uma sessão que não reconhece ou **todas as outras** de uma vez; trocar a senha também encerra as outras.
 - `Sair` encerra a sessão deste navegador no servidor.
 - Depois de 10 senhas erradas em 15 minutos, o login fica bloqueado por alguns minutos (o aviso diz quanto).
+
+## Quem vê cada consulta, planejamento e demanda
+
+Além do acesso ao projeto, cada consulta, planejamento e demanda tem uma **visibilidade**, escolhida ao criar (e alterável depois pelo criador ou por um administrador, no painel ou no card):
+
+- 🔒 **Privada** — só você e os administradores.
+- 👥 **Grupo** — você e quem está no seu grupo de usuários (definido no cadastro do usuário; sem grupo, a opção fica desabilitada).
+- 🌐 **Pública** — todos os usuários que enxergam o projeto.
+
+Itens novos nascem privados; o Praxis lembra a última escolha. Nas listas, no kanban e na Home aparece só o que você pode ver, com a pill de visibilidade e o autor quando não é você. O filtro **Todos · Meus · Do grupo** estreita a lista. Administradores veem tudo. O que existia antes desta versão ficou público. Itens criados por integrações (token de API) não têm dono: o administrador decide em `Configurações → Visibilidade` se só administradores, um grupo ou todos os veem.

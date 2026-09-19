@@ -38,3 +38,13 @@ Notes:
 - Each sign-in (browser, phone) is a **session**. In `My account` you can end a session you do not recognize, or **all the others** at once; changing the password also ends the others.
 - `Sign out` ends this browser's session on the server.
 - After 10 wrong passwords in 15 minutes, sign-in is blocked for a few minutes (the message says how long).
+
+## Who sees each query, planning and demand
+
+Besides project access, every query, planning and demand has a **visibility**, chosen at creation (and changeable later by the creator or an administrator, in the panel or card):
+
+- 🔒 **Private** — only you and administrators.
+- 👥 **Group** — you and everyone in your user group (set on the user record; without a group the option is disabled).
+- 🌐 **Public** — every user who can see the project.
+
+New items start private; Praxis remembers your last choice. Lists, the kanban and Home show only what you can see, with the visibility pill and the author when it is not you. The **All · Mine · My group** filter narrows the list. Administrators see everything. Items that existed before this version were made public. Items created by integrations (API tokens) have no owner: the administrator decides in `Settings → Visibility` whether only administrators, one group or everyone sees them.

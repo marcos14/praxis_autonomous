@@ -310,6 +310,28 @@ As permissões são resolvidas do banco a cada requisição: mudar um papel ou d
 usuário tem efeito imediato. Papéis de token: `leitor` (só leitura) · `operador`
 (criar/agir em demandas) · `admin` (gerir tokens, projetos, motores, config).
 
+### 6.2 Quem vê o quê: visibilidade de consultas, planejamentos e demandas
+
+Duas camadas decidem o que um usuário logado enxerga:
+
+1. **ACL de projeto** (`Projetos → Acesso`): quais projetos o usuário vê. Ignorada por
+   administradores e por quem tem `projetos.gerir`.
+2. **Dono** (`visibilidade` em cada consulta, planejamento e demanda): `privada` (só o
+   criador), `grupo` (o criador e quem está no grupo de usuários dele no momento da
+   leitura) ou `publica` (todos os logados). Só administradores (`*`) e tokens de API
+   ignoram esta camada. Itens novos nascem privados; o criador ou um administrador
+   muda depois (`PUT /api/v1/{consultas|planejamentos|demands}/{id}/visibilidade`, corpo
+   `{"visibilidade":"grupo"}`). O que já existia antes da atualização ficou público
+   para nada sumir.
+
+A regra vale em todo lugar: listagens (`?escopo=meus|grupo|todos`), kanban, pendências
+e atividade da Home, eventos ao vivo e acesso por id (item privado de outra pessoa é
+`404`). Itens sem dono — criados por token de API ou no modo bootstrap — seguem as
+chaves globais `sem_dono_visibilidade` (`admins`, o padrão, `grupo` com
+`sem_dono_grupo_id`, ou `publica`), editáveis em **Configurações → Visibilidade** e
+aplicadas na hora. As métricas da Home são agregadas por projeto e seguem só a ACL de
+projeto.
+
 Crie tokens em **Configurações → Tokens de API** (o valor aparece **uma única vez**) ou
 via API. Exemplo — intake automatizado de um sistema de chamados:
 

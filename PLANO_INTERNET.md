@@ -1,14 +1,14 @@
 # Plano — abrir o Praxis para a internet: sessões, visibilidade por dono, PWA e notificações
 
-Atualizado em: 2026-09-19 — **M1 concluído**; **M2: banco (F1) e API (F2) concluídos**, falta o frontend (F3) e o fechamento (F4).
+Atualizado em: 2026-09-19 — **M1 e M2 concluídos** (código, testes e docs); próxima etapa é a primeira do M3.
 
 ---
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M2.F4.E1`
+**Próxima etapa:** `M3.F1.E1`
 
-**Estado funcional entre F2 e F3:** o backend já aplica a regra de dono (itens novos nascem privados; os antigos ficaram públicos pelo backfill), mas a UI ainda não tem seletor de visibilidade nem filtro. Até a F3, tudo que um usuário criar pela tela fica privado e só ele e os admins veem; para compartilhar é preciso chamar `PUT /…/{id}/visibilidade` pela API.
+**Pendência do M2 para o usuário (não automatizável):** roteiro manual no navegador com três usuários — um comum sem grupo, um comum com grupo e um admin — mais um token de API: criar consulta/planejamento/demanda em cada visibilidade, conferir listas, filtro Todos · Meus · Do grupo, kanban, Home, o select de "quem enxerga" no painel/card e a tela Configurações → Visibilidade (itens sem dono nos três modos). A lógica está coberta por testes de banco e de API; o que falta validar é a experiência na tela.
 
 **Pendência do M1 para o usuário (não automatizável):** roteiro manual no navegador — com `sessao_jwt_min` em 15 min (mínimo da UI) ou `1` gravado via API, navegar sem cair e ver um único `/auth/refresh` por renovação; reiniciar o servidor com a página aberta e vê-la voltar sozinha; revogar a sessão no banco com texto digitado no chat e confirmar o portão por cima com o texto preservado; instalar em celular e checar o retorno ao primeiro plano. O backend foi validado também num servidor real com `curl` (setup → refresh por cookie → sessões → logout → refresh 401).
 
@@ -35,7 +35,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M2.F3.E1 UI: tipo `select` na config, campos sem dono, seletor nos 3 formulários, i18n — a config já tinha `opcoes`/`opcoesDe` (viram `<select>`), então só entraram os campos `sem_dono_visibilidade` (opções fixas) e `sem_dono_grupo_id` (grupos de usuários carregados em `listasDinamicas`) no grupo "Visibilidade"; módulo novo `web/js/visibilidade.js` (seletor com "grupo" desabilitado sem grupo, última escolha lembrada, pills de visibilidade e de autor, `filtroEscopo` persistido por tela, `controleVisibilidade`); seletor em Nova demanda, nova consulta e novo planejamento; `api.js` com `escopo` nas 4 listagens e `definirVisibilidade*`; 23 chaves i18n nos 4 catálogos web (o teste de paridade exige chaves literais em `t("…")`)
 - [x] M2.F3.E2 UI: consultas e planejamentos — pill, autor, filtro, alterar visibilidade — filtro segmentado acima das listas (`filtro-consultas`/`filtro-planejamentos`, lembrado por tela, `?escopo=`), pills 🔒/👥/🌐 e "por Fulano" nos cards, `controleVisibilidade` no cabeçalho do painel (dono ou admin) que recarrega a lista ao mudar
 - [x] M2.F3.E3 UI: demandas e kanban — pill, filtro, alterar no card — filtro de escopo ao lado de projeto/status (Demandas) e projeto/motor (Kanban), pills de visibilidade e autor na lista e nos cards do quadro, select de "quem enxerga" no cabeçalho do card da demanda (dono/admin; os demais veem a pill)
-- [ ] M2.F4.E1 Fechamento: docs, manual, roteiro manual
+- [x] M2.F4.E1 Fechamento: docs, manual, roteiro manual — README_COMPLETO (EN e pt-BR) ganhou §6.2 "Quem vê o quê" (duas camadas, visibilidades, rotas, escopo, itens sem dono, limitação das métricas); manual embutido `09-acessos.md` nos 4 idiomas ganhou "Quem vê cada consulta, planejamento e demanda"; roteiro no navegador fica com o usuário (ver pendência acima)
 
 ### M3 — PWA + layout móvel
 - [ ] M3.F1.E1 Manifest, ícones, metas no index, handler `/sw.js`, service worker

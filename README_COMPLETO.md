@@ -324,6 +324,29 @@ deactivating a user takes effect immediately. Token roles: `leitor` (read-only) 
 `operador` (create/act on demands) · `admin` (manage tokens, projects, engines,
 config).
 
+### 6.2 Who sees what: visibility of queries, plannings and demands
+
+Two layers decide what a signed-in user sees:
+
+1. **Project ACL** (`Projects → Access`): which projects the user can see at all.
+   Bypassed by administrators and by `projetos.gerir`.
+2. **Ownership** (`visibilidade` on every query, planning and demand):
+   `privada` (creator only), `grupo` (creator plus everyone in the creator's user
+   group at read time) or `publica` (every signed-in user). Only administrators
+   (`*`) and API tokens bypass this layer. New items are private by default; the
+   creator or an administrator changes it later
+   (`PUT /api/v1/{consultas|planejamentos|demands}/{id}/visibilidade`, body
+   `{"visibilidade":"grupo"}`). Items that existed before the upgrade were marked
+   public so nothing disappeared.
+
+The rule applies everywhere: lists (`?escopo=meus|grupo|todos`), the kanban, the
+Home pendings and activity feed, the live event stream and access by id (a private
+item of someone else is a `404`). Ownerless items — created by an API token or in
+bootstrap mode — follow the global keys `sem_dono_visibilidade` (`admins`, the
+default, `grupo` with `sem_dono_grupo_id`, or `publica`), editable in **Settings →
+Visibility** and applied immediately. Home metrics are aggregated per project and
+follow the project ACL only.
+
 Create tokens in **Configurações → Tokens de API** (the value is shown **only
 once**) or via the API. Example — automated intake from a ticketing system:
 
