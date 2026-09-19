@@ -17,6 +17,14 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<!-- Barra superior (só no celular, M3): abre a gaveta do menu, mostra a tela
+     atual e, nas telas de duas colunas, volta do painel para a lista. -->
+<header class="topbar" id="topbar">
+  <button class="topbar-btn" id="btn-menu" type="button" aria-label="Menu" data-i18n-title="nav.menu">☰</button>
+  <button class="topbar-btn" id="btn-voltar" type="button" aria-label="Voltar" data-i18n-title="nav.voltar" hidden>←</button>
+  <span class="topbar-titulo" id="topbar-titulo">Praxis</span>
+</header>
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 <div class="app">
 
   <!-- ======================= SIDEBAR ======================= -->

@@ -87,6 +87,8 @@ async function irPara(nome) {
   document.getElementById("view-" + nome).classList.add("active");
   document.querySelectorAll(".nav-item").forEach((n) =>
     n.classList.toggle("active", n.dataset.view === nome));
+  abrirMenu(false);
+  atualizarTopbar();
   bannerErro("");
   window.scrollTo(0, 0);
   try {
@@ -282,6 +284,22 @@ function entrarNaApp() {
   irParaHash(location.hash.slice(1) || "home");
 }
 
+// ---------- Celular: gaveta do menu e barra superior (M3) ----------
+
+// abrirMenu abre/fecha a gaveta da sidebar (só tem efeito visual no celular;
+// no desktop a sidebar é fixa e as classes não mudam nada).
+function abrirMenu(aberto) {
+  document.querySelector(".sidebar").classList.toggle("aberta", aberto);
+  document.getElementById("sidebar-backdrop").classList.toggle("aberta", aberto);
+}
+
+// atualizarTopbar mostra o título da view ativa na barra superior.
+function atualizarTopbar() {
+  const titulo = document.getElementById("topbar-titulo");
+  const h1 = document.querySelector(".view.active h1.page");
+  if (titulo) titulo.textContent = h1 ? h1.textContent : "Praxis";
+}
+
 // ---------- Servidor indisponível ----------
 
 let tentativasIndisponivel = 0;
@@ -368,6 +386,10 @@ async function iniciar() {
   document.querySelectorAll(".nav-item").forEach((btn) =>
     btn.addEventListener("click", () => irParaHash(btn.dataset.view)));
   window.addEventListener("hashchange", () => irPara(location.hash.slice(1)));
+
+  // Celular: hambúrguer abre a gaveta; tocar fora fecha.
+  document.getElementById("btn-menu").addEventListener("click", () => abrirMenu(true));
+  document.getElementById("sidebar-backdrop").addEventListener("click", () => abrirMenu(false));
 
   await resolverSessao();
 }
