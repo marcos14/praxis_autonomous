@@ -57,20 +57,26 @@ type Demanda struct {
 	CriadoPor    *int64 `json:"criado_por"`
 	CriadoEm     string `json:"criado_em"`
 	AtualizadoEm string `json:"atualizado_em"`
+	// Visibilidade: privada (só o criador), grupo ou publica — ver visao.go.
+	Visibilidade string `json:"visibilidade"`
+	// CriadoPorNome é o nome do criador, resolvido por join em ListarDemandas e
+	// ListarDemandasResumo (vazio fora delas e para demandas sem dono).
+	CriadoPorNome string `json:"criado_por_nome,omitempty"`
 }
 
 // FiltroDemandas restringe ListarDemandas. Campos nulos/vazios não filtram.
 type FiltroDemandas struct {
 	ProjectID *int64 // filtra por projeto quando não-nil
 	Status    string // filtra por status quando não-vazio
-	// VisiveisPara restringe às demandas de projetos visíveis ao usuário pela
-	// ACL (project_access) quando não-nil. nil = sem filtro (quem enxerga tudo).
-	VisiveisPara *int64
+	// Visao aplica a ACL de projeto, a regra de dono e o escopo (valor zero =
+	// sem restrição — chamadores internos como scheduler e recuperação).
+	Visao Visao
 }
 
 // colunasDemanda lista as colunas de demands na ordem esperada por scanDemanda.
 const colunasDemanda = `id, project_id, titulo, origem, origem_ref, status, prioridade,
-	branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por, criado_em, atualizado_em`
+	branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por, criado_em, atualizado_em,
+	visibilidade`
 
 // scanDemanda lê uma linha de demands (na ordem de colunasDemanda) para Demanda.
 func scanDemanda(sc interface{ Scan(...any) error }) (Demanda, error) {
@@ -78,11 +84,84 @@ func scanDemanda(sc interface{ Scan(...any) error }) (Demanda, error) {
 	var criadoPor sql.NullInt64
 	if err := sc.Scan(&d.ID, &d.ProjectID, &d.Titulo, &d.Origem, &d.OrigemRef,
 		&d.Status, &d.Prioridade, &d.Branch, &d.WorktreePath, &d.PlanoMD,
-		&d.CustoUSD, &d.BudgetUSD, &d.Erro, &criadoPor, &d.CriadoEm, &d.AtualizadoEm); err != nil {
+		&d.CustoUSD, &d.BudgetUSD, &d.Erro, &criadoPor, &d.CriadoEm, &d.AtualizadoEm,
+		&d.Visibilidade); err != nil {
 		return Demanda{}, err
 	}
 	d.CriadoPor = ptrDeNull(criadoPor)
 	return d, nil
+}
+
+// scanDemandaComAutor é scanDemanda com a coluna extra do nome do criador
+// (COALESCE(u.nome,'')) — usado pelas listagens que fazem join em users.
+func scanDemandaComAutor(sc interface{ Scan(...any) error }) (Demanda, error) {
+	var d Demanda
+	var criadoPor sql.NullInt64
+	if err := sc.Scan(&d.ID, &d.ProjectID, &d.Titulo, &d.Origem, &d.OrigemRef,
+		&d.Status, &d.Prioridade, &d.Branch, &d.WorktreePath, &d.PlanoMD,
+		&d.CustoUSD, &d.BudgetUSD, &d.Erro, &criadoPor, &d.CriadoEm, &d.AtualizadoEm,
+		&d.Visibilidade, &d.CriadoPorNome); err != nil {
+		return Demanda{}, err
+	}
+	d.CriadoPor = ptrDeNull(criadoPor)
+	return d, nil
+}
+
+// normalizarVisibilidade aplica o default (privada) e valida a visibilidade de
+// uma demanda a inserir.
+func normalizarVisibilidade(dem *Demanda) error {
+	if strings.TrimSpace(dem.Visibilidade) == "" {
+		dem.Visibilidade = VisibilidadePrivada
+	}
+	if !VisibilidadeValida(dem.Visibilidade) {
+		return ErrValorInvalido
+	}
+	return nil
+}
+
+// DefinirVisibilidadeDemanda muda quem enxerga a demanda (dono ou admin —
+// checado na API). Valor desconhecido vira ErrValorInvalido; demanda
+// inexistente, ErrNaoEncontrado.
+func (d *DB) DefinirVisibilidadeDemanda(ctx context.Context, id int64, visibilidade string) error {
+	if !VisibilidadeValida(visibilidade) {
+		return ErrValorInvalido
+	}
+	res, err := d.Escritor.ExecContext(ctx,
+		`UPDATE demands SET visibilidade = ? WHERE id = ?`, visibilidade, id)
+	if err != nil {
+		return fmt.Errorf("definir visibilidade da demanda %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("definir visibilidade da demanda %d: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNaoEncontrado
+	}
+	return nil
+}
+
+// DemandaVisivel informa se a demanda id é visível pela Visao: ACL do projeto
+// dela E regra de dono. Inexistente → true (o handler responde 404 sem revelar
+// se existe). Visão sem restrições devolve true sem consultar o banco.
+func (d *DB) DemandaVisivel(ctx context.Context, id int64, v Visao) (bool, error) {
+	cond, args := []string{}, []any{}
+	cond, args = anexarCondAcesso(cond, args, "dm.project_id", v.ACL)
+	cond, args = anexarCondDono(cond, args, "dm", v)
+	if len(cond) == 0 {
+		return true, nil
+	}
+	args = append(args, id)
+	var ve bool
+	err := d.Leitor.QueryRowContext(ctx,
+		`SELECT (`+strings.Join(cond, " AND ")+`) FROM demands dm WHERE dm.id = ?`, args...).Scan(&ve)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("visibilidade da demanda %d: %w", id, err)
+	}
+	return ve, nil
 }
 
 // CriarDemanda insere uma nova demanda e devolve a linha persistida (com id,
@@ -95,15 +174,18 @@ func (d *DB) CriarDemanda(ctx context.Context, dem Demanda) (Demanda, error) {
 	if strings.TrimSpace(dem.Status) == "" {
 		dem.Status = StatusDemandaRecebida
 	}
+	if err := normalizarVisibilidade(&dem); err != nil {
+		return Demanda{}, err
+	}
 	row := d.Escritor.QueryRowContext(ctx, `
 		INSERT INTO demands
 			(project_id, titulo, origem, origem_ref, status, prioridade,
-			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por, visibilidade)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em, atualizado_em`,
 		dem.ProjectID, dem.Titulo, dem.Origem, dem.OrigemRef, dem.Status, dem.Prioridade,
 		dem.Branch, dem.WorktreePath, dem.PlanoMD, dem.CustoUSD, dem.BudgetUSD, dem.Erro,
-		nullInt(dem.CriadoPor),
+		nullInt(dem.CriadoPor), dem.Visibilidade,
 	)
 	if err := row.Scan(&dem.ID, &dem.CriadoEm, &dem.AtualizadoEm); err != nil {
 		return Demanda{}, traduzirErroFK(err)
@@ -126,6 +208,9 @@ func (d *DB) CriarDemandaComFases(ctx context.Context, dem Demanda, fases []Fase
 	if strings.TrimSpace(dem.Status) == "" {
 		dem.Status = StatusDemandaRecebida
 	}
+	if err := normalizarVisibilidade(&dem); err != nil {
+		return Demanda{}, nil, err
+	}
 
 	tx, err := d.Escritor.BeginTx(ctx, nil)
 	if err != nil {
@@ -136,12 +221,12 @@ func (d *DB) CriarDemandaComFases(ctx context.Context, dem Demanda, fases []Fase
 	row := tx.QueryRowContext(ctx, `
 		INSERT INTO demands
 			(project_id, titulo, origem, origem_ref, status, prioridade,
-			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			 branch, worktree_path, plano_md, custo_usd, budget_usd, erro, criado_por, visibilidade)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		RETURNING id, criado_em, atualizado_em`,
 		dem.ProjectID, dem.Titulo, dem.Origem, dem.OrigemRef, dem.Status, dem.Prioridade,
 		dem.Branch, dem.WorktreePath, dem.PlanoMD, dem.CustoUSD, dem.BudgetUSD, dem.Erro,
-		nullInt(dem.CriadoPor),
+		nullInt(dem.CriadoPor), dem.Visibilidade,
 	)
 	if err := row.Scan(&dem.ID, &dem.CriadoEm, &dem.AtualizadoEm); err != nil {
 		return Demanda{}, nil, traduzirErroFK(err)
@@ -183,24 +268,27 @@ func (d *DB) CriarDemandaComFases(ctx context.Context, dem Demanda, fases []Fase
 // prioridade e, em empate, por id decrescente (mais recentes antes). Slice
 // não-nil.
 func (d *DB) ListarDemandas(ctx context.Context, f FiltroDemandas) ([]Demanda, error) {
-	sqlStr := `SELECT ` + colunasDemanda + ` FROM demands`
+	sqlStr := `SELECT ` + colunasDemandaPrefix("d") + `, COALESCE(u.nome, '')
+		FROM demands d LEFT JOIN users u ON u.id = d.criado_por`
 	cond := []string{}
 	args := []any{}
 	if f.ProjectID != nil {
-		cond = append(cond, "project_id = ?")
+		cond = append(cond, "d.project_id = ?")
 		args = append(args, *f.ProjectID)
 	}
 	if strings.TrimSpace(f.Status) != "" {
-		cond = append(cond, "status = ?")
+		cond = append(cond, "d.status = ?")
 		args = append(args, f.Status)
 	}
-	// Coluna qualificada (demands.project_id): dentro do EXISTS da condição de
-	// acesso, "project_id" sem qualificação resolveria para project_access.
-	cond, args = anexarCondAcesso(cond, args, "demands.project_id", f.VisiveisPara)
+	// Colunas qualificadas (d.*): dentro dos EXISTS das condições, um nome sem
+	// qualificação resolveria para a tabela interna.
+	cond, args = anexarCondAcesso(cond, args, "d.project_id", f.Visao.ACL)
+	cond, args = anexarCondDono(cond, args, "d", f.Visao)
+	cond, args = anexarCondEscopo(cond, args, "d", f.Visao)
 	if len(cond) > 0 {
 		sqlStr += " WHERE " + strings.Join(cond, " AND ")
 	}
-	sqlStr += " ORDER BY prioridade, id DESC"
+	sqlStr += " ORDER BY d.prioridade, d.id DESC"
 
 	rows, err := d.Leitor.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -210,7 +298,7 @@ func (d *DB) ListarDemandas(ctx context.Context, f FiltroDemandas) ([]Demanda, e
 
 	demandas := []Demanda{}
 	for rows.Next() {
-		dem, err := scanDemanda(rows)
+		dem, err := scanDemandaComAutor(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -236,11 +324,11 @@ type DemandaResumo struct {
 // agregados do card do kanban (contagem de fases e motor da última execução),
 // na mesma ordem de ListarDemandas (prioridade, id decrescente). Slice não-nil.
 func (d *DB) ListarDemandasResumo(ctx context.Context, f FiltroDemandas) ([]DemandaResumo, error) {
-	sqlStr := `SELECT ` + colunasDemandaPrefix("d") + `,
+	sqlStr := `SELECT ` + colunasDemandaPrefix("d") + `, COALESCE(u.nome, ''),
 		(SELECT COUNT(*) FROM phases p WHERE p.demand_id = d.id) AS fases_total,
 		(SELECT COUNT(*) FROM phases p WHERE p.demand_id = d.id AND p.status = '` + StatusFaseConcluida + `') AS fases_concluidas,
 		COALESCE((SELECT r.engine FROM runs r WHERE r.demand_id = d.id AND r.engine <> '' ORDER BY r.id DESC LIMIT 1), '') AS motor
-		FROM demands d`
+		FROM demands d LEFT JOIN users u ON u.id = d.criado_por`
 	cond := []string{}
 	args := []any{}
 	if f.ProjectID != nil {
@@ -251,7 +339,9 @@ func (d *DB) ListarDemandasResumo(ctx context.Context, f FiltroDemandas) ([]Dema
 		cond = append(cond, "d.status = ?")
 		args = append(args, f.Status)
 	}
-	cond, args = anexarCondAcesso(cond, args, "d.project_id", f.VisiveisPara)
+	cond, args = anexarCondAcesso(cond, args, "d.project_id", f.Visao.ACL)
+	cond, args = anexarCondDono(cond, args, "d", f.Visao)
+	cond, args = anexarCondEscopo(cond, args, "d", f.Visao)
 	if len(cond) > 0 {
 		sqlStr += " WHERE " + strings.Join(cond, " AND ")
 	}
@@ -270,6 +360,7 @@ func (d *DB) ListarDemandasResumo(ctx context.Context, f FiltroDemandas) ([]Dema
 		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Titulo, &r.Origem, &r.OrigemRef,
 			&r.Status, &r.Prioridade, &r.Branch, &r.WorktreePath, &r.PlanoMD,
 			&r.CustoUSD, &r.BudgetUSD, &r.Erro, &criadoPor, &r.CriadoEm, &r.AtualizadoEm,
+			&r.Visibilidade, &r.CriadoPorNome,
 			&r.FasesTotal, &r.FasesConcluidas, &r.Motor); err != nil {
 			return nil, err
 		}

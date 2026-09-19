@@ -301,6 +301,136 @@ func TestVisaoACLNoSQLEChecagemPorID(t *testing.T) {
 	}
 }
 
+func titulosDem(ds []Demanda) string {
+	ts := make([]string, 0, len(ds))
+	for _, d := range ds {
+		ts = append(ts, d.Titulo)
+	}
+	sort.Strings(ts)
+	return strings.Join(ts, " ")
+}
+
+func TestVisaoDemandasEEventos(t *testing.T) {
+	d := abrirTemp(t)
+	ctx := context.Background()
+	proj := criarProjetoTeste(t, d, "dem")
+	ana := criarUsuarioTeste(t, d, "ana")
+	bia := criarUsuarioTeste(t, d, "bia")
+	caio := criarUsuarioTeste(t, d, "caio")
+	grupoDeUsuariosTeste(t, d, "G1", ana, bia)
+
+	mk := func(criador *int64, vis, titulo string) Demanda {
+		t.Helper()
+		dem, err := d.CriarDemanda(ctx, Demanda{ProjectID: proj, Titulo: titulo, CriadoPor: criador, Visibilidade: vis})
+		if err != nil {
+			t.Fatalf("criar demanda %s: %v", titulo, err)
+		}
+		return dem
+	}
+	privada := mk(ptr(ana), VisibilidadePrivada, "ana-privada")
+	grupo := mk(ptr(ana), VisibilidadeGrupo, "ana-grupo")
+	publica := mk(ptr(ana), VisibilidadePublica, "ana-publica")
+	semDono := mk(nil, "", "sem-dono")
+	if semDono.Visibilidade != VisibilidadePrivada {
+		t.Fatalf("default = %q, quero privada", semDono.Visibilidade)
+	}
+	if _, err := d.CriarDemanda(ctx, Demanda{ProjectID: proj, Titulo: "x", Visibilidade: "oculta"}); !errors.Is(err, ErrValorInvalido) {
+		t.Fatalf("visibilidade inválida: %v", err)
+	}
+
+	visBia := Visao{Usuario: bia, ACL: &bia, Dono: &bia}
+	visCaio := Visao{Usuario: caio, ACL: &caio, Dono: &caio}
+
+	// Listagens: dono + autor + visibilidade.
+	lista, err := d.ListarDemandas(ctx, FiltroDemandas{Visao: visBia})
+	if err != nil || titulosDem(lista) != "ana-grupo ana-publica" {
+		t.Fatalf("ListarDemandas(bia) = %q (%v)", titulosDem(lista), err)
+	}
+	if lista[0].CriadoPorNome != "ana" || lista[0].Visibilidade == "" {
+		t.Fatalf("autor/visibilidade não preenchidos: %+v", lista[0])
+	}
+	if lista, _ = d.ListarDemandas(ctx, FiltroDemandas{Visao: visCaio}); titulosDem(lista) != "ana-publica" {
+		t.Fatalf("ListarDemandas(caio) = %q", titulosDem(lista))
+	}
+	if lista, _ = d.ListarDemandas(ctx, FiltroDemandas{Visao: Visao{Usuario: ana, Dono: &ana, Escopo: EscopoMeus}}); len(lista) != 3 {
+		t.Fatalf("escopo meus (ana) = %d, quero 3", len(lista))
+	}
+	if lista, _ = d.ListarDemandas(ctx, FiltroDemandas{}); len(lista) != 4 {
+		t.Fatalf("visão total = %d, quero 4", len(lista))
+	}
+	resumo, err := d.ListarDemandasResumo(ctx, FiltroDemandas{Visao: visBia})
+	if err != nil || len(resumo) != 2 || resumo[0].Visibilidade == "" || resumo[0].CriadoPorNome != "ana" {
+		t.Fatalf("ListarDemandasResumo(bia) = %+v (%v)", resumo, err)
+	}
+	porStatus, err := d.ListarDemandasPorStatus(ctx, []string{StatusDemandaRecebida}, visBia)
+	if err != nil || titulosDem(porStatus) != "ana-grupo ana-publica" {
+		t.Fatalf("ListarDemandasPorStatus(bia) = %q (%v)", titulosDem(porStatus), err)
+	}
+	obtida, err := d.ObterDemanda(ctx, grupo.ID)
+	if err != nil || obtida.Visibilidade != VisibilidadeGrupo {
+		t.Fatalf("ObterDemanda: %+v %v", obtida, err)
+	}
+
+	// Checagem por id.
+	for _, tc := range []struct {
+		nome  string
+		id    int64
+		v     Visao
+		quero bool
+	}{
+		{"bia vê grupo", grupo.ID, visBia, true},
+		{"bia não vê privada", privada.ID, visBia, false},
+		{"caio não vê grupo", grupo.ID, visCaio, false},
+		{"admin vê privada", privada.ID, Visao{}, true},
+		{"inexistente → true", 9999, visBia, true},
+	} {
+		if got, err := d.DemandaVisivel(ctx, tc.id, tc.v); err != nil || got != tc.quero {
+			t.Errorf("%s: %v (%v), quero %v", tc.nome, got, err, tc.quero)
+		}
+	}
+
+	// Eventos: os de demanda invisível somem; globais e de demanda visível ficam.
+	for _, ev := range []Evento{
+		{ProjectID: &proj, DemandID: &privada.ID, Tipo: "t", Titulo: "ev-privada"},
+		{ProjectID: &proj, DemandID: &publica.ID, Tipo: "t", Titulo: "ev-publica"},
+		{Tipo: "t", Titulo: "ev-global"},
+	} {
+		if _, err := d.RegistrarEvento(ctx, ev); err != nil {
+			t.Fatalf("registrar %s: %v", ev.Titulo, err)
+		}
+	}
+	evs, err := d.ListarEventos(ctx, FiltroEventos{Visao: visCaio})
+	if err != nil || len(evs) != 2 {
+		t.Fatalf("ListarEventos(caio) = %+v (%v), quero ev-publica e ev-global", evs, err)
+	}
+	for _, e := range evs {
+		if e.Titulo == "ev-privada" {
+			t.Fatalf("evento de demanda privada vazou para caio")
+		}
+	}
+	apos, err := d.EventosApos(ctx, 0, 10, visCaio)
+	if err != nil || len(apos) != 2 {
+		t.Fatalf("EventosApos(caio) = %d (%v), quero 2", len(apos), err)
+	}
+	if todos, _ := d.EventosApos(ctx, 0, 10, Visao{}); len(todos) != 3 {
+		t.Fatalf("EventosApos(total) = %d, quero 3", len(todos))
+	}
+
+	// Mudar a visibilidade libera a demanda e os eventos dela.
+	if err := d.DefinirVisibilidadeDemanda(ctx, privada.ID, VisibilidadePublica); err != nil {
+		t.Fatalf("DefinirVisibilidadeDemanda: %v", err)
+	}
+	if lista, _ = d.ListarDemandas(ctx, FiltroDemandas{Visao: visCaio}); titulosDem(lista) != "ana-privada ana-publica" {
+		t.Fatalf("após tornar pública: %q", titulosDem(lista))
+	}
+	if evs, _ = d.ListarEventos(ctx, FiltroEventos{Visao: visCaio}); len(evs) != 3 {
+		t.Fatalf("eventos após tornar pública = %d, quero 3", len(evs))
+	}
+	if err := d.DefinirVisibilidadeDemanda(ctx, 9999, VisibilidadePublica); !errors.Is(err, ErrNaoEncontrado) {
+		t.Fatalf("inexistente: %v", err)
+	}
+}
+
 func TestDefinirVisibilidadeConsulta(t *testing.T) {
 	d := abrirTemp(t)
 	ctx := context.Background()

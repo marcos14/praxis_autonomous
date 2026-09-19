@@ -30,7 +30,7 @@ func (s *Servidor) handleBoard(w http.ResponseWriter, r *http.Request) {
 		filtro.ProjectID = &pid
 	}
 	filtro.Status = strings.TrimSpace(r.URL.Query().Get("status"))
-	filtro.VisiveisPara = visibilidadeDaRequisicao(r)
+	filtro.Visao = db.Visao{ACL: visibilidadeDaRequisicao(r)}
 
 	resumos, err := s.banco.ListarDemandasResumo(r.Context(), filtro)
 	if err != nil {

@@ -60,7 +60,7 @@ var statusPrecisaDeVoce = []string{
 // responder, plano a aprovar, conflito a resolver ou fase que exige intervenção
 // humana aguardando o "feito").
 func (s *Servidor) handlePendencias(w http.ResponseWriter, r *http.Request) {
-	vis := visibilidadeDaRequisicao(r)
+	vis := db.Visao{ACL: visibilidadeDaRequisicao(r)}
 	demandas, err := s.banco.ListarDemandasPorStatus(r.Context(), statusPrecisaDeVoce, vis)
 	if err != nil {
 		s.responderErroDemanda(w, r, err)
@@ -116,7 +116,7 @@ func (s *Servidor) handleAtividade(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	eventos, err := s.banco.ListarEventos(r.Context(), db.FiltroEventos{
-		Limite: limite, VisiveisPara: visibilidadeDaRequisicao(r)})
+		Limite: limite, Visao: db.Visao{ACL: visibilidadeDaRequisicao(r)}})
 	if err != nil {
 		s.log.Error("listar atividade", "erro", err)
 		erroT(w, r, http.StatusInternalServerError, "erro_interno", "erro.interno")

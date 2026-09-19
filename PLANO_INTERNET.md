@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1 concluído** (código, testes e docs); próxi
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M2.F1.E3`
+**Próxima etapa:** `M2.F2.E1`
 
 **Pendência do M1 para o usuário (não automatizável):** roteiro manual no navegador — com `sessao_jwt_min` em 15 min (mínimo da UI) ou `1` gravado via API, navegar sem cair e ver um único `/auth/refresh` por renovação; reiniciar o servidor com a página aberta e vê-la voltar sozinha; revogar a sessão no banco com texto digitado no chat e confirmar o portão por cima com o texto preservado; instalar em celular e checar o retorno ao primeiro plano. O backend foi validado também num servidor real com `curl` (setup → refresh por cookie → sessões → logout → refresh 401).
 
@@ -27,7 +27,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 ### M2 — Visibilidade meus / grupo / público
 - [x] M2.F1.E1 Migração 17, `Visao`, `condDono`, config sem dono, testes em consultas — `internal/db/visao.go` (`Visao{Usuario, ACL, Dono, Escopo, SemDono, SemDonoGrupo}`, constantes `Visibilidade*`/`SemDono*`/`Escopo*`, `condDono`/`argsDono`, `anexarCondDono`, `anexarCondEscopo`); `consultas.visibilidade` no struct/scan/insert (default privada, valida), `FiltroConsultas{ProjectID, GroupID, Visao}`, `DefinirVisibilidadeConsulta`; matriz de 15 casos em `visao_test.go` + teste de backfill da migração
 - [x] M2.F1.E2 Consultas e planejamentos filtrados no banco (+ `criado_por_nome`) — `planejamentos.visibilidade` (struct/scan/insert/`DefinirVisibilidadePlanejamento`), `FiltroPlanejamentos{ProjectID, GroupID, Visao}`; ACL de projeto OU grupo no SQL (`condAcessoAlvo`/`anexarCondAcessoAlvo` em `project_access.go`, grupo só visível com todos os membros visíveis) nas duas listagens; `LEFT JOIN users` → `CriadoPorNome`; `ConsultaVisivel`/`PlanejamentoVisivel(ctx, id, Visao)` (inexistente → true); os antigos `UsuarioVe*` e os filtros em memória da API saem na F2.E1
-- [ ] M2.F1.E3 Demandas e eventos com a regra de dono no banco
+- [x] M2.F1.E3 Demandas e eventos com a regra de dono no banco — `demands.visibilidade` (struct/scan/2 inserts com default+validação), `FiltroDemandas.Visao` no lugar de `VisiveisPara`, `ListarDemandas`/`ListarDemandasResumo` com `LEFT JOIN users` (`CriadoPorNome`) e dono/escopo, `ListarDemandasPorStatus(…, Visao)`, `DemandaVisivel`, `DefinirVisibilidadeDemanda`; `FiltroEventos.Visao` e `EventosApos(…, Visao)` com `anexarCondEventos` (evento de demanda invisível não passa); `notify.FonteEventos` e chamadores da API ajustados (provisoriamente `Visao{ACL: uid}` até a F2)
 - [ ] M2.F2.E1 API: `visaoDaRequisicao`, middleware, consultas/planejamentos, PUT visibilidade, config
 - [ ] M2.F2.E2 API: demandas, board, home, overlap, ordem, SSE, herança do planejamento
 - [ ] M2.F3.E1 UI: tipo `select` na config, campos sem dono, seletor nos 3 formulários, i18n

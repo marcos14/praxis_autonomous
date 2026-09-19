@@ -225,7 +225,7 @@ func (s *Servidor) handleListarDemandas(w http.ResponseWriter, r *http.Request) 
 		filtro.ProjectID = &pid
 	}
 	filtro.Status = strings.TrimSpace(r.URL.Query().Get("status"))
-	filtro.VisiveisPara = visibilidadeDaRequisicao(r)
+	filtro.Visao = db.Visao{ACL: visibilidadeDaRequisicao(r)}
 
 	demandas, err := s.banco.ListarDemandas(r.Context(), filtro)
 	if err != nil {

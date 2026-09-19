@@ -205,10 +205,9 @@ func (d *DB) ResumoHome(ctx context.Context, inicioMes, corte7d, corteGrafico st
 // ListarDemandasPorStatus devolve as demandas cujo status está na lista, na
 // ordem de ListarDemandas (prioridade, id decrescente). Alimenta a lista
 // "Precisa de você" da Home (aguardando_respostas/aguardando_aprovacao/conflito).
-// visiveisPara não-nil restringe às demandas de projetos visíveis ao usuário
-// pela ACL (nil = tudo — chamadores internos como scheduler/overlap). Slice
-// não-nil.
-func (d *DB) ListarDemandasPorStatus(ctx context.Context, statuses []string, visiveisPara *int64) ([]Demanda, error) {
+// v aplica a ACL de projeto e a regra de dono (valor zero = tudo — chamadores
+// internos como scheduler/overlap). Slice não-nil.
+func (d *DB) ListarDemandasPorStatus(ctx context.Context, statuses []string, v Visao) ([]Demanda, error) {
 	if len(statuses) == 0 {
 		return []Demanda{}, nil
 	}
@@ -218,7 +217,8 @@ func (d *DB) ListarDemandasPorStatus(ctx context.Context, statuses []string, vis
 	for i, s := range statuses {
 		args[i] = s
 	}
-	cond, args = anexarCondAcesso(cond, args, "demands.project_id", visiveisPara)
+	cond, args = anexarCondAcesso(cond, args, "demands.project_id", v.ACL)
+	cond, args = anexarCondDono(cond, args, "demands", v)
 	rows, err := d.Leitor.QueryContext(ctx,
 		`SELECT `+colunasDemanda+` FROM demands WHERE `+strings.Join(cond, " AND ")+`
 		 ORDER BY prioridade, id DESC`, args...)

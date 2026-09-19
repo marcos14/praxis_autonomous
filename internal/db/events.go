@@ -26,9 +26,28 @@ type FiltroEventos struct {
 	ProjectID *int64 // filtra por projeto quando não-nil
 	DemandID  *int64 // filtra por demanda quando não-nil
 	Limite    int    // máximo de linhas (mais recentes primeiro); <= 0 = sem limite
-	// VisiveisPara restringe aos eventos de projetos visíveis ao usuário pela
-	// ACL quando não-nil (eventos sem projeto — globais — sempre passam).
-	VisiveisPara *int64
+	// Visao restringe aos eventos que o usuário pode ver: projeto pela ACL e,
+	// para eventos de demanda, a regra de dono da demanda. Eventos sem projeto
+	// (globais) sempre passam; valor zero = tudo.
+	Visao Visao
+}
+
+// anexarCondEventos junta ao WHERE de uma leitura de events as restrições da
+// visão: ACL do projeto do evento (eventos sem projeto passam) e, quando a
+// regra de dono se aplica, a visibilidade da demanda do evento (eventos sem
+// demanda passam). Um evento de demanda alheia privada não chega ao SSE nem à
+// atividade recente de quem não pode ver a demanda.
+func anexarCondEventos(cond []string, args []any, v Visao) ([]string, []any) {
+	if v.ACL != nil {
+		cond = append(cond, "(events.project_id IS NULL OR "+condAcessoProjeto("events.project_id")+")")
+		args = append(args, argsAcessoProjeto(*v.ACL)...)
+	}
+	if v.Dono != nil {
+		cond = append(cond, `(events.demand_id IS NULL OR EXISTS (
+			SELECT 1 FROM demands dm WHERE dm.id = events.demand_id AND `+condDono("dm")+`))`)
+		args = append(args, argsDono(v)...)
+	}
+	return cond, args
 }
 
 // colunasEvento lista as colunas de events na ordem esperada por scanEvento.
@@ -70,19 +89,16 @@ func (d *DB) RegistrarEvento(ctx context.Context, e Evento) (Evento, error) {
 // EventosApos devolve os eventos com id > aposID em ordem CRESCENTE (id
 // crescente), para o tailing incremental do SSE global (Fase 4a). limite <= 0
 // aplica um teto de segurança (evita despejar um backlog enorme num cliente que
-// acabou de conectar com aposID=0). visiveisPara não-nil restringe aos eventos
-// de projetos visíveis ao usuário pela ACL (eventos sem projeto sempre passam).
+// acabou de conectar com aposID=0). v restringe aos eventos visíveis (ACL do
+// projeto e visibilidade da demanda — ver anexarCondEventos); valor zero = tudo.
 // Slice não-nil.
-func (d *DB) EventosApos(ctx context.Context, aposID int64, limite int, visiveisPara *int64) ([]Evento, error) {
+func (d *DB) EventosApos(ctx context.Context, aposID int64, limite int, v Visao) ([]Evento, error) {
 	if limite <= 0 {
 		limite = 500
 	}
 	cond := []string{"id > ?"}
 	args := []any{aposID}
-	if visiveisPara != nil {
-		cond = append(cond, "(project_id IS NULL OR "+condAcessoProjeto("events.project_id")+")")
-		args = append(args, argsAcessoProjeto(*visiveisPara)...)
-	}
+	cond, args = anexarCondEventos(cond, args, v)
 	args = append(args, limite)
 	rows, err := d.Leitor.QueryContext(ctx,
 		`SELECT `+colunasEvento+` FROM events WHERE `+strings.Join(cond, " AND ")+
@@ -145,10 +161,7 @@ func (d *DB) ListarEventos(ctx context.Context, f FiltroEventos) ([]Evento, erro
 		cond = append(cond, "demand_id = ?")
 		args = append(args, *f.DemandID)
 	}
-	if f.VisiveisPara != nil {
-		cond = append(cond, "(project_id IS NULL OR "+condAcessoProjeto("events.project_id")+")")
-		args = append(args, argsAcessoProjeto(*f.VisiveisPara)...)
-	}
+	cond, args = anexarCondEventos(cond, args, f.Visao)
 	if len(cond) > 0 {
 		sqlStr += " WHERE " + strings.Join(cond, " AND ")
 	}

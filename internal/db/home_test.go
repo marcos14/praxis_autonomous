@@ -99,7 +99,7 @@ func TestListarDemandasPorStatus(t *testing.T) {
 	mk(StatusDemandaExecutando) // não deve entrar
 
 	pend, err := d.ListarDemandasPorStatus(ctx, []string{
-		StatusDemandaAguardandoRespostas, StatusDemandaAguardandoAprovacao, StatusDemandaConflito}, nil)
+		StatusDemandaAguardandoRespostas, StatusDemandaAguardandoAprovacao, StatusDemandaConflito}, Visao{})
 	if err != nil {
 		t.Fatalf("ListarDemandasPorStatus: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestListarDemandasPorStatus(t *testing.T) {
 		t.Fatalf("pendências = %d, quero 3", len(pend))
 	}
 
-	vazio, err := d.ListarDemandasPorStatus(ctx, nil, nil)
+	vazio, err := d.ListarDemandasPorStatus(ctx, nil, Visao{})
 	if err != nil {
 		t.Fatalf("lista vazia: %v", err)
 	}

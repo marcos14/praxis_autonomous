@@ -91,16 +91,16 @@ func TestACLPorUsuarioEGrupo(t *testing.T) {
 	if ve, _ := d.UsuarioVeDemanda(ctx, caio, 9999); !ve {
 		t.Fatalf("demanda inexistente deveria devolver true (404 no handler)")
 	}
-	soCaio, err := d.ListarDemandas(ctx, FiltroDemandas{VisiveisPara: &caio})
+	soCaio, err := d.ListarDemandas(ctx, FiltroDemandas{Visao: Visao{ACL: &caio}})
 	if err != nil || len(soCaio) != 0 {
 		t.Fatalf("ListarDemandas(caio) = %d err=%v, quero 0", len(soCaio), err)
 	}
 	// beto vê via grupo — pega regressão de coluna não-qualificada no EXISTS.
-	deBetoLista, err := d.ListarDemandas(ctx, FiltroDemandas{VisiveisPara: &beto})
+	deBetoLista, err := d.ListarDemandas(ctx, FiltroDemandas{Visao: Visao{ACL: &beto}})
 	if err != nil || len(deBetoLista) != 1 {
 		t.Fatalf("ListarDemandas(beto) = %d err=%v, quero 1", len(deBetoLista), err)
 	}
-	deBeto, err := d.ListarDemandasResumo(ctx, FiltroDemandas{VisiveisPara: &beto})
+	deBeto, err := d.ListarDemandasResumo(ctx, FiltroDemandas{Visao: Visao{ACL: &beto}})
 	if err != nil || len(deBeto) != 1 {
 		t.Fatalf("ListarDemandasResumo(beto) = %d err=%v, quero 1", len(deBeto), err)
 	}
@@ -112,11 +112,11 @@ func TestACLPorUsuarioEGrupo(t *testing.T) {
 	if _, err := d.RegistrarEvento(ctx, Evento{Tipo: "t", Titulo: "global"}); err != nil {
 		t.Fatalf("evento global: %v", err)
 	}
-	evs, err := d.ListarEventos(ctx, FiltroEventos{VisiveisPara: &caio})
+	evs, err := d.ListarEventos(ctx, FiltroEventos{Visao: Visao{ACL: &caio}})
 	if err != nil || len(evs) != 1 || evs[0].Titulo != "global" {
 		t.Fatalf("ListarEventos(caio) = %+v err=%v, quero só o global", evs, err)
 	}
-	evsApos, err := d.EventosApos(ctx, 0, 10, &caio)
+	evsApos, err := d.EventosApos(ctx, 0, 10, Visao{ACL: &caio})
 	if err != nil || len(evsApos) != 1 {
 		t.Fatalf("EventosApos(caio) = %d err=%v, quero 1", len(evsApos), err)
 	}
