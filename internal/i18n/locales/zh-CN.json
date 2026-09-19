@@ -46,6 +46,8 @@
   "erro.credencial_sem_sessao": "集成凭证没有会话",
   "erro.credencial_sem_notificacoes": "集成凭证没有通知",
   "erro.notificacao_nao_encontrada": "未找到通知",
+  "erro.assinatura_push_invalida": "推送订阅无效（需要 https 端点和 p256dh/auth 密钥）",
+  "erro.tipo_evento_desconhecido": "未知的事件类型：{tipo}",
   "erro.muitas_tentativas": "登录尝试次数过多：请等待 {segundos} 秒后重试",
   "erro.visibilidade_invalida": "可见性无效（请使用 privada、grupo 或 publica）",
   "erro.visibilidade_sem_permissao": "只有创建者或管理员可以更改可见性",

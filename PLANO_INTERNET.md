@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1, M2 e M3 concluídos** (código, testes e doc
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M4.F4.E2`
+**Próxima etapa:** `M4.F5.E1`
 
 **Pendência do M3 para o usuário (não automatizável):** auditoria Lighthouse "PWA" sem erros; instalar em Windows (Chrome/Edge), Android (Chrome) e iOS (Safari) com HTTPS válido; passar por todas as views a 400 px conferindo que nada rola na horizontal, que o ← volta da lista, que o kanban desliza coluna a coluna e que o card da demanda abre em tela cheia. Os handlers do SW e do manifest têm teste Go; o comportamento no navegador não.
 
@@ -56,7 +56,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M4.F3.E1 Despachante: destinatário, preferências, gravação em `notificacoes` — `internal/notify/destinatario.go`: `Preferencias` (`PreferenciasPadrao`, `DecodificarPreferencias`, `TiposPadraoUsuario` espelhando o catálogo), interface `FonteUsuarios` (`*db.DB` satisfaz), `RotaDoEvento`, `destinatario` com cache por ciclo, `notificarUsuario`; `processar` grava a notificação do dono a cada evento; `serve` passa `Usuarios: banco`; testes com fakes (dono, sem dono, item apagado, tipo desligado, preferências parciais, cache)
 - [x] M4.F3.E2 Despachante: envio push, falhas, retenção na manutenção — `internal/notify/push.go`: interface `FontePush` (`*db.DB` satisfaz), `enviarPush` em goroutine com timeout (payload `{id,titulo,detalhe,rota,tag}`, `Topic` = tipo, VAPID memorizado), aceito → `MarcarUsoAssinatura` + `push_em`; 404/410 apaga; 429/5xx/transporte → `RegistrarFalhaAssinatura` (descarte em `MaxFalhasPush` = 5); outros 4xx só log; `AguardarEnvios`; manutenção: `RemoverNotificacoesAntigas` (lidas 30 d, não lidas 90 d) e `RemoverAssinaturasSemUso` (180 d) no `Ciclo`; `serve` passa `Push: banco`; testes com serviço de push falso (httptest) e banco real
 - [x] M4.F4.E1 API: listar, lida(s), stream SSE por usuário — `internal/api/notificacoes.go`: `GET /notificacoes?nao_lidas=1&limite=50` (`{itens, nao_lidas}`), `POST /notificacoes/{id}/lida` (404 se alheia), `POST /notificacoes/lidas` (`{marcadas}`), `GET /notificacoes/stream?after=` (`event: notificacao`, polling, heartbeat, encerra no exp do JWT com `token_expirado`); `permissaoMutacao` `case "notificacoes"`; tokens de API → 400 (`erro.credencial_sem_notificacoes`); i18n `erro.notificacao_nao_encontrada`; testes de listagem/lidas por usuário e do stream (só as próprias, backlog com `after=0`)
-- [ ] M4.F4.E2 API: push (chave, assinar, cancelar) e preferências
+- [x] M4.F4.E2 API: push (chave, assinar, cancelar) e preferências — `internal/api/notificacoes_push.go`: `GET /notificacoes/push/chave` (VAPID pública), `POST/DELETE /notificacoes/push` (corpo = `PushSubscription.toJSON()`; só https; cancelar só a própria, idempotente), `GET/PUT /auth/preferencias` (efetivas + `assinaturas` + `padrao_tipos`; PUT valida tipos contra `notify.TiposConhecidos`, novo catálogo Go com teste de paridade contra `notify-events.js`); catálogo JS com `padrao_usuario` completo; i18n `erro.assinatura_push_invalida`/`erro.tipo_evento_desconhecido`; tokens de API → 400; testes
 - [ ] M4.F5.E1 Rotas com id (`#view/id`) nas 3 telas
 - [ ] M4.F5.E2 Stream no boot, toast, sino com badge e painel
 - [ ] M4.F5.E3 SW push/click, Minha conta: preferências e ativar push

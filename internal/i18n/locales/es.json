@@ -46,6 +46,8 @@
   "erro.credencial_sem_sessao": "la credencial de integración no tiene sesiones",
   "erro.credencial_sem_notificacoes": "la credencial de integración no tiene notificaciones",
   "erro.notificacao_nao_encontrada": "notificación no encontrada",
+  "erro.assinatura_push_invalida": "suscripción push inválida (endpoint https y claves p256dh/auth son obligatorios)",
+  "erro.tipo_evento_desconhecido": "tipo de evento desconocido: {tipo}",
   "erro.muitas_tentativas": "demasiados intentos de inicio de sesión: espere {segundos} s e inténtelo de nuevo",
   "erro.visibilidade_invalida": "visibilidad inválida (use privada, grupo o publica)",
   "erro.visibilidade_sem_permissao": "solo el creador o un administrador puede cambiar la visibilidad",
