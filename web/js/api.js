@@ -102,6 +102,79 @@ function comToken(url) {
   return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(t);
 }
 
+// ATRASOS_REABRIR são as esperas (ms) entre tentativas de reabrir um stream que
+// caiu de vez; a última repete até conseguir.
+const ATRASOS_REABRIR = [1000, 2000, 5000, 10000, 30000];
+
+// abrirStream abre um SSE autenticado e cuida da vida dele. O token vai na URL
+// (?token=) porque o EventSource não envia headers — e por isso um stream não
+// sobrevive à renovação do JWT: quando o servidor avisa `token_expirado` (o JWT
+// da URL venceu) o stream é fechado e reaberto NA HORA com o token atual
+// (renovando antes, se ainda for o mesmo). Se a conexão cair de vez (401 ao
+// reconectar com token velho, servidor fora do ar), renova e reabre com backoff.
+// Se a sessão acabou, derruba a sessão (portão de login).
+//
+// handlers: { onopen(), onmessage(ev), eventos: { nome: fn(ev) }, onerror() }.
+// Devolve { close() } — chame ao sair da tela, senão o stream segue reabrindo.
+export function abrirStream(caminho, handlers = {}) {
+  let es = null;
+  let fechado = false;
+  let tentativa = 0;
+  let timer = null;
+  let tokenUsado = "";
+
+  const abrir = () => {
+    if (fechado) return;
+    tokenUsado = tokenAtual();
+    es = new EventSource(comToken(caminho));
+    es.onopen = () => {
+      tentativa = 0;
+      if (handlers.onopen) handlers.onopen();
+    };
+    if (handlers.onmessage) es.onmessage = handlers.onmessage;
+    for (const [nome, fn] of Object.entries(handlers.eventos || {})) es.addEventListener(nome, fn);
+    es.addEventListener("token_expirado", () => reabrir(true));
+    es.onerror = () => {
+      if (handlers.onerror) handlers.onerror();
+      // CONNECTING: o navegador reconecta sozinho (queda breve de rede) — com o
+      // token da URL; se ele já venceu a reconexão leva 401 e cai em CLOSED,
+      // e aí reabrimos nós, com token novo.
+      if (es && es.readyState === EventSource.CLOSED) reabrir(false);
+    };
+  };
+
+  const reabrir = (imediato) => {
+    if (fechado) return;
+    if (es) { es.close(); es = null; }
+    clearTimeout(timer);
+    const espera = imediato ? 0 : ATRASOS_REABRIR[Math.min(tentativa, ATRASOS_REABRIR.length - 1)];
+    tentativa++;
+    timer = setTimeout(async () => {
+      if (fechado) return;
+      // Se o token já mudou desde a abertura (renovação proativa), basta reabrir.
+      if (tokenAtual() === tokenUsado) {
+        try {
+          await renovar();
+        } catch (e) {
+          if (sessaoInvalida(e)) { sessaoCaiu(); return; }
+          reabrir(false); // transitório: tenta de novo mais tarde
+          return;
+        }
+      }
+      abrir();
+    }, espera);
+  };
+
+  abrir();
+  return {
+    close() {
+      fechado = true;
+      clearTimeout(timer);
+      if (es) { es.close(); es = null; }
+    },
+  };
+}
+
 export const api = {
   // projetos (Fase 1c)
   listarProjetos: () => req("GET", "/api/v1/projects"),
@@ -154,6 +227,7 @@ export const api = {
   // Progresso SANITIZADO do turno (SSE): só resumos ("lendo arquivo…"), nunca o
   // log cru — o log cru contém código-fonte, que esta feature não expõe.
   urlProgressoConsulta: (id) => comToken(`/api/v1/consultas/${id}/progresso`),
+  streamProgressoConsulta: (id, handlers) => abrirStream(`/api/v1/consultas/${id}/progresso`, handlers),
 
   // planejamentos (PRD/ADR iterativos com o estrategista).
   listarPlanejamentos: (q = {}) => {
@@ -172,6 +246,7 @@ export const api = {
   // Turno sem fala nova: disparo adiado (criação com anexos) e tentar novamente.
   dispararTurnoPlanejamento: (id) => req("POST", `/api/v1/planejamentos/${id}/turno`, {}),
   urlProgressoPlanejamento: (id) => comToken(`/api/v1/planejamentos/${id}/progresso`),
+  streamProgressoPlanejamento: (id, handlers) => abrirStream(`/api/v1/planejamentos/${id}/progresso`, handlers),
   listarDocumentosPlanejamento: (id) => req("GET", `/api/v1/planejamentos/${id}/documentos`),
   obterDocumentoPlanejamento: (id, arquivo, revisao) =>
     req("GET", `/api/v1/planejamentos/${id}/documentos/${encodeURIComponent(arquivo)}` +
@@ -258,8 +333,10 @@ export const api = {
   overlaps: () => req("GET", "/api/v1/overlaps"),
   overlapDemanda: (id) => req("GET", `/api/v1/demands/${id}/overlap`),
   // urlLogsDemanda devolve a URL do stream SSE (consumida por um EventSource),
-  // com o token da sessão embutido (EventSource não envia headers).
+  // com o token da sessão embutido (EventSource não envia headers). Prefira
+  // streamLogsDemanda, que renova o token e reabre sozinho.
   urlLogsDemanda: (id) => comToken(`/api/v1/demands/${id}/logs`),
+  streamLogsDemanda: (id, handlers) => abrirStream(`/api/v1/demands/${id}/logs`, handlers),
 
   // kanban (Fase 4a): board = demandas enriquecidas (progresso + motor); ordem =
   // reordenar prioridade (arraste); urlEventos = SSE global de eventos.
@@ -272,6 +349,7 @@ export const api = {
   },
   reordenarDemandas: (ids) => req("PUT", "/api/v1/demands/ordem", { ids }),
   urlEventos: () => comToken("/api/v1/events"),
+  streamEventos: (handlers) => abrirStream("/api/v1/events", handlers),
 
   // Home (Fase 4b): métricas agregadas, "Precisa de você" e atividade recente.
   metricas: (periodo) => req("GET", "/api/v1/metrics" + (periodo ? "?periodo=" + encodeURIComponent(periodo) : "")),

@@ -151,19 +151,22 @@ function itemAtividade(ev) {
 // assinarAtividade abre o SSE global e prepende novos eventos à atividade recente.
 function assinarAtividade() {
   desmontarHome();
-  sseEventos = new EventSource(api.urlEventos());
-  sseEventos.addEventListener("evento", (e) => {
-    let ev;
-    try { ev = JSON.parse(e.data); } catch { return; }
-    const lista = document.getElementById("home-ativ-lista");
-    if (!lista) return;
-    const vazio = lista.querySelector("p.sub");
-    if (vazio) vazio.remove();
-    lista.prepend(itemAtividade(ev));
-    while (lista.children.length > 30) lista.lastChild.remove();
-    // Um evento pode mudar métricas/pendências — recarrega em segundo plano.
-    carregarMetricas();
-    carregarPendencias();
+  // O stream renova o token e reabre sozinho (api.abrirStream).
+  sseEventos = api.streamEventos({
+    eventos: {
+      evento: (e) => {
+        let ev;
+        try { ev = JSON.parse(e.data); } catch { return; }
+        const lista = document.getElementById("home-ativ-lista");
+        if (!lista) return;
+        const vazio = lista.querySelector("p.sub");
+        if (vazio) vazio.remove();
+        lista.prepend(itemAtividade(ev));
+        while (lista.children.length > 30) lista.lastChild.remove();
+        // Um evento pode mudar métricas/pendências — recarrega em segundo plano.
+        carregarMetricas();
+        carregarPendencias();
+      },
+    },
   });
-  sseEventos.onerror = () => {};
 }

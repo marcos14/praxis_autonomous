@@ -204,11 +204,16 @@ async function onDrop(e, lista) {
 // evento relevante (mudança de status, conclusão, integração, conflito…).
 function assinarEventos() {
   desmontarKanban();
-  sseEventos = new EventSource(api.urlEventos());
-  sseEventos.addEventListener("evento", () => {
-    // Debounce: agrupa rajadas de eventos num único refresh.
-    if (recarregarTimer) clearTimeout(recarregarTimer);
-    recarregarTimer = setTimeout(() => { recarregarTimer = null; recarregar(); }, 300);
+  // O stream renova o token e reabre sozinho (api.abrirStream).
+  sseEventos = api.streamEventos({
+    eventos: {
+      evento: () => {
+        // Debounce: agrupa rajadas de eventos num único refresh.
+        if (recarregarTimer) clearTimeout(recarregarTimer);
+        recarregarTimer = setTimeout(() => { recarregarTimer = null; recarregar(); }, 300);
+      },
+    },
+    // Ao reconectar, o board pode ter perdido eventos: recarrega.
+    onopen: () => recarregar(),
   });
-  sseEventos.onerror = () => { /* o navegador reconecta sozinho */ };
 }

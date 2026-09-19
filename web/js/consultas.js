@@ -309,18 +309,19 @@ async function abrirConsulta(id) {
   function acompanharProgresso() {
     if (esProgresso) return;
     try {
-      esProgresso = new EventSource(api.urlProgressoConsulta(cons.id));
-      esProgresso.onmessage = (ev) => {
-        try {
-          const d = JSON.parse(ev.data);
-          if (d.acao === "concluindo") {
-            progresso.textContent = t("consultas.concluindo");
-          } else if (d.detalhe) {
-            progresso.textContent = d.detalhe + "…";
-          }
-        } catch { /* linha desconhecida: ignora */ }
-      };
-      esProgresso.onerror = () => { /* o poll de fallback cobre a queda do SSE */ };
+      // O stream renova o token e reabre sozinho (api.abrirStream).
+      esProgresso = api.streamProgressoConsulta(cons.id, {
+        onmessage: (ev) => {
+          try {
+            const d = JSON.parse(ev.data);
+            if (d.acao === "concluindo") {
+              progresso.textContent = t("consultas.concluindo");
+            } else if (d.detalhe) {
+              progresso.textContent = d.detalhe + "…";
+            }
+          } catch { /* linha desconhecida: ignora */ }
+        },
+      });
     } catch { /* sem EventSource: o poll cobre */ }
   }
 

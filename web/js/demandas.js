@@ -283,17 +283,19 @@ async function renderConteudoCard(overlay, id, dados, abaPreferida, perguntasPre
 // evento da PRÓPRIA demanda chega (debounce). Fechado em fecharCard.
 function assinarEventosCard(id, overlay) {
   if (sseCardEventos) { sseCardEventos.close(); sseCardEventos = null; }
-  const es = new EventSource(api.urlEventos());
-  sseCardEventos = es;
   let timer = null;
-  es.addEventListener("evento", (e) => {
-    let ev;
-    try { ev = JSON.parse(e.data); } catch { return; }
-    if (Number(ev.demand_id) !== Number(id)) return;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => atualizarCardSeMudou(id, overlay), 350);
+  // O stream renova o token e reabre sozinho (api.abrirStream).
+  sseCardEventos = api.streamEventos({
+    eventos: {
+      evento: (e) => {
+        let ev;
+        try { ev = JSON.parse(e.data); } catch { return; }
+        if (Number(ev.demand_id) !== Number(id)) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => atualizarCardSeMudou(id, overlay), 350);
+      },
+    },
   });
-  es.onerror = () => { /* o navegador reconecta sozinho */ };
 }
 
 // atualizarCardSeMudou re-busca a demanda e re-renderiza o card se o estado
@@ -1032,12 +1034,13 @@ function ativarLog(cont, id) {
     if (perto) box.scrollTop = box.scrollHeight;
   };
 
-  const es = new EventSource(api.urlLogsDemanda(id));
-  sseAtual = es;
-  es.onopen = () => { foot.textContent = t("demandas.log_conectado"); };
-  es.onmessage = (ev) => { formatarLinha(ev.data).forEach(empurrar); };
-  es.addEventListener("exec", (ev) => empurrar(separadorExec(ev.data)));
-  es.onerror = () => { foot.textContent = t("demandas.log_interrompido"); };
+  // O stream renova o token e reabre sozinho; o rodapé reflete o estado.
+  sseAtual = api.streamLogsDemanda(id, {
+    onopen: () => { foot.textContent = t("demandas.log_conectado"); },
+    onmessage: (ev) => { formatarLinha(ev.data).forEach(empurrar); },
+    eventos: { exec: (ev) => empurrar(separadorExec(ev.data)) },
+    onerror: () => { foot.textContent = t("demandas.log_interrompido"); },
+  });
 }
 
 // separadorExec cria a linha que marca a troca de execução/etapa (evento `exec`).
