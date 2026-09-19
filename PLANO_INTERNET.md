@@ -6,7 +6,7 @@ Atualizado em: 2026-09-19 — **M1, M2 e M3 concluídos** (código, testes e doc
 
 ## Andamento (atualize aqui ao fim de cada etapa)
 
-**Próxima etapa:** `M4.F1.E1`
+**Próxima etapa:** `M4.F1.E2`
 
 **Pendência do M3 para o usuário (não automatizável):** auditoria Lighthouse "PWA" sem erros; instalar em Windows (Chrome/Edge), Android (Chrome) e iOS (Safari) com HTTPS válido; passar por todas as views a 400 px conferindo que nada rola na horizontal, que o ← volta da lista, que o kanban desliza coluna a coluna e que o card da demanda abre em tela cheia. Os handlers do SW e do manifest têm teste Go; o comportamento no navegador não.
 
@@ -49,7 +49,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída. Abaixo de uma
 - [x] M3.F3.E1 Fechamento: Lighthouse, instalar em 3 plataformas, docs — README (EN e pt-BR) §5.4 "Instalar como app e usar no celular"; FAQ do manual embutido nos 4 idiomas; Lighthouse e instalação nas 3 plataformas ficam com o usuário (ver pendência acima)
 
 ### M4 — Notificações ao usuário
-- [ ] M4.F1.E1 Migração 18 + stores de notificações, assinaturas push e preferências
+- [x] M4.F1.E1 Migração 18 + stores de notificações, assinaturas push e preferências — `events.consulta_id/planejamento_id`, tabelas `notificacoes` e `push_subscriptions`, `users.notificacoes`, `auth_config.vapid_*`; `internal/db/notificacoes.go` (criar, listar, `NotificacoesApos`, última, contar não lidas, marcar lida/todas, `MarcarPushEnviado`, retenção) e `push.go` (upsert por endpoint, remover, listar, `RegistrarFalhaAssinatura` com descarte no limite, `MarcarUsoAssinatura`, retenção, `PreferenciasNotificacao`/`Definir…`, `ObterOuGerarVAPID` memorizado em `auth_config`)
 - [ ] M4.F1.E2 Eventos com `consulta_id`/`planejamento_id`, `demanda_concluida`, catálogo
 - [ ] M4.F2.E1 `internal/webpush`: VAPID + `aes128gcm` com vetores das RFCs
 - [ ] M4.F2.E2 Chaves VAPID no boot, config `push_contato`

@@ -104,6 +104,11 @@ var migracoes = []migracao{
 		nome:   "visibilidade por dono/grupo/pública em consultas, planejamentos e demandas",
 		sql:    schemaVisibilidade,
 	},
+	{
+		versao: 18,
+		nome:   "notificações por usuário, assinaturas web push, preferências e chaves VAPID",
+		sql:    schemaNotificacoes,
+	},
 }
 
 // VersaoSchema é a versão de schema que o binário espera (a última migração
@@ -772,4 +777,47 @@ UPDATE planejamentos SET visibilidade = 'publica';
 UPDATE demands       SET visibilidade = 'publica';
 CREATE INDEX ix_consultas_dono     ON consultas (criado_por);
 CREATE INDEX ix_planejamentos_dono ON planejamentos (criado_por);
+`
+
+// Migração 18 (M4 do PLANO_INTERNET) — notificações ao usuário. events ganha
+// consulta_id/planejamento_id (até aqui só conhecia projeto e demanda — sem
+// isso não dá para saber de quem é o evento). notificacoes é a caixa de
+// entrada por usuário (o despachante grava uma linha por evento destinado a
+// ele; o SSE por usuário e o sino leem daqui); push_subscriptions guarda as
+// assinaturas Web Push de cada dispositivo; users.notificacoes é o JSON de
+// preferências; auth_config guarda o par VAPID gerado no boot.
+const schemaNotificacoes = `
+ALTER TABLE events ADD COLUMN consulta_id     INTEGER REFERENCES consultas(id)     ON DELETE SET NULL;
+ALTER TABLE events ADD COLUMN planejamento_id INTEGER REFERENCES planejamentos(id) ON DELETE SET NULL;
+
+CREATE TABLE notificacoes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id   INTEGER REFERENCES events(id) ON DELETE SET NULL,
+    tipo       TEXT NOT NULL,
+    titulo     TEXT NOT NULL,
+    detalhe    TEXT NOT NULL DEFAULT '',
+    rota       TEXT NOT NULL DEFAULT '',
+    lida_em    TEXT,
+    push_em    TEXT,
+    criado_em  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX ix_notificacoes_user ON notificacoes (user_id, id);
+
+CREATE TABLE push_subscriptions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint   TEXT NOT NULL UNIQUE,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    user_agent TEXT NOT NULL DEFAULT '',
+    criado_em  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    ultimo_uso TEXT,
+    falhas     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX ix_push_user ON push_subscriptions (user_id);
+
+ALTER TABLE users       ADD COLUMN notificacoes  TEXT NOT NULL DEFAULT '';
+ALTER TABLE auth_config ADD COLUMN vapid_publica TEXT NOT NULL DEFAULT '';
+ALTER TABLE auth_config ADD COLUMN vapid_privada TEXT NOT NULL DEFAULT '';
 `
