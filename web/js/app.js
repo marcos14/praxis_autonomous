@@ -405,6 +405,14 @@ async function iniciar() {
 
   // PWA: service worker (shell offline, base das notificações do M4).
   registrarServiceWorker();
+  // Clique numa notificação do sistema: o service worker foca esta janela e
+  // manda a rota do item ({ tipo: "rota", rota: "#consultas/7" }).
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      const m = e.data || {};
+      if (m.tipo === "rota" && typeof m.rota === "string" && m.rota.startsWith("#")) location.hash = m.rota;
+    });
+  }
 
   // A sessão caiu com a app aberta (401 definitivo: sessão revogada ou expirada
   // no servidor) → portão POR CIMA da app, sem recarregar — o que estava na

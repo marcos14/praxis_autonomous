@@ -8,6 +8,7 @@ import { el, limpar, toast } from "./ui.js";
 import * as auth from "./auth.js";
 import { t, tn, seletorIdioma } from "./i18n.js";
 import { quando } from "./demandas.js";
+import { secaoNotificacoes } from "./conta-notificacoes.js";
 
 let listaSessoes = null;
 
@@ -15,7 +16,7 @@ export async function montarConta() {
   const painel = limpar(document.getElementById("painel-conta"));
   const u = auth.usuarioAtual();
   if (!u) return;
-  painel.append(secaoDados(u), secaoSenha(), secaoIdioma(), await secaoSessoes());
+  painel.append(secaoDados(u), secaoSenha(), secaoIdioma(), await secaoNotificacoes(secao), await secaoSessoes());
 }
 
 // secao é um painel com título e subtítulo opcional.

@@ -1,4 +1,4 @@
-// Service worker do Praxis (M3 do PLANO_INTERNET). Servido por GET /sw.js
+// Service worker do Praxis (M3/M4 do PLANO_INTERNET). Servido por GET /sw.js
 // (internal/api/web.go), que injeta antes deste arquivo:
 //   const VERSAO = "<versão do binário>";   // nome do cache: um por versão
 //   const SHELL = ["/", "/app.css", ...];   // assets embutidos a pré-cachear
@@ -9,7 +9,12 @@
 //   - navegações: rede primeiro, cai no index.html do cache quando offline;
 //   - estáticos do shell: cache primeiro, revalidando em segundo plano.
 // Uma versão nova do binário gera um cache novo; o antigo é apagado no activate.
-// Os handlers de push/notificationclick entram no M4.
+//
+// Web Push (M4): o evento `push` traz o payload cifrado pelo servidor
+// ({id, titulo, detalhe, rota, tag}); se há uma janela do Praxis em foco a
+// notificação não é mostrada (o toast da aba já cobre); senão vira notificação
+// do sistema. `notificationclick` foca uma janela existente e manda a rota
+// (postMessage), ou abre uma janela nova já na rota.
 
 const CACHE = "praxis-" + VERSAO;
 
@@ -61,4 +66,42 @@ self.addEventListener("fetch", (e) => {
       return emCache || rede;
     }),
   );
+});
+
+// ---------- Web Push (M4) ----------
+
+// janelas devolve as janelas do Praxis abertas (inclusive não controladas).
+function janelas() {
+  return self.clients.matchAll({ type: "window", includeUncontrolled: true });
+}
+
+self.addEventListener("push", (e) => {
+  let dados = {};
+  try { dados = e.data ? e.data.json() : {}; } catch { dados = { titulo: e.data ? e.data.text() : "Praxis" }; }
+  const titulo = dados.titulo || "Praxis";
+  e.waitUntil(janelas().then((lista) => {
+    // Uma janela em foco já mostrou o toast pelo SSE: não duplica no sistema.
+    if (lista.some((c) => c.focused)) return;
+    return self.registration.showNotification(titulo, {
+      body: dados.detalhe || "",
+      tag: dados.tag || dados.rota || "praxis",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { rota: dados.rota || "", id: dados.id || 0 },
+    });
+  }));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const rota = (e.notification.data && e.notification.data.rota) || "";
+  const id = (e.notification.data && e.notification.data.id) || 0;
+  e.waitUntil(janelas().then((lista) => {
+    const alvo = lista.find((c) => "focus" in c);
+    if (alvo) {
+      alvo.postMessage({ tipo: "rota", rota, id });
+      return alvo.focus();
+    }
+    return self.clients.openWindow("/" + rota);
+  }));
 });
