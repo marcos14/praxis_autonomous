@@ -80,8 +80,15 @@ func aplicarDefaultsLogon(o *opcoesServico) {
 	}
 }
 
-// artefatoRegistro imprime os comandos sc.exe equivalentes ao install (§3 da ADR).
+// artefatoRegistro imprime os comandos sc.exe equivalentes ao install (§3 da
+// ADR) — ou, com -logon, o XML da tarefa de logon (schtasks /Create /XML).
 func artefatoRegistro(exe string, o *opcoesServico) string {
+	if o.Logon {
+		usuario, _ := usuarioAtual()
+		home, _ := filepath.Abs(o.Home)
+		args := append([]string{"service", "run", "-home", home, "-log", filepath.Join(home, nomeArquivoLogServico)}, o.argsServe()...)
+		return xmlTarefaLogon(usuario, exe, args)
+	}
 	return strings.Join([]string{
 		"# Equivalente sc.exe do `praxis service install` (execute como Administrador):",
 		comandoServicoWindows(nomeServico, exe, o),

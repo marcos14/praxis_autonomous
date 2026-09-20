@@ -305,6 +305,32 @@ func TestUnitSystemdPortaPrivilegiada(t *testing.T) {
 	}
 }
 
+// TestUnitSystemdUsuario: o unit de usuário (-logon) não tem User=, mira o
+// default.target do gerenciador de sessão, lê o env file de dentro do home e
+// nunca pede capability (o gerenciador de usuário não concede).
+func TestUnitSystemdUsuario(t *testing.T) {
+	o := parseServico(t, "-addr", "0.0.0.0:443", "-tls")
+	o.Logon, o.Home = true, "/home/marco/.config/praxis"
+	u := unitSystemd("/home/marco/.local/bin/praxis", o)
+	for _, quer := range []string{
+		"Environment=PRAXIS_HOME=/home/marco/.config/praxis",
+		"EnvironmentFile=-/home/marco/.config/praxis/praxis.env",
+		"WorkingDirectory=/home/marco/.config/praxis",
+		"ExecStart=/home/marco/.local/bin/praxis serve -addr 0.0.0.0:443 -tls",
+		"WantedBy=default.target",
+		"Restart=always",
+	} {
+		if !strings.Contains(u, quer) {
+			t.Errorf("unit de usuário não contém %q:\n%s", quer, u)
+		}
+	}
+	for _, nao := range []string{"\nUser=", "\nAmbientCapabilities=", "multi-user.target", caminhoEnvServico} {
+		if strings.Contains(u, nao) {
+			t.Errorf("unit de usuário não deveria conter %q:\n%s", nao, u)
+		}
+	}
+}
+
 func TestCitarUnit(t *testing.T) {
 	if got := citarUnit("/usr/local/bin/praxis"); got != "/usr/local/bin/praxis" {
 		t.Errorf("sem espaço: %q", got)

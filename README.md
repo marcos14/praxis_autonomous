@@ -157,6 +157,22 @@ with `-tls` — Praxis generates a self-signed HTTPS certificate:
 Learn more in the [full guide](README_COMPLETO.md#network-access-https):
 custom certificates, installing the certificate on devices, and good practices.
 
+To keep Praxis running without an open terminal, install it with the same
+binary. On a personal workstation, `-logon` installs it for your user only —
+no root/admin, your profile and engine logins, nothing to migrate (a systemd
+user unit on Linux, a logon task on Windows). Without `-logon` it becomes a
+system service (systemd; the SCM on Windows):
+
+```sh
+./praxis service install -logon -addr 0.0.0.0:7799 -tls      # Linux, your user, no sudo
+.\praxis.exe service install -logon -addr 0.0.0.0:7799 -tls  # Windows, your account, no admin
+sudo ./praxis service install -addr 0.0.0.0:7799 -tls        # Linux system service
+./praxis service status
+```
+
+Modes, accounts and trade-offs are in the
+[full guide](README_COMPLETO.md#81-running-as-a-system-service).
+
 ---
 
 ## Full documentation

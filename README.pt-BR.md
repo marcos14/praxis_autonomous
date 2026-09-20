@@ -156,6 +156,22 @@ Para acessar de outras máquinas sem ter um certificado próprio, suba com
 Saiba mais no [guia completo](README_COMPLETO.pt-BR.md#acesso-pela-rede-https):
 certificado próprio, instalação do certificado nos dispositivos e boas práticas.
 
+Para o Praxis ficar no ar sem um terminal aberto, instale-o com o mesmo binário.
+Numa estação pessoal, `-logon` instala só para o seu usuário — sem root/admin,
+com seu perfil e os logins dos motores, nada a migrar (unit de usuário do systemd
+no Linux, tarefa de logon no Windows). Sem `-logon` vira serviço do sistema
+(systemd; SCM no Windows):
+
+```sh
+./praxis service install -logon -addr 0.0.0.0:7799 -tls      # Linux, seu usuário, sem sudo
+.\praxis.exe service install -logon -addr 0.0.0.0:7799 -tls  # Windows, sua conta, sem admin
+sudo ./praxis service install -addr 0.0.0.0:7799 -tls        # Linux, serviço do sistema
+./praxis service status
+```
+
+Modos, contas e limitações estão no
+[guia completo](README_COMPLETO.pt-BR.md#81-rodar-como-serviço).
+
 ---
 
 ## Documentação completa

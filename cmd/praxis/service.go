@@ -27,6 +27,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -198,6 +199,7 @@ func serviceUnit(_ context.Context, args []string, out, errOut io.Writer) error 
 		return err
 	}
 	o.registrarExplicitas(fs)
+	aplicarDefaultsLogon(o)
 	if *exe == "" {
 		*exe = caminhoBinarioInstalado(o.Dir)
 	}
@@ -285,14 +287,34 @@ func unitSystemd(exe string, o *opcoesServico) string {
 	for _, a := range o.argsServe() {
 		exec += " " + citarUnit(a)
 	}
-	// Porta privilegiada com usuário comum: a capability permite o bind sem root.
+	// Porta privilegiada com usuário comum: a capability permite o bind sem root
+	// (só no unit de sistema; o gerenciador de usuário não concede capabilities).
 	capacidades := "# Porta < 1024 com usuário comum exigiria AmbientCapabilities=CAP_NET_BIND_SERVICE."
-	if _, p, err := net.SplitHostPort(o.Addr); err == nil {
+	if _, p, err := net.SplitHostPort(o.Addr); err == nil && !o.Logon {
 		if porta, err := strconv.Atoi(p); err == nil && porta > 0 && porta < 1024 && usuario != "root" {
 			capacidades = "AmbientCapabilities=CAP_NET_BIND_SERVICE"
 		}
 	}
-	return strings.Join([]string{
+	// Unit de sistema: roda como User=; unit de usuário (-logon): já é o
+	// usuário, o User= não existe e o alvo de boot é o default.target do
+	// gerenciador de sessão.
+	identidade := []string{
+		"# Usuário sob o qual o Praxis roda git e os CLIs dos motores (claude, codex…);",
+		"# as credenciais desses CLIs ficam no perfil deste usuário. root só se justificado.",
+		"User=" + usuario,
+	}
+	envFile, alvo := caminhoEnvServico, "multi-user.target"
+	if o.Logon {
+		identidade = []string{
+			"# Unit de usuário (systemctl --user): roda como você, com o seu perfil — é onde",
+			"# os CLIs dos motores (claude, codex…) guardam login. Com `loginctl enable-linger`",
+			"# sobe no boot e sobrevive ao logoff.",
+		}
+		// path (não filepath): o unit é um artefato Linux mesmo quando gerado
+		// noutro SO (`service unit -logon` para revisar).
+		envFile, alvo = path.Join(o.Home, "praxis.env"), "default.target"
+	}
+	linhas := []string{
 		"[Unit]",
 		"Description=" + descricaoServico,
 		"Documentation=https://github.com/marcos14/praxis-autonomous",
@@ -304,17 +326,17 @@ func unitSystemd(exe string, o *opcoesServico) string {
 		"[Service]",
 		"# Processo foreground comum; o systemd supervisiona. Nunca daemonizar (D2).",
 		"Type=simple",
-		"# Usuário sob o qual o Praxis roda git e os CLIs dos motores (claude, codex…);",
-		"# as credenciais desses CLIs ficam no perfil deste usuário. root só se justificado.",
-		"User=" + usuario,
-		"# Diretório de estado da máquina — mesmo valor no instalador e no binário (D5).",
-		"Environment=PRAXIS_HOME=" + o.Home,
+	}
+	linhas = append(linhas, identidade...)
+	linhas = append(linhas,
+		"# Diretório de estado — mesmo valor no instalador e no binário (D5).",
+		"Environment=PRAXIS_HOME="+o.Home,
 		"# Avisa o binário que há supervisor: o reinício pertence ao systemd (D3).",
 		"Environment=PRAXIS_MANAGED=systemd",
-		"# Variáveis extras (PRAXIS_PROXY_CONFIAVEL=1, PATH dos motores…); \"-\" = opcional.",
-		"EnvironmentFile=-" + caminhoEnvServico,
-		"WorkingDirectory=" + o.Home,
-		"ExecStart=" + exec,
+		"# Variáveis extras (PATH dos CLIs dos motores, PRAXIS_PROXY_CONFIAVEL=1…); \"-\" = opcional.",
+		"EnvironmentFile=-"+envFile,
+		"WorkingDirectory="+o.Home,
+		"ExecStart="+exec,
 		"# O supervisor é dono do reinício; RestartSec evita tropeçar no StartLimit em crash-loop.",
 		"Restart=always",
 		"RestartSec=5",
@@ -327,9 +349,10 @@ func unitSystemd(exe string, o *opcoesServico) string {
 		"# desenvolvimento no perfil do usuário e escreve worktrees em PRAXIS_HOME.",
 		"",
 		"[Install]",
-		"WantedBy=multi-user.target",
+		"WantedBy="+alvo,
 		"",
-	}, "\n")
+	)
+	return strings.Join(linhas, "\n")
 }
 
 // citarUnit envolve s em aspas duplas quando tem espaço — a sintaxe do
