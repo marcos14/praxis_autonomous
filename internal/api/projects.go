@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -388,11 +389,25 @@ func validarPastaRepoGit(pasta string) string {
 	}
 	// git -C <pasta> rev-parse --is-inside-work-tree devolve "true" e código 0
 	// dentro de um repositório; fora, sai com erro. Mesma detecção do Praxis atual.
+	// O stderr do git vai junto na mensagem: "não é um repositório" também é o
+	// que se vê quando o git recusa a pasta por pertencer a outro usuário
+	// ("dubious ownership" — típico do serviço rodando como LocalSystem) ou
+	// quando o git nem está no PATH do serviço; sem o motivo real, o operador
+	// procura o problema no lugar errado.
 	cmd := exec.Command("git", "-C", pasta, "rev-parse", "--is-inside-work-tree")
-	if out, err := cmd.Output(); err != nil || strings.TrimSpace(string(out)) != "true" {
-		return "pasta não é um repositório git: " + pasta
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err == nil && strings.TrimSpace(string(out)) == "true" {
+		return ""
 	}
-	return ""
+	msg := "pasta não é um repositório git: " + pasta
+	if detalhe := strings.TrimSpace(stderr.String()); detalhe != "" {
+		msg += " (git: " + detalhe + ")"
+	} else if err != nil {
+		msg += " (git: " + err.Error() + ")"
+	}
+	return msg
 }
 
 // lerIDProjeto extrai e valida o path param {id}. Em erro, escreve 400 e devolve

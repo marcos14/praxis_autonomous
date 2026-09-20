@@ -466,9 +466,10 @@ Operator side:
 ## 8. Other subcommands
 
 ```sh
-# Generate the config to run as a service (prints it; actual registration requires admin):
-./praxis service                      # systemd unit (Linux) or sc.exe command (Windows)
-./praxis service -exe /opt/praxis/praxis -addr 127.0.0.1:7799 -nome praxis
+# System service (see 8.1): the same binary installs, administers and runs the service.
+./praxis service install|remove|start|stop|restart   # admin / root
+./praxis service status                              # no privilege needed
+./praxis service unit                                # prints the unit / sc.exe command, touches nothing
 
 # Import projects from classic Praxis (reads automacao/autopilot.json + fases.csv; idempotent):
 ./praxis import /path/to/project [/another/project ...]
@@ -476,18 +477,95 @@ Operator side:
 
 ### 8.1 Running as a system service
 
-**Linux (systemd):**
-```sh
-./praxis service > /etc/systemd/system/praxis.service   # as root, review the contents
-systemctl daemon-reload && systemctl enable --now praxis
-```
+`praxis serve` runs in the foreground and dies with the terminal. To keep Praxis
+alive across logoffs and reboots, install it as a system service. The design
+follows [ADR 0001](docs/adr/0001-servicos-instalaveis-windows-linux.md): one
+binary with modes, native protocol on each platform (SCM handler on Windows,
+`Type=simple` under systemd on Linux), restart owned by the supervisor,
+machine-level state directories, and queries that never require elevation.
 
-**Windows (as Administrator):**
+**Windows (terminal as Administrator):**
 ```powershell
-# paste/run the "sc.exe create ..." command printed by:
-.\praxis.exe service
-sc.exe start praxis
+cd C:\Projetos\praxis-autonomous                          # folder that holds praxis.exe
+.\praxis.exe service install                              # loopback only (default)
+.\praxis.exe service install -addr 0.0.0.0:7799 -tls      # LAN access with self-signed TLS
+# Recommended: run under YOUR account (reuses PATH, engine CLI logins and repo ownership).
+# First grant the account "Log on as a service" in secpol.msc.
+.\praxis.exe service install -addr 0.0.0.0:7799 -tls -conta .\your-user -senha "your-password"
+# Microsoft account / Windows Hello with no local password? Logon task (no password, no admin):
+.\praxis.exe service install -logon -addr 0.0.0.0:7799 -tls
+.\praxis.exe service status                               # works without elevation
+.\praxis.exe service stop | start | restart | remove
 ```
+- **`-logon` (user logon task):** the other problem the ADR sets apart — a
+  *per-user* resident process. It registers a Task Scheduler task that fires at
+  your logon with your interactive token, no password and no admin: the same
+  profile, PATH, engine CLI logins and repo ownership as a hand-run
+  `praxis serve`. Defaults match the manual `serve` too (`PRAXIS_HOME` in
+  `%LOCALAPPDATA%\praxis`, binary in `%LOCALAPPDATA%\Programs\Praxis`), so
+  **nothing needs migrating**; the log goes to `%LOCALAPPDATA%\praxis\servico.log`.
+  Limits: it only runs while you are logged on (not before logon, not after
+  logoff), and `stop` is abrupt — the scheduler kills the process (SQLite in
+  WAL mode tolerates it; in-flight runs are re-queued and orphaned harnesses
+  are killed at next boot). Restart on failure: 3 attempts, 1 min apart.
+  `status/start/stop/restart/remove` detect the mode by themselves; a system
+  service `install` removes the task, and `-logon` refuses while the system
+  service exists.
+- The installer copies the binary to `%ProgramFiles%\Praxis\praxis.exe` (`-dir`),
+  registers the service `praxis` ("Praxis Autonomous", automatic start) whose
+  command line is `praxis.exe service run -home %ProgramData%\praxis …`, sets
+  recovery actions (restart after 5s/5s/30s) and starts it.
+- **Idempotent:** run `install` again to update or to change the address/TLS —
+  it stops the service, replaces the binary, fixes the registered command line
+  if it differs (old path, old flags), and restarts. Only the flags you pass
+  explicitly (`-addr`, `-tls`, `-tls-cert/-tls-key`, `-proxy-confiavel`) are
+  frozen in the registration; everything else follows the binary's defaults,
+  so updates can improve them.
+- **Fails early:** before touching the binary or the registration the installer
+  binds the requested `-addr` once (an occupied port or an invalid address
+  aborts, and a previously running service is started again). After the start
+  it polls `/healthz` and prints the URL it answered on; a service that is
+  "running" but not answering is reported with the log path.
+- **Data:** `PRAXIS_HOME` of the service is `%ProgramData%\praxis` (`-home`) —
+  a machine directory, never a user profile. The service log (there is no
+  console under the SCM) is `%ProgramData%\praxis\servico.log`, rotated at 10 MB
+  (5 copies kept); runtime crashes go to `servico-crash.log` next to it.
+- **Account:** `LocalSystem` by default (`-conta`). Praxis runs git and the
+  engine CLIs (claude, codex, code serve-web…) and writes worktrees; those CLIs
+  keep their logins in a *user* profile, so to reuse the logins you already
+  made, install as that user: `-conta .\marco -senha …` (the account needs the
+  "Log on as a service" right — `secpol.msc`). `LocalService` / `NetworkService`
+  are accepted for a locked-down install where engine profiles point at explicit
+  directories.
+- `service run` started from a console (not by the SCM) simply behaves like
+  `serve` — handy to debug the exact registered command line.
+
+**Linux (systemd, as root):**
+```sh
+sudo ./praxis service install                             # loopback only (default)
+sudo ./praxis service install -addr 0.0.0.0:7799 -tls     # LAN access with self-signed TLS
+./praxis service status                                   # no root needed
+sudo ./praxis service stop | start | restart | remove
+journalctl -u praxis -f                                   # logs (stdout → journald)
+```
+- The installer copies the binary to `/usr/local/bin/praxis` (`-dir`), creates
+  `/var/lib/praxis` (`PRAXIS_HOME`, `-home`) owned by the service user, creates
+  `/etc/praxis/praxis.env` (optional environment file, e.g. `PATH` for engine
+  CLIs living in `~/.local/bin`), writes `/etc/systemd/system/praxis.service`,
+  then `daemon-reload`, `enable` and **`restart`** (never `enable --now`, which
+  would keep the old binary running in memory).
+- The unit is `Type=simple`, `Restart=always`, `RestartSec=5`, and sets
+  `PRAXIS_MANAGED=systemd` so the binary knows a supervisor owns restarts.
+  `systemctl stop` sends SIGTERM, which Praxis treats as a graceful shutdown.
+- **User:** `User=` defaults to whoever invoked `sudo` (`-usuario`), because the
+  engine CLIs keep their credentials in that user's home; `root` only if you
+  say so. Rerunning `install` is the manual update path.
+- Prefer to review or package instead? `./praxis service unit` prints the unit
+  without touching the machine.
+
+The old `praxis` service name is kept as a permanent contract: future renames
+will keep a list of legacy names, and `install` migrates (removes) a legacy
+registration instead of running two services against the same database.
 
 ---
 

@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/marcos14/praxis-autonomous/internal/api"
@@ -52,8 +53,10 @@ const timeoutShutdown = 10 * time.Second
 func main() {
 	// Cancela o contexto no primeiro SIGINT/SIGTERM, disparando o shutdown
 	// gracioso. Um segundo sinal encerra o processo abruptamente (stop restaura
-	// o comportamento default do sinal).
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// o comportamento default do sinal). SIGTERM é o que o systemd manda no
+	// `systemctl stop` (ADR 0001 §1.3) — sem tratá-lo, o serviço só cairia no
+	// SIGKILL após TimeoutStopSec, sem drenar.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -70,7 +73,9 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	fs.Usage = func() {
 		fmt.Fprintln(errOut, "uso: praxis [-version] <subcomando> [flags]")
 		fmt.Fprintln(errOut, "subcomandos:")
-		fmt.Fprintln(errOut, "  serve    sobe o serviço (HTTP + scheduler)")
+		fmt.Fprintln(errOut, "  serve    sobe o serviço em foreground (HTTP + scheduler)")
+		fmt.Fprintln(errOut, "  service  instala/administra o serviço do sistema (install|remove|start|stop|status|run|unit)")
+		fmt.Fprintln(errOut, "  import   importa projetos do Praxis clássico")
 		fmt.Fprintln(errOut, "  usuario  administra usuários pela CLI (add|reset-senha|list)")
 		fmt.Fprintln(errOut)
 		fs.PrintDefaults()
@@ -95,7 +100,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	case "serve":
 		return serve(ctx, rest[1:], out, errOut)
 	case "service":
-		return service(rest[1:], out, errOut)
+		return service(ctx, rest[1:], out, errOut)
 	case "import":
 		return importarCmd(ctx, rest[1:], out, errOut)
 	case "usuario":
@@ -122,7 +127,7 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return err
 	}
 
-	logger := slog.New(slog.NewTextHandler(errOut, nil))
+	logger := novoLogger(errOut)
 	api.Versao = versao
 
 	banco, err := db.AbrirPadrao()
