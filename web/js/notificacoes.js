@@ -106,8 +106,10 @@ async function marcarLida(n) {
 // botaoSino devolve um botão-sino para a sidebar; o da topbar (index.html) é
 // ligado por ligarSinoTopbar. Todos compartilham o mesmo badge.
 export function botaoSino() {
-  return el("button", { class: "btn ghost sm sino-btn", title: t("sino.titulo"), onclick: () => alternarPainel() },
-    "🔔 ", el("span", { text: t("sino.titulo") }), el("span", { class: "sino-badge", hidden: true }));
+  // Só o ícone: o rodapé do menu já tem Minha conta, Instalar app, Sair e o
+  // idioma na mesma linha — com texto o sino quebrava a linha.
+  return el("button", { class: "btn ghost sm sino-btn", title: t("sino.titulo"), "aria-label": t("sino.titulo"), onclick: () => alternarPainel() },
+    "🔔", el("span", { class: "sino-badge", hidden: true }));
 }
 
 export function ligarSinoTopbar() {
