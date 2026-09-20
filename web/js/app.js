@@ -150,8 +150,8 @@ function aplicarPermissoes() {
         botaoSino(),
         botaoInstalarApp(),
         el("button", { class: "btn ghost sm", text: t("nav.sair"), onclick: () => sair() }),
+        seletorIdioma(() => auth.tokenAtual()),
       ),
-      seletorIdioma(() => auth.tokenAtual()),
     );
     box.hidden = false;
   }
